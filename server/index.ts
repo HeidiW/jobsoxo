@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { processOverdueReminders } from "./email";
 
 const app = express();
 const httpServer = createServer(app);
@@ -95,4 +96,16 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
     },
   );
+
+  // Daily reminder scheduler — runs once at startup, then every 24 hours
+  const runReminders = async () => {
+    try {
+      const result = await processOverdueReminders();
+      log(`Reminder check: ${result.sent} sent, ${result.processed} checked, ${result.errors.length} errors`, "scheduler");
+    } catch (err) {
+      log(`Reminder check failed: ${err}`, "scheduler");
+    }
+  };
+  runReminders();
+  setInterval(runReminders, 24 * 60 * 60 * 1000);
 })();
