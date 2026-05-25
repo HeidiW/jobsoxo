@@ -1,9 +1,8 @@
-import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { PaintBucket, Loader2 } from "lucide-react";
+import { PaintBucket, Loader2, Check, X } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,15 +15,30 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
+import { getQueryFn } from "@/lib/queryClient";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
 });
 
+const passwordRules = [
+  { label: "At least 10 characters", test: (p: string) => p.length >= 10 },
+  { label: "Uppercase letter (A–Z)", test: (p: string) => /[A-Z]/.test(p) },
+  { label: "Lowercase letter (a–z)", test: (p: string) => /[a-z]/.test(p) },
+  { label: "Number (0–9)", test: (p: string) => /[0-9]/.test(p) },
+  { label: "Special character (!@#$%…)", test: (p: string) => /[^A-Za-z0-9]/.test(p) },
+];
+
 const setupSchema = z.object({
   username: z.string().min(3, "At least 3 characters"),
-  password: z.string().min(6, "At least 6 characters"),
+  password: z
+    .string()
+    .min(10, "At least 10 characters")
+    .regex(/[A-Z]/, "Must contain an uppercase letter")
+    .regex(/[a-z]/, "Must contain a lowercase letter")
+    .regex(/[0-9]/, "Must contain a number")
+    .regex(/[^A-Za-z0-9]/, "Must contain a special character (e.g. !@#$%)"),
   confirmPassword: z.string().min(1, "Please confirm your password"),
 }).refine((d) => d.password === d.confirmPassword, {
   message: "Passwords do not match",
@@ -34,11 +48,45 @@ const setupSchema = z.object({
 type LoginValues = z.infer<typeof loginSchema>;
 type SetupValues = z.infer<typeof setupSchema>;
 
+function PasswordStrength({ password }: { password: string }) {
+  if (!password) return null;
+  const passed = passwordRules.filter((r) => r.test(password)).length;
+  const colors = ["bg-red-500", "bg-orange-500", "bg-yellow-500", "bg-blue-500", "bg-green-500"];
+  const barColor = colors[passed - 1] ?? "bg-muted";
+
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="flex gap-1">
+        {passwordRules.map((_, i) => (
+          <div
+            key={i}
+            className={`h-1 flex-1 rounded-full transition-colors duration-200 ${
+              i < passed ? barColor : "bg-muted"
+            }`}
+          />
+        ))}
+      </div>
+      <ul className="space-y-1">
+        {passwordRules.map((rule) => {
+          const ok = rule.test(password);
+          return (
+            <li key={rule.label} className={`flex items-center gap-1.5 text-xs ${ok ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>
+              {ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+              {rule.label}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export default function Login() {
   const { toast } = useToast();
 
   const { data: setupStatus, isLoading: checkingSetup } = useQuery<{ needsSetup: boolean }>({
     queryKey: ["/api/auth/setup-status"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
     retry: false,
   });
 
@@ -53,6 +101,8 @@ export default function Login() {
     resolver: zodResolver(setupSchema),
     defaultValues: { username: "", password: "", confirmPassword: "" },
   });
+
+  const passwordValue = useWatch({ control: setupForm.control, name: "password" });
 
   const loginMutation = useMutation({
     mutationFn: async (data: LoginValues) => {
@@ -149,11 +199,12 @@ export default function Login() {
                         <Input
                           {...field}
                           type="password"
-                          placeholder="At least 6 characters"
+                          placeholder="Create a strong password"
                           autoComplete="new-password"
                           data-testid="input-setup-password"
                         />
                       </FormControl>
+                      <PasswordStrength password={passwordValue} />
                       <FormMessage />
                     </FormItem>
                   )}
