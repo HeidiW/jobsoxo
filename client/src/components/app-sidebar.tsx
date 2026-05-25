@@ -50,7 +50,7 @@ export function AppSidebar() {
             <PaintBucket className="h-5 w-5 text-primary-foreground" />
           </div>
           <div className="flex flex-col">
-            <span className="text-lg font-semibold">TradeBooks</span>
+            <span className="text-lg font-semibold">JobsOxo</span>
             <span className="text-xs text-muted-foreground">Invoicing</span>
           </div>
         </Link>
