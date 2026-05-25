@@ -350,14 +350,14 @@ function TimeEntryForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>Job (Optional)</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value || ""}>
+              <Select onValueChange={(v) => field.onChange(v === "none" ? "" : v)} value={field.value || "none"}>
                 <FormControl>
                   <SelectTrigger data-testid="select-time-entry-job">
                     <SelectValue placeholder="Select job" />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  <SelectItem value="">No job</SelectItem>
+                  <SelectItem value="none">No job</SelectItem>
                   {jobs?.filter((j) => j.status !== "completed").map((job) => (
                     <SelectItem key={job.id} value={job.id}>
                       {job.title}

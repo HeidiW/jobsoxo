@@ -303,7 +303,7 @@ export async function registerRoutes(
         clientId: invoiceData.clientId,
         jobId: invoiceData.jobId || null,
         invoiceNumber,
-        status: send ? "sent" : "draft",
+        status: "draft",
         subtotal: String(subtotal),
         taxRate: String(taxRate),
         taxAmount: String(taxAmount),
@@ -332,8 +332,26 @@ export async function registerRoutes(
             amount: String(amount),
             isChangeOrder: item.isChangeOrder || false,
             changeOrderReason: item.changeOrderReason || null,
-            jobId: invoiceData.jobId || invoice.id,
+            jobId: invoiceData.jobId || null,
             invoiceId: invoice.id,
+          });
+        }
+      }
+
+      if (send) {
+        const client = await storage.getClient(invoice.clientId);
+        if (client?.email && process.env.RESEND_API_KEY) {
+          const emailResult = await sendInvoiceEmail(invoice.id, client.email, {
+            apiKey: process.env.RESEND_API_KEY,
+            provider: "resend",
+          });
+          if (emailResult.success) {
+            const updated = await storage.updateInvoice(invoice.id, { status: "sent" });
+            return res.status(201).json(updated);
+          }
+          return res.status(201).json({
+            ...invoice,
+            emailError: emailResult.error || "Failed to send email",
           });
         }
       }
@@ -353,21 +371,26 @@ export async function registerRoutes(
       }
       
       const client = await storage.getClient(invoice.clientId);
-      if (client?.email && process.env.RESEND_API_KEY) {
-        const emailResult = await sendInvoiceEmail(req.params.id, client.email, {
-          apiKey: process.env.RESEND_API_KEY,
-          provider: "resend",
-        });
-        
-        if (!emailResult.success) {
-          console.warn("Email send warning:", emailResult.error);
-        }
+      if (!client?.email) {
+        return res.status(400).json({ error: "Client has no email address on file" });
       }
-      
+      if (!process.env.RESEND_API_KEY) {
+        return res.status(500).json({ error: "Email service is not configured" });
+      }
+
+      const emailResult = await sendInvoiceEmail(req.params.id, client.email, {
+        apiKey: process.env.RESEND_API_KEY,
+        provider: "resend",
+      });
+
+      if (!emailResult.success) {
+        return res.status(502).json({ error: emailResult.error || "Failed to send email" });
+      }
+
       const updated = await storage.updateInvoice(req.params.id, {
         status: "sent",
       });
-      
+
       res.json(updated);
     } catch (error) {
       console.error("Send invoice error:", error);

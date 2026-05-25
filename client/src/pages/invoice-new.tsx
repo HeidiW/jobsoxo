@@ -271,14 +271,14 @@ export default function InvoiceNew() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Job (Optional)</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value || ""}>
+                          <Select onValueChange={(v) => field.onChange(v === "none" ? "" : v)} value={field.value || "none"}>
                             <FormControl>
                               <SelectTrigger data-testid="select-invoice-job">
                                 <SelectValue placeholder="Link to job" />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
-                              <SelectItem value="">No job</SelectItem>
+                              <SelectItem value="none">No job</SelectItem>
                               {filteredJobs?.map((job) => (
                                 <SelectItem key={job.id} value={job.id}>
                                   {job.title}

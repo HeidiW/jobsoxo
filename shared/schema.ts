@@ -73,7 +73,7 @@ export type Job = typeof jobs.$inferSelect;
 // Line Items table (for job pricing breakdown)
 export const lineItems = pgTable("line_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  jobId: varchar("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+  jobId: varchar("job_id").references(() => jobs.id, { onDelete: "cascade" }),
   invoiceId: varchar("invoice_id").references(() => invoices.id, { onDelete: "cascade" }),
   category: text("category").notNull(), // materials, labor, square_footage, other
   description: text("description").notNull(),
