@@ -8,6 +8,7 @@ import {
   DollarSign,
   Settings,
   PaintBucket,
+  LogOut,
 } from "lucide-react";
 import {
   Sidebar,
@@ -21,6 +22,8 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/use-auth";
 
 const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -37,6 +40,7 @@ const settingsItems = [
 
 export function AppSidebar() {
   const [location] = useLocation();
+  const { user, logout, isLoggingOut } = useAuth();
 
   return (
     <Sidebar>
@@ -93,9 +97,28 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="p-4">
+      <SidebarFooter className="p-4 space-y-3">
+        {user && (
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-medium truncate">{user.username}</span>
+              <span className="text-xs text-muted-foreground">Signed in</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={logout}
+              disabled={isLoggingOut}
+              data-testid="button-logout"
+              title="Sign out"
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
         <div className="text-xs text-muted-foreground">
-          Construction Painting & Decorating
+          Construction Painting &amp; Decorating
         </div>
       </SidebarFooter>
     </Sidebar>

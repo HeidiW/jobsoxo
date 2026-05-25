@@ -1,15 +1,16 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { 
-  clients, jobs, invoices, lineItems, payments, employees, timeEntries,
+  clients, jobs, invoices, lineItems, payments, employees, timeEntries, users,
   insertClientSchema, insertJobSchema, insertLineItemSchema, insertInvoiceSchema,
   insertPaymentSchema, insertEmployeeSchema, insertTimeEntrySchema, insertSettingsSchema
 } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { sendInvoiceEmail, processOverdueReminders } from "./email";
+import bcrypt from "bcryptjs";
 
 function parseNumeric(value: unknown): number {
   if (typeof value === "number") return value;
@@ -17,10 +18,90 @@ function parseNumeric(value: unknown): number {
   return 0;
 }
 
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // Auth — public routes (no requireAuth)
+  app.get("/api/auth/setup-status", async (_req, res) => {
+    try {
+      const [existing] = await db.select().from(users).limit(1);
+      res.json({ needsSetup: !existing });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to check setup status" });
+    }
+  });
+
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const [existing] = await db.select().from(users).limit(1);
+      if (existing) {
+        return res.status(403).json({ error: "Setup already complete" });
+      }
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ error: "Username and password required" });
+      }
+      const hash = await bcrypt.hash(password, 10);
+      const user = await storage.createUser({ username, password: hash });
+      req.session.userId = user.id;
+      res.status(201).json({ id: user.id, username: user.username });
+    } catch (error) {
+      console.error("Register error:", error);
+      res.status(500).json({ error: "Failed to create account" });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ error: "Username and password required" });
+      }
+      const user = await storage.getUserByUsername(username);
+      if (!user || !(await bcrypt.compare(password, user.password))) {
+        return res.status(401).json({ error: "Invalid username or password" });
+      }
+      req.session.userId = user.id;
+      res.json({ id: user.id, username: user.username });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ error: "Failed to log in" });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy(() => {
+      res.json({ success: true });
+    });
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      res.json({ id: user.id, username: user.username });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get user" });
+    }
+  });
+
+  // All routes below require authentication
+  app.use("/api", requireAuth);
+
   // Dashboard
   app.get("/api/dashboard", async (req, res) => {
     try {
