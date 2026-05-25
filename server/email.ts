@@ -339,14 +339,14 @@ export async function sendPasswordResetEmail(
   resetLink: string,
   config: EmailConfig
 ): Promise<{ success: boolean; error?: string }> {
-  const subject = "Reset your PaintPro password";
+  const subject = "Reset your TradeBooks password";
   const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
 <body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <div style="max-width:480px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
     <div style="background:#2563eb;padding:28px 32px;">
-      <h1 style="margin:0;color:#fff;font-size:20px;font-weight:600;">PaintPro — Password Reset</h1>
+      <h1 style="margin:0;color:#fff;font-size:20px;font-weight:600;">TradeBooks — Password Reset</h1>
     </div>
     <div style="padding:32px;">
       <p style="margin:0 0 16px;color:#374151;font-size:15px;">Hi <strong>${username}</strong>,</p>
@@ -372,7 +372,7 @@ export async function sendPasswordResetEmail(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "PaintPro <noreply@resend.dev>",
+        from: "TradeBooks <noreply@resend.dev>",
         to: [toEmail],
         subject,
         html,
