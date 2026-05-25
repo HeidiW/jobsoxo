@@ -20,6 +20,18 @@ export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
 
+// OAuth accounts — links social identity providers to local users
+export const oauthAccounts = pgTable("oauth_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull(),
+  providerId: text("provider_id").notNull(),
+  email: text("email"),
+});
+
+export type OAuthAccount = typeof oauthAccounts.$inferSelect;
+export type InsertOAuthAccount = typeof oauthAccounts.$inferInsert;
+
 // Clients table
 export const clients = pgTable("clients", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

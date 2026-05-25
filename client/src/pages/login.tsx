@@ -1,9 +1,29 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { PaintBucket, Loader2, Check, X, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { SiGoogle, SiApple } from "react-icons/si";
+
+function MicrosoftIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+      <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+    </svg>
+  );
+}
+
+function YahooIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="#6001D2" xmlns="http://www.w3.org/2000/svg">
+      <path d="M0 3h5.4l6.6 9.9L18.6 3H24l-9.9 14.7V24h-4.2v-6.3L0 3z" />
+    </svg>
+  );
+}
 import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -90,6 +110,37 @@ function PasswordStrength({ password }: { password: string }) {
   );
 }
 
+// ─── Social provider config ───────────────────────────────────────────────────
+
+const PROVIDERS = [
+  {
+    key: "google" as const,
+    label: "Google",
+    icon: SiGoogle as React.ComponentType<{ className?: string }>,
+    href: "/api/auth/google",
+  },
+  {
+    key: "microsoft" as const,
+    label: "Microsoft",
+    icon: MicrosoftIcon,
+    href: "/api/auth/microsoft",
+  },
+  {
+    key: "apple" as const,
+    label: "Apple",
+    icon: SiApple as React.ComponentType<{ className?: string }>,
+    href: "/api/auth/apple",
+  },
+  {
+    key: "yahoo" as const,
+    label: "Yahoo",
+    icon: YahooIcon,
+    href: "/api/auth/yahoo",
+  },
+] as const;
+
+type ProviderKey = (typeof PROVIDERS)[number]["key"];
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 type View = "login" | "setup" | "forgot" | "forgot-sent";
@@ -98,11 +149,33 @@ export default function Login() {
   const { toast } = useToast();
   const [view, setView] = useState<View>("login");
 
+  // Show error toast if an OAuth redirect came back with ?oauth_error=1
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("oauth_error")) {
+      toast({
+        title: "Sign-in failed",
+        description: "We couldn't sign you in with that provider. Please try again.",
+        variant: "destructive",
+      });
+      // Clean up URL
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
   const { data: setupStatus, isLoading: checkingSetup } = useQuery<{ needsSetup: boolean }>({
     queryKey: ["/api/auth/setup-status"],
     queryFn: getQueryFn({ on401: "returnNull" }),
     retry: false,
   });
+
+  const { data: enabledProviders } = useQuery<Record<ProviderKey, boolean>>({
+    queryKey: ["/api/auth/providers"],
+    queryFn: getQueryFn({ on401: "returnNull" }),
+    retry: false,
+  });
+
+  const activeProviders = PROVIDERS.filter((p) => enabledProviders?.[p.key]);
 
   const isSetup = setupStatus?.needsSetup === true;
 
@@ -258,42 +331,78 @@ export default function Login() {
 
           {/* Login form */}
           {currentView === "login" && (
-            <Form {...loginForm}>
-              <form onSubmit={loginForm.handleSubmit((d) => loginMutation.mutate(d))} className="space-y-4">
-                <FormField control={loginForm.control} name="username" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Username</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder="Your username" autoComplete="username" data-testid="input-login-username" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={loginForm.control} name="password" render={({ field }) => (
-                  <FormItem>
-                    <div className="flex items-center justify-between">
-                      <FormLabel>Password</FormLabel>
-                      <button
-                        type="button"
-                        onClick={() => setView("forgot")}
-                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                        data-testid="link-forgot-password"
-                      >
-                        Forgot password?
-                      </button>
+            <div className="space-y-4">
+              <Form {...loginForm}>
+                <form onSubmit={loginForm.handleSubmit((d) => loginMutation.mutate(d))} className="space-y-4">
+                  <FormField control={loginForm.control} name="username" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Username</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Your username" autoComplete="username" data-testid="input-login-username" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={loginForm.control} name="password" render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center justify-between">
+                        <FormLabel>Password</FormLabel>
+                        <button
+                          type="button"
+                          onClick={() => setView("forgot")}
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          data-testid="link-forgot-password"
+                        >
+                          Forgot password?
+                        </button>
+                      </div>
+                      <FormControl>
+                        <Input {...field} type="password" placeholder="Your password" autoComplete="current-password" data-testid="input-login-password" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <Button type="submit" className="w-full" disabled={loginMutation.isPending} data-testid="button-sign-in">
+                    {loginMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Sign In
+                  </Button>
+                </form>
+              </Form>
+
+              {/* Social login — only shown when at least one provider is configured */}
+              {activeProviders.length > 0 && (
+                <>
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t" />
                     </div>
-                    <FormControl>
-                      <Input {...field} type="password" placeholder="Your password" autoComplete="current-password" data-testid="input-login-password" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <Button type="submit" className="w-full" disabled={loginMutation.isPending} data-testid="button-sign-in">
-                  {loginMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Sign In
-                </Button>
-              </form>
-            </Form>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    {activeProviders.map((provider) => {
+                      const Icon = provider.icon;
+                      return (
+                        <a
+                          key={provider.key}
+                          href={provider.href}
+                          data-testid={`button-oauth-${provider.key}`}
+                          className="flex items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                        >
+                          <Icon
+                            className="h-4 w-4 shrink-0"
+                            style={{ color: provider.iconColor }}
+                          />
+                          {provider.label}
+                        </a>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
           )}
 
           {/* Forgot password form */}

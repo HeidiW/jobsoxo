@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { sendInvoiceEmail, processOverdueReminders, sendPasswordResetEmail } from "./email";
 import bcrypt from "bcryptjs";
+import { passport, setupOAuthStrategies, getEnabledProviders, callbackUrl } from "./oauth";
 
 function parseNumeric(value: unknown): number {
   if (typeof value === "number") return value;
@@ -29,6 +30,9 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Initialize passport (no session serialization — we manage sessions ourselves)
+  app.use(passport.initialize());
+  setupOAuthStrategies();
 
   // Auth — public routes (no requireAuth)
   app.get("/api/auth/setup-status", async (_req, res) => {
@@ -185,6 +189,70 @@ export async function registerRoutes(
       console.error("Reset password error:", error);
       res.status(500).json({ error: "Failed to reset password" });
     }
+  });
+
+  // ── OAuth social login routes (public) ────────────────────────────────────
+
+  // Which providers are currently configured
+  app.get("/api/auth/providers", (_req, res) => {
+    res.json(getEnabledProviders());
+  });
+
+  // Helper: finish OAuth flow — set session and redirect
+  function oauthSuccess(req: Request, res: Response, user: { id: string }) {
+    req.session.userId = user.id;
+    req.session.save(() => res.redirect("/"));
+  }
+  function oauthFail(res: Response) {
+    return res.redirect("/?oauth_error=1");
+  }
+
+  // Google
+  app.get("/api/auth/google", (req, res, next) => {
+    if (!getEnabledProviders().google) return oauthFail(res);
+    passport.authenticate("google", { scope: ["profile", "email"], session: false })(req, res, next);
+  });
+  app.get("/api/auth/google/callback", (req, res, next) => {
+    passport.authenticate("google", { session: false }, (err: any, user: any) => {
+      if (err || !user) return oauthFail(res);
+      oauthSuccess(req, res, user);
+    })(req, res, next);
+  });
+
+  // Microsoft / Outlook
+  app.get("/api/auth/microsoft", (req, res, next) => {
+    if (!getEnabledProviders().microsoft) return oauthFail(res);
+    passport.authenticate("microsoft", { session: false })(req, res, next);
+  });
+  app.get("/api/auth/microsoft/callback", (req, res, next) => {
+    passport.authenticate("microsoft", { session: false }, (err: any, user: any) => {
+      if (err || !user) return oauthFail(res);
+      oauthSuccess(req, res, user);
+    })(req, res, next);
+  });
+
+  // Apple — callback is POST (Apple spec)
+  app.get("/api/auth/apple", (req, res, next) => {
+    if (!getEnabledProviders().apple) return oauthFail(res);
+    passport.authenticate("apple", { session: false })(req, res, next);
+  });
+  app.post("/api/auth/apple/callback", (req, res, next) => {
+    passport.authenticate("apple", { session: false }, (err: any, user: any) => {
+      if (err || !user) return oauthFail(res);
+      oauthSuccess(req, res, user);
+    })(req, res, next);
+  });
+
+  // Yahoo
+  app.get("/api/auth/yahoo", (req, res, next) => {
+    if (!getEnabledProviders().yahoo) return oauthFail(res);
+    passport.authenticate("yahoo", { session: false })(req, res, next);
+  });
+  app.get("/api/auth/yahoo/callback", (req, res, next) => {
+    passport.authenticate("yahoo", { session: false }, (err: any, user: any) => {
+      if (err || !user) return oauthFail(res);
+      oauthSuccess(req, res, user);
+    })(req, res, next);
   });
 
   // All routes below require authentication
