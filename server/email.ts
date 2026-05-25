@@ -332,3 +332,58 @@ function generateReminderEmailBody(
 </html>
 `;
 }
+
+export async function sendPasswordResetEmail(
+  toEmail: string,
+  username: string,
+  resetLink: string,
+  config: EmailConfig
+): Promise<{ success: boolean; error?: string }> {
+  const subject = "Reset your PaintPro password";
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:480px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+    <div style="background:#2563eb;padding:28px 32px;">
+      <h1 style="margin:0;color:#fff;font-size:20px;font-weight:600;">PaintPro — Password Reset</h1>
+    </div>
+    <div style="padding:32px;">
+      <p style="margin:0 0 16px;color:#374151;font-size:15px;">Hi <strong>${username}</strong>,</p>
+      <p style="margin:0 0 24px;color:#374151;font-size:15px;">We received a request to reset your password. Click the button below to choose a new one. This link expires in <strong>1 hour</strong>.</p>
+      <a href="${resetLink}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;">Reset Password</a>
+      <p style="margin:24px 0 0;color:#6b7280;font-size:13px;">If you didn't request this, you can safely ignore this email — your password won't change.</p>
+      <p style="margin:12px 0 0;color:#9ca3af;font-size:12px;word-break:break-all;">Or copy this link: ${resetLink}</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  if (!config.apiKey) {
+    console.log(`[Email] Password reset link for ${toEmail}: ${resetLink}`);
+    return { success: true };
+  }
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: "PaintPro <noreply@resend.dev>",
+        to: [toEmail],
+        subject,
+        html,
+      }),
+    });
+    if (!response.ok) {
+      const err = await response.text();
+      return { success: false, error: `Email failed: ${response.status} ${err}` };
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}

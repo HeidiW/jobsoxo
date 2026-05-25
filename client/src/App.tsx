@@ -22,6 +22,7 @@ import Scheduling from "@/pages/scheduling";
 import Payroll from "@/pages/payroll";
 import Settings from "@/pages/settings";
 import Login from "@/pages/login";
+import ResetPassword from "@/pages/reset-password";
 
 function Router() {
   return (
@@ -68,6 +69,11 @@ function AuthenticatedApp() {
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
+
+  // Allow reset-password page without authentication
+  if (window.location.pathname === "/reset-password") {
+    return <ResetPassword />;
+  }
 
   if (isLoading) {
     return (

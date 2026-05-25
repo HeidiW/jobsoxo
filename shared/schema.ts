@@ -12,6 +12,8 @@ export const users = pgTable("users", {
   email: text("email"),
   phone: text("phone"),
   address: text("address"),
+  resetToken: text("reset_token"),
+  resetTokenExpiry: timestamp("reset_token_expiry"),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });

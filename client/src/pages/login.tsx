@@ -1,9 +1,10 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { PaintBucket, Loader2, Check, X } from "lucide-react";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { PaintBucket, Loader2, Check, X, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,7 +16,8 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { getQueryFn } from "@/lib/queryClient";
+
+// ─── Schemas ──────────────────────────────────────────────────────────────────
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
@@ -45,8 +47,15 @@ const setupSchema = z.object({
   path: ["confirmPassword"],
 });
 
+const forgotSchema = z.object({
+  username: z.string().min(1, "Username is required"),
+});
+
 type LoginValues = z.infer<typeof loginSchema>;
 type SetupValues = z.infer<typeof setupSchema>;
+type ForgotValues = z.infer<typeof forgotSchema>;
+
+// ─── Password strength ────────────────────────────────────────────────────────
 
 function PasswordStrength({ password }: { password: string }) {
   if (!password) return null;
@@ -81,8 +90,13 @@ function PasswordStrength({ password }: { password: string }) {
   );
 }
 
+// ─── Main component ───────────────────────────────────────────────────────────
+
+type View = "login" | "setup" | "forgot" | "forgot-sent";
+
 export default function Login() {
   const { toast } = useToast();
+  const [view, setView] = useState<View>("login");
 
   const { data: setupStatus, isLoading: checkingSetup } = useQuery<{ needsSetup: boolean }>({
     queryKey: ["/api/auth/setup-status"],
@@ -91,6 +105,8 @@ export default function Login() {
   });
 
   const isSetup = setupStatus?.needsSetup === true;
+
+  // ── Forms ──────────────────────────────────────────────────────────────────
 
   const loginForm = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
@@ -102,7 +118,14 @@ export default function Login() {
     defaultValues: { username: "", password: "", confirmPassword: "" },
   });
 
+  const forgotForm = useForm<ForgotValues>({
+    resolver: zodResolver(forgotSchema),
+    defaultValues: { username: "" },
+  });
+
   const passwordValue = useWatch({ control: setupForm.control, name: "password" });
+
+  // ── Mutations ──────────────────────────────────────────────────────────────
 
   const loginMutation = useMutation({
     mutationFn: async (data: LoginValues) => {
@@ -141,6 +164,25 @@ export default function Login() {
     },
   });
 
+  const forgotMutation = useMutation({
+    mutationFn: async (data: ForgotValues) => {
+      const res = await apiRequest("POST", "/api/auth/forgot-password", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      setView("forgot-sent");
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Request failed",
+        description: err.message.replace(/^\d+:\s*/, ""),
+        variant: "destructive",
+      });
+    },
+  });
+
+  // ── Loading ────────────────────────────────────────────────────────────────
+
   if (checkingSetup) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -149,9 +191,14 @@ export default function Login() {
     );
   }
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  const currentView = isSetup ? "setup" : view;
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-8">
+        {/* Logo */}
         <div className="flex flex-col items-center gap-3 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary shadow-md">
             <PaintBucket className="h-7 w-7 text-primary-foreground" />
@@ -159,141 +206,143 @@ export default function Login() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">PaintPro</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {isSetup ? "Create your account to get started" : "Sign in to your account"}
+              {currentView === "setup" && "Create your account to get started"}
+              {currentView === "login" && "Sign in to your account"}
+              {currentView === "forgot" && "Reset your password"}
+              {currentView === "forgot-sent" && "Check your email"}
             </p>
           </div>
         </div>
 
         <div className="rounded-xl border bg-card p-6 shadow-sm">
-          {isSetup ? (
+
+          {/* Setup form */}
+          {currentView === "setup" && (
             <Form {...setupForm}>
-              <form
-                onSubmit={setupForm.handleSubmit((d) => setupMutation.mutate(d))}
-                className="space-y-4"
-              >
-                <FormField
-                  control={setupForm.control}
-                  name="username"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Username</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          placeholder="e.g. john"
-                          autoComplete="username"
-                          data-testid="input-setup-username"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={setupForm.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Password</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type="password"
-                          placeholder="Create a strong password"
-                          autoComplete="new-password"
-                          data-testid="input-setup-password"
-                        />
-                      </FormControl>
-                      <PasswordStrength password={passwordValue} />
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={setupForm.control}
-                  name="confirmPassword"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Confirm Password</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type="password"
-                          placeholder="Repeat your password"
-                          autoComplete="new-password"
-                          data-testid="input-setup-confirm"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={setupMutation.isPending}
-                  data-testid="button-create-account"
-                >
+              <form onSubmit={setupForm.handleSubmit((d) => setupMutation.mutate(d))} className="space-y-4">
+                <FormField control={setupForm.control} name="username" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Username</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="e.g. john" autoComplete="username" data-testid="input-setup-username" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={setupForm.control} name="password" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="password" placeholder="Create a strong password" autoComplete="new-password" data-testid="input-setup-password" />
+                    </FormControl>
+                    <PasswordStrength password={passwordValue} />
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={setupForm.control} name="confirmPassword" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Confirm Password</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="password" placeholder="Repeat your password" autoComplete="new-password" data-testid="input-setup-confirm" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <Button type="submit" className="w-full" disabled={setupMutation.isPending} data-testid="button-create-account">
                   {setupMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Create Account
                 </Button>
               </form>
             </Form>
-          ) : (
+          )}
+
+          {/* Login form */}
+          {currentView === "login" && (
             <Form {...loginForm}>
-              <form
-                onSubmit={loginForm.handleSubmit((d) => loginMutation.mutate(d))}
-                className="space-y-4"
-              >
-                <FormField
-                  control={loginForm.control}
-                  name="username"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Username</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          placeholder="Your username"
-                          autoComplete="username"
-                          data-testid="input-login-username"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={loginForm.control}
-                  name="password"
-                  render={({ field }) => (
-                    <FormItem>
+              <form onSubmit={loginForm.handleSubmit((d) => loginMutation.mutate(d))} className="space-y-4">
+                <FormField control={loginForm.control} name="username" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Username</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="Your username" autoComplete="username" data-testid="input-login-username" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={loginForm.control} name="password" render={({ field }) => (
+                  <FormItem>
+                    <div className="flex items-center justify-between">
                       <FormLabel>Password</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type="password"
-                          placeholder="Your password"
-                          autoComplete="current-password"
-                          data-testid="input-login-password"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={loginMutation.isPending}
-                  data-testid="button-sign-in"
-                >
+                      <button
+                        type="button"
+                        onClick={() => setView("forgot")}
+                        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        data-testid="link-forgot-password"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+                    <FormControl>
+                      <Input {...field} type="password" placeholder="Your password" autoComplete="current-password" data-testid="input-login-password" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <Button type="submit" className="w-full" disabled={loginMutation.isPending} data-testid="button-sign-in">
                   {loginMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Sign In
                 </Button>
               </form>
             </Form>
           )}
+
+          {/* Forgot password form */}
+          {currentView === "forgot" && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Enter your username and we'll send a reset link to your email address on file.
+              </p>
+              <Form {...forgotForm}>
+                <form onSubmit={forgotForm.handleSubmit((d) => forgotMutation.mutate(d))} className="space-y-4">
+                  <FormField control={forgotForm.control} name="username" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Username</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Your username" autoComplete="username" data-testid="input-forgot-username" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <Button type="submit" className="w-full" disabled={forgotMutation.isPending} data-testid="button-send-reset">
+                    {forgotMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Send Reset Link
+                  </Button>
+                </form>
+              </Form>
+              <button
+                type="button"
+                onClick={() => setView("login")}
+                className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="link-back-to-login"
+              >
+                <ArrowLeft className="h-3.5 w-3.5" /> Back to sign in
+              </button>
+            </div>
+          )}
+
+          {/* Sent confirmation */}
+          {currentView === "forgot-sent" && (
+            <div className="space-y-4 text-center">
+              <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto" />
+              <p className="text-sm text-muted-foreground">
+                If that account exists and has an email on file, a reset link has been sent. Check your inbox — the link expires in 1 hour.
+              </p>
+              <Button variant="outline" className="w-full" onClick={() => setView("login")} data-testid="button-back-to-login">
+                Back to sign in
+              </Button>
+            </div>
+          )}
+
         </div>
 
         <p className="text-center text-xs text-muted-foreground">
