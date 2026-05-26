@@ -197,7 +197,7 @@ export default function ResetPassword() {
                       <Input
                         {...field}
                         type="password"
-                        placeholder="Create a strong password"
+                        placeholder="10+ chars, A-Z, a-z, !@#$%"
                         autoComplete="new-password"
                         data-testid="input-new-password"
                       />

@@ -304,7 +304,7 @@ export default function Login() {
                   <FormItem>
                     <FormLabel>Password</FormLabel>
                     <FormControl>
-                      <Input {...field} type="password" placeholder="Create a strong password" autoComplete="new-password" data-testid="input-setup-password" />
+                      <Input {...field} type="password" placeholder="10+ chars, A-Z, a-z, !@#$%" autoComplete="new-password" data-testid="input-setup-password" />
                     </FormControl>
                     <PasswordStrength password={passwordValue} />
                     <FormMessage />
