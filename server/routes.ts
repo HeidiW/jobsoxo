@@ -63,9 +63,6 @@ export async function registerRoutes(
       if (!/[a-z]/.test(password)) {
         return res.status(400).json({ error: "Password must contain a lowercase letter" });
       }
-      if (!/[0-9]/.test(password)) {
-        return res.status(400).json({ error: "Password must contain a number" });
-      }
       if (!/[^A-Za-z0-9]/.test(password)) {
         return res.status(400).json({ error: "Password must contain a special character" });
       }
@@ -177,7 +174,6 @@ export async function registerRoutes(
       if (password.length < 10) return res.status(400).json({ error: "Password must be at least 10 characters" });
       if (!/[A-Z]/.test(password)) return res.status(400).json({ error: "Password must contain an uppercase letter" });
       if (!/[a-z]/.test(password)) return res.status(400).json({ error: "Password must contain a lowercase letter" });
-      if (!/[0-9]/.test(password)) return res.status(400).json({ error: "Password must contain a number" });
       if (!/[^A-Za-z0-9]/.test(password)) return res.status(400).json({ error: "Password must contain a special character" });
 
       const hash = await bcrypt.hash(password, 10);

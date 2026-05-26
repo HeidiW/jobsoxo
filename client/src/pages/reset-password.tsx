@@ -23,7 +23,6 @@ const passwordRules = [
   { label: "At least 10 characters", test: (p: string) => p.length >= 10 },
   { label: "Uppercase letter (A–Z)", test: (p: string) => /[A-Z]/.test(p) },
   { label: "Lowercase letter (a–z)", test: (p: string) => /[a-z]/.test(p) },
-  { label: "Number (0–9)", test: (p: string) => /[0-9]/.test(p) },
   { label: "Special character (!@#$%…)", test: (p: string) => /[^A-Za-z0-9]/.test(p) },
 ];
 
@@ -33,7 +32,6 @@ const schema = z.object({
     .min(10, "At least 10 characters")
     .regex(/[A-Z]/, "Must contain an uppercase letter")
     .regex(/[a-z]/, "Must contain a lowercase letter")
-    .regex(/[0-9]/, "Must contain a number")
     .regex(/[^A-Za-z0-9]/, "Must contain a special character"),
   confirmPassword: z.string().min(1, "Please confirm your password"),
 }).refine((d) => d.password === d.confirmPassword, {
