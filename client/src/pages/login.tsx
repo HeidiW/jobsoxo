@@ -289,6 +289,7 @@ export default function Login() {
 
           {/* Setup form */}
           {currentView === "setup" && (
+            <>
             <Form {...setupForm}>
               <form onSubmit={setupForm.handleSubmit((d) => setupMutation.mutate(d))} className="space-y-4">
                 <FormField control={setupForm.control} name="username" render={({ field }) => (
@@ -325,6 +326,37 @@ export default function Login() {
                 </Button>
               </form>
             </Form>
+
+            {/* Social login on setup screen */}
+            {activeProviders.length > 0 && (
+              <>
+                <div className="relative mt-4">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2 mt-4">
+                  {activeProviders.map((provider) => {
+                    const Icon = provider.icon;
+                    return (
+                      <a
+                        key={provider.key}
+                        href={provider.href}
+                        data-testid={`button-oauth-setup-${provider.key}`}
+                        className="flex items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                      >
+                        <Icon className="h-4 w-4 shrink-0" style={{ color: provider.iconColor }} />
+                        {provider.label}
+                      </a>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+            </>
           )}
 
           {/* Login form */}
