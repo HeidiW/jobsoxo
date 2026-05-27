@@ -194,6 +194,18 @@ export async function registerRoutes(
     res.json(getEnabledProviders());
   });
 
+  // Diagnostic: show the callback URLs this server will use for OAuth
+  app.get("/api/auth/callback-urls", (req, res) => {
+    const base = getPublicBase(req);
+    res.json({
+      base,
+      google: `${base}/api/auth/google/callback`,
+      yahoo: `${base}/api/auth/yahoo/callback`,
+      microsoft: `${base}/api/auth/microsoft/callback`,
+      apple: `${base}/api/auth/apple/callback`,
+    });
+  });
+
   // Helper: finish OAuth flow — set session and redirect
   function oauthSuccess(req: Request, res: Response, user: { id: string }) {
     req.session.userId = user.id;
@@ -203,18 +215,25 @@ export async function registerRoutes(
     return res.redirect("/?oauth_error=1");
   }
 
+  // Helper: derive the public base URL from the request
+  function getPublicBase(req: Request): string {
+    const proto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0].trim() ?? req.protocol;
+    const host = (req.headers["x-forwarded-host"] as string | undefined)?.split(",")[0].trim() ?? req.headers.host ?? "localhost:5000";
+    return `${proto}://${host}`;
+  }
+
   // Google
   app.get("/api/auth/google", (req, res, next) => {
     if (!getEnabledProviders().google) return oauthFail(res);
-    const proto = req.headers["x-forwarded-proto"] || req.protocol;
-    const host = req.headers["x-forwarded-host"] || req.headers.host;
-    console.log(`[oauth] Google auth start — callback URL will be: ${proto}://${host}/api/auth/google/callback`);
-    passport.authenticate("google", { scope: ["profile", "email"], session: false })(req, res, next);
+    const cb = `${getPublicBase(req)}/api/auth/google/callback`;
+    console.log(`[oauth] Google → callbackURL: ${cb}`);
+    passport.authenticate("google", { scope: ["profile", "email"], session: false, callbackURL: cb } as any)(req, res, next);
   });
   app.get("/api/auth/google/callback", (req, res, next) => {
-    passport.authenticate("google", { session: false }, (err: any, user: any) => {
+    const cb = `${getPublicBase(req)}/api/auth/google/callback`;
+    passport.authenticate("google", { session: false, callbackURL: cb } as any, (err: any, user: any) => {
       if (err || !user) {
-        console.error("[oauth] Google callback failed:", err?.message || err, "user:", user);
+        console.error("[oauth] Google callback failed:", err?.message || err);
         return oauthFail(res);
       }
       oauthSuccess(req, res, user);
@@ -224,10 +243,12 @@ export async function registerRoutes(
   // Microsoft / Outlook
   app.get("/api/auth/microsoft", (req, res, next) => {
     if (!getEnabledProviders().microsoft) return oauthFail(res);
-    passport.authenticate("microsoft", { session: false })(req, res, next);
+    const cb = `${getPublicBase(req)}/api/auth/microsoft/callback`;
+    passport.authenticate("microsoft", { session: false, callbackURL: cb } as any)(req, res, next);
   });
   app.get("/api/auth/microsoft/callback", (req, res, next) => {
-    passport.authenticate("microsoft", { session: false }, (err: any, user: any) => {
+    const cb = `${getPublicBase(req)}/api/auth/microsoft/callback`;
+    passport.authenticate("microsoft", { session: false, callbackURL: cb } as any, (err: any, user: any) => {
       if (err || !user) return oauthFail(res);
       oauthSuccess(req, res, user);
     })(req, res, next);
@@ -236,10 +257,12 @@ export async function registerRoutes(
   // Apple — callback is POST (Apple spec)
   app.get("/api/auth/apple", (req, res, next) => {
     if (!getEnabledProviders().apple) return oauthFail(res);
-    passport.authenticate("apple", { session: false })(req, res, next);
+    const cb = `${getPublicBase(req)}/api/auth/apple/callback`;
+    passport.authenticate("apple", { session: false, callbackURL: cb } as any)(req, res, next);
   });
   app.post("/api/auth/apple/callback", (req, res, next) => {
-    passport.authenticate("apple", { session: false }, (err: any, user: any) => {
+    const cb = `${getPublicBase(req)}/api/auth/apple/callback`;
+    passport.authenticate("apple", { session: false, callbackURL: cb } as any, (err: any, user: any) => {
       if (err || !user) return oauthFail(res);
       oauthSuccess(req, res, user);
     })(req, res, next);
@@ -248,10 +271,13 @@ export async function registerRoutes(
   // Yahoo
   app.get("/api/auth/yahoo", (req, res, next) => {
     if (!getEnabledProviders().yahoo) return oauthFail(res);
-    passport.authenticate("yahoo", { session: false })(req, res, next);
+    const cb = `${getPublicBase(req)}/api/auth/yahoo/callback`;
+    console.log(`[oauth] Yahoo → callbackURL: ${cb}`);
+    passport.authenticate("yahoo", { session: false, callbackURL: cb } as any)(req, res, next);
   });
   app.get("/api/auth/yahoo/callback", (req, res, next) => {
-    passport.authenticate("yahoo", { session: false }, (err: any, user: any) => {
+    const cb = `${getPublicBase(req)}/api/auth/yahoo/callback`;
+    passport.authenticate("yahoo", { session: false, callbackURL: cb } as any, (err: any, user: any) => {
       if (err || !user) return oauthFail(res);
       oauthSuccess(req, res, user);
     })(req, res, next);
