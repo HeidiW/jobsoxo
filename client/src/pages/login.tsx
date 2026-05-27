@@ -264,7 +264,7 @@ export default function Login() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
-  const currentView = isSetup ? "setup" : view;
+  const currentView = isSetup && view !== "forgot" && view !== "forgot-sent" ? "setup" : view;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -356,6 +356,25 @@ export default function Login() {
                 </div>
               </>
             )}
+
+            <div className="mt-4 flex flex-col gap-1 text-center">
+              <button
+                type="button"
+                onClick={() => setView("forgot")}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="link-setup-forgot-password"
+              >
+                Forgot your password?
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("login")}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="link-already-have-account"
+              >
+                Already have an account? <span className="font-medium">Sign in</span>
+              </button>
+            </div>
             </>
           )}
 
