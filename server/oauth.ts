@@ -93,7 +93,8 @@ export function setupOAuthStrategies() {
         {
           clientID: process.env.GOOGLE_CLIENT_ID!,
           clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-          callbackURL: callbackUrl("google"),
+          callbackURL: "/api/auth/google/callback",
+          proxy: true,
         },
         async (_at, _rt, profile, done) => {
           try {
@@ -122,7 +123,8 @@ export function setupOAuthStrategies() {
         {
           clientID: process.env.MICROSOFT_CLIENT_ID!,
           clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
-          callbackURL: callbackUrl("microsoft"),
+          callbackURL: "/api/auth/microsoft/callback",
+          proxy: true,
           scope: ["user.read"],
           tenant: "common",
         },
@@ -161,7 +163,8 @@ export function setupOAuthStrategies() {
           teamID: process.env.APPLE_TEAM_ID!,
           keyID: process.env.APPLE_KEY_ID!,
           privateKeyString: process.env.APPLE_PRIVATE_KEY!,
-          callbackURL: callbackUrl("apple"),
+          callbackURL: "/api/auth/apple/callback",
+          proxy: true,
           scope: ["name", "email"],
         },
         async (
@@ -194,7 +197,8 @@ export function setupOAuthStrategies() {
           tokenURL: "https://api.login.yahoo.com/oauth2/get_token",
           clientID: process.env.YAHOO_CLIENT_ID!,
           clientSecret: process.env.YAHOO_CLIENT_SECRET!,
-          callbackURL: callbackUrl("yahoo"),
+          callbackURL: "/api/auth/yahoo/callback",
+          proxy: true,
           scope: "openid email profile",
         } as any,
         async (

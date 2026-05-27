@@ -206,11 +206,17 @@ export async function registerRoutes(
   // Google
   app.get("/api/auth/google", (req, res, next) => {
     if (!getEnabledProviders().google) return oauthFail(res);
+    const proto = req.headers["x-forwarded-proto"] || req.protocol;
+    const host = req.headers["x-forwarded-host"] || req.headers.host;
+    console.log(`[oauth] Google auth start — callback URL will be: ${proto}://${host}/api/auth/google/callback`);
     passport.authenticate("google", { scope: ["profile", "email"], session: false })(req, res, next);
   });
   app.get("/api/auth/google/callback", (req, res, next) => {
     passport.authenticate("google", { session: false }, (err: any, user: any) => {
-      if (err || !user) return oauthFail(res);
+      if (err || !user) {
+        console.error("[oauth] Google callback failed:", err?.message || err, "user:", user);
+        return oauthFail(res);
+      }
       oauthSuccess(req, res, user);
     })(req, res, next);
   });

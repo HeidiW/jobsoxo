@@ -12,6 +12,7 @@ declare module "express-session" {
 }
 
 const app = express();
+app.set("trust proxy", 1);
 const httpServer = createServer(app);
 
 declare module "http" {
