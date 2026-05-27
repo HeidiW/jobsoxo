@@ -1,11 +1,10 @@
-import { useEffect } from "react";
-import { useLocation } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { PaintBucket, Loader2, Check, X, CheckCircle2, AlertCircle } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, getQueryFn } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -17,7 +16,8 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { getQueryFn } from "@/lib/queryClient";
+
+// ─── Password rules (mirrors login.tsx) ──────────────────────────────────────
 
 const passwordRules = [
   { label: "At least 10 characters", test: (p: string) => p.length >= 10 },
@@ -26,20 +26,24 @@ const passwordRules = [
   { label: "Special character (!@#$%…)", test: (p: string) => /[^A-Za-z0-9]/.test(p) },
 ];
 
-const schema = z.object({
-  password: z
-    .string()
-    .min(10, "At least 10 characters")
-    .regex(/[A-Z]/, "Must contain an uppercase letter")
-    .regex(/[a-z]/, "Must contain a lowercase letter")
-    .regex(/[^A-Za-z0-9]/, "Must contain a special character"),
-  confirmPassword: z.string().min(1, "Please confirm your password"),
-}).refine((d) => d.password === d.confirmPassword, {
-  message: "Passwords do not match",
-  path: ["confirmPassword"],
-});
+const resetSchema = z
+  .object({
+    password: z
+      .string()
+      .min(10, "At least 10 characters")
+      .regex(/[A-Z]/, "Must contain an uppercase letter")
+      .regex(/[a-z]/, "Must contain a lowercase letter")
+      .regex(/[^A-Za-z0-9]/, "Must contain a special character (e.g. !@#$%)"),
+    confirmPassword: z.string().min(1, "Please confirm your password"),
+  })
+  .refine((d) => d.password === d.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
 
-type FormValues = z.infer<typeof schema>;
+type ResetValues = z.infer<typeof resetSchema>;
+
+// ─── Password strength bar ────────────────────────────────────────────────────
 
 function PasswordStrength({ password }: { password: string }) {
   if (!password) return null;
@@ -63,7 +67,12 @@ function PasswordStrength({ password }: { password: string }) {
         {passwordRules.map((rule) => {
           const ok = rule.test(password);
           return (
-            <li key={rule.label} className={`flex items-center gap-1.5 text-xs ${ok ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>
+            <li
+              key={rule.label}
+              className={`flex items-center gap-1.5 text-xs ${
+                ok ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+              }`}
+            >
               {ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
               {rule.label}
             </li>
@@ -74,169 +83,197 @@ function PasswordStrength({ password }: { password: string }) {
   );
 }
 
-export default function ResetPassword() {
-  const [, navigate] = useLocation();
-  const { toast } = useToast();
-  const params = new URLSearchParams(window.location.search);
-  const token = params.get("token") ?? "";
+// ─── Main component ───────────────────────────────────────────────────────────
 
-  const { data: tokenData, isLoading: verifying, error: tokenError } = useQuery<{ valid: boolean; username: string }>({
+export default function ResetPassword() {
+  const { toast } = useToast();
+  const [done, setDone] = useState(false);
+
+  const token = new URLSearchParams(window.location.search).get("token") ?? "";
+
+  const { data: tokenData, isLoading: verifying, isError: tokenInvalid } = useQuery<{
+    valid: boolean;
+    username: string;
+  }>({
     queryKey: ["/api/auth/verify-reset-token", token],
-    queryFn: async () => {
-      const res = await fetch(`/api/auth/verify-reset-token?token=${encodeURIComponent(token)}`);
-      if (!res.ok) {
-        const body = await res.json();
-        throw new Error(body.error || "Invalid link");
-      }
-      return res.json();
-    },
+    queryFn: getQueryFn({ on401: "returnNull" }),
     enabled: !!token,
     retry: false,
   });
 
-  const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+  const form = useForm<ResetValues>({
+    resolver: zodResolver(resetSchema),
     defaultValues: { password: "", confirmPassword: "" },
   });
 
   const passwordValue = useWatch({ control: form.control, name: "password" });
 
   const resetMutation = useMutation({
-    mutationFn: async (data: FormValues) => {
+    mutationFn: async (data: ResetValues) => {
       const res = await apiRequest("POST", "/api/auth/reset-password", {
         token,
         password: data.password,
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to reset password");
+      }
       return res.json();
     },
+    onSuccess: () => {
+      setDone(true);
+    },
     onError: (err: Error) => {
-      toast({
-        title: "Reset failed",
-        description: err.message.replace(/^\d+:\s*/, ""),
-        variant: "destructive",
-      });
+      toast({ title: "Reset failed", description: err.message, variant: "destructive" });
     },
   });
 
-  if (!token) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <div className="w-full max-w-sm text-center space-y-4">
-          <AlertCircle className="h-12 w-12 text-destructive mx-auto" />
-          <h1 className="text-xl font-semibold">Invalid Link</h1>
-          <p className="text-sm text-muted-foreground">This reset link is missing required information.</p>
-          <Button variant="outline" onClick={() => navigate("/")}>Back to sign in</Button>
-        </div>
-      </div>
-    );
-  }
+  // Redirect to login after success
+  useEffect(() => {
+    if (done) {
+      const t = setTimeout(() => {
+        window.location.href = "/";
+      }, 3000);
+      return () => clearTimeout(t);
+    }
+  }, [done]);
 
-  if (verifying) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (tokenError || !tokenData?.valid) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <div className="w-full max-w-sm text-center space-y-4">
-          <AlertCircle className="h-12 w-12 text-destructive mx-auto" />
-          <h1 className="text-xl font-semibold">Link Expired or Invalid</h1>
-          <p className="text-sm text-muted-foreground">
-            This password reset link has expired or already been used. Reset links are valid for 1 hour.
-          </p>
-          <Button variant="outline" onClick={() => navigate("/")}>Back to sign in</Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (resetMutation.isSuccess) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <div className="w-full max-w-sm text-center space-y-4">
-          <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto" />
-          <h1 className="text-xl font-semibold">Password Updated</h1>
-          <p className="text-sm text-muted-foreground">
-            Your password has been changed. You can now sign in with your new password.
-          </p>
-          <Button onClick={() => navigate("/")}>Sign in</Button>
-        </div>
-      </div>
-    );
-  }
+  const isTokenMissing = !token;
+  const isTokenBad = !verifying && (tokenInvalid || (tokenData && !tokenData.valid));
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm space-y-8">
+        {/* Logo */}
         <div className="flex flex-col items-center gap-3 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary shadow-md">
             <PaintBucket className="h-7 w-7 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Choose a new password</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">JobsOxo</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              For account <strong>{tokenData.username}</strong>
+              {done ? "Password updated" : "Set a new password"}
             </p>
           </div>
         </div>
 
         <div className="rounded-xl border bg-card p-6 shadow-sm">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit((d) => resetMutation.mutate(d))} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>New Password</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        type="password"
-                        placeholder="10+ chars, A-Z, a-z, !@#$%"
-                        autoComplete="new-password"
-                        data-testid="input-new-password"
-                      />
-                    </FormControl>
-                    <PasswordStrength password={passwordValue} />
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="confirmPassword"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Confirm New Password</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        type="password"
-                        placeholder="Repeat your new password"
-                        autoComplete="new-password"
-                        data-testid="input-confirm-new-password"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          {/* Verifying token */}
+          {verifying && (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Verifying your reset link…</p>
+            </div>
+          )}
+
+          {/* Invalid / missing token */}
+          {!verifying && (isTokenMissing || isTokenBad) && (
+            <div className="flex flex-col items-center gap-4 py-4 text-center">
+              <AlertCircle className="h-10 w-10 text-destructive" />
+              <div className="space-y-1">
+                <p className="font-medium">Link invalid or expired</p>
+                <p className="text-sm text-muted-foreground">
+                  Reset links are only valid for 1 hour. Please request a new one.
+                </p>
+              </div>
               <Button
-                type="submit"
                 className="w-full"
-                disabled={resetMutation.isPending}
-                data-testid="button-reset-password"
+                onClick={() => (window.location.href = "/")}
+                data-testid="button-back-to-login-invalid"
               >
-                {resetMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                Set New Password
+                Back to sign in
               </Button>
-            </form>
-          </Form>
+            </div>
+          )}
+
+          {/* Success */}
+          {done && (
+            <div className="flex flex-col items-center gap-4 py-4 text-center">
+              <CheckCircle2 className="h-10 w-10 text-green-500" />
+              <div className="space-y-1">
+                <p className="font-medium">Password updated!</p>
+                <p className="text-sm text-muted-foreground">
+                  You'll be redirected to sign in automatically in a moment.
+                </p>
+              </div>
+              <Button
+                className="w-full"
+                onClick={() => (window.location.href = "/")}
+                data-testid="button-go-to-login"
+              >
+                Sign in now
+              </Button>
+            </div>
+          )}
+
+          {/* Reset form */}
+          {!verifying && !isTokenMissing && !isTokenBad && !done && (
+            <div className="space-y-4">
+              {tokenData?.username && (
+                <p className="text-sm text-muted-foreground">
+                  Setting a new password for{" "}
+                  <span className="font-medium text-foreground">{tokenData.username}</span>.
+                </p>
+              )}
+              <Form {...form}>
+                <form
+                  onSubmit={form.handleSubmit((d) => resetMutation.mutate(d))}
+                  className="space-y-4"
+                >
+                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>New password</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            type="password"
+                            placeholder="10+ chars, A-Z, a-z, !@#$%"
+                            autoComplete="new-password"
+                            data-testid="input-new-password"
+                          />
+                        </FormControl>
+                        <PasswordStrength password={passwordValue} />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="confirmPassword"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Confirm new password</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            type="password"
+                            placeholder="Repeat your new password"
+                            autoComplete="new-password"
+                            data-testid="input-confirm-password"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={resetMutation.isPending}
+                    data-testid="button-reset-password"
+                  >
+                    {resetMutation.isPending && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    Update password
+                  </Button>
+                </form>
+              </Form>
+            </div>
+          )}
         </div>
 
         <p className="text-center text-xs text-muted-foreground">
