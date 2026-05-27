@@ -425,7 +425,10 @@ export async function registerRoutes(
 
   app.post("/api/jobs", async (req, res) => {
     try {
-      const job = await storage.createJob(req.body);
+      const body = { ...req.body };
+      if (body.startDate) body.startDate = new Date(body.startDate);
+      if (body.endDate) body.endDate = new Date(body.endDate);
+      const job = await storage.createJob(body);
       res.status(201).json(job);
     } catch (error) {
       console.error("Create job error:", error);
@@ -435,7 +438,10 @@ export async function registerRoutes(
 
   app.patch("/api/jobs/:id", async (req, res) => {
     try {
-      const job = await storage.updateJob(req.params.id, req.body);
+      const body = { ...req.body };
+      if (body.startDate) body.startDate = new Date(body.startDate);
+      if (body.endDate) body.endDate = new Date(body.endDate);
+      const job = await storage.updateJob(req.params.id, body);
       if (!job) {
         return res.status(404).json({ error: "Job not found" });
       }
