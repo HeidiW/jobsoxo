@@ -42,7 +42,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
 import {
   Plus,
   ArrowLeft,
@@ -135,11 +135,24 @@ function LineItemForm({
       onClose();
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
+      if (error instanceof ApiError && error.details) {
+        Object.entries(error.details).forEach(([field, messages]) => {
+          form.setError(field as keyof LineItemFormValues, {
+            type: "server",
+            message: Array.isArray(messages) ? messages[0] : String(messages),
+          });
+        });
+        toast({
+          title: "Please fix the errors below",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
     },
   });
 
