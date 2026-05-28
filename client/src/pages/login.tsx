@@ -294,9 +294,9 @@ export default function Login() {
               <form onSubmit={setupForm.handleSubmit((d) => setupMutation.mutate(d))} className="space-y-4">
                 <FormField control={setupForm.control} name="username" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Username</FormLabel>
+                    <FormLabel>Username or Email</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="e.g. john" autoComplete="username" data-testid="input-setup-username" />
+                      <Input {...field} placeholder="e.g. john or john@example.com" autoComplete="username" data-testid="input-setup-username" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -385,9 +385,9 @@ export default function Login() {
                 <form onSubmit={loginForm.handleSubmit((d) => loginMutation.mutate(d))} className="space-y-4">
                   <FormField control={loginForm.control} name="username" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Username</FormLabel>
+                      <FormLabel>Username or Email</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="Your username" autoComplete="username" data-testid="input-login-username" />
+                        <Input {...field} placeholder="Your username or email" autoComplete="username" data-testid="input-login-username" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -458,15 +458,15 @@ export default function Login() {
           {currentView === "forgot" && (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Enter your username and we'll send a reset link to your email address on file.
+                Enter your username or email and we'll send a reset link to your email address on file.
               </p>
               <Form {...forgotForm}>
                 <form onSubmit={forgotForm.handleSubmit((d) => forgotMutation.mutate(d))} className="space-y-4">
                   <FormField control={forgotForm.control} name="username" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Username</FormLabel>
+                      <FormLabel>Username or Email</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="Your username" autoComplete="username" data-testid="input-forgot-username" />
+                        <Input {...field} placeholder="Your username or email" autoComplete="username" data-testid="input-forgot-username" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

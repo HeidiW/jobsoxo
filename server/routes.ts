@@ -82,7 +82,7 @@ export async function registerRoutes(
       if (!username || !password) {
         return res.status(400).json({ error: "Username and password required" });
       }
-      const user = await storage.getUserByUsername(username);
+      const user = await storage.getUserByUsernameOrEmail(username);
       if (!user || !(await bcrypt.compare(password, user.password))) {
         return res.status(401).json({ error: "Invalid username or password" });
       }
@@ -118,9 +118,9 @@ export async function registerRoutes(
   app.post("/api/auth/forgot-password", async (req, res) => {
     try {
       const { username } = req.body;
-      if (!username) return res.status(400).json({ error: "Username required" });
+      if (!username) return res.status(400).json({ error: "Username or email required" });
 
-      const user = await storage.getUserByUsername(username);
+      const user = await storage.getUserByUsernameOrEmail(username);
       // Always respond the same way to prevent username enumeration
       if (!user || !user.email) {
         return res.json({ message: "If that account exists and has an email on file, a reset link has been sent." });
