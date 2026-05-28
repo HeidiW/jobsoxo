@@ -80,7 +80,12 @@ export const jobsRelations = relations(jobs, ({ one, many }) => ({
   employeeAssignments: many(employeeAssignments),
 }));
 
-export const insertJobSchema = createInsertSchema(jobs).omit({ id: true, createdAt: true });
+export const insertJobSchema = createInsertSchema(jobs)
+  .omit({ id: true, createdAt: true })
+  .extend({
+    startDate: z.coerce.date().optional().nullable(),
+    endDate: z.coerce.date().optional().nullable(),
+  });
 export type InsertJob = z.infer<typeof insertJobSchema>;
 export type Job = typeof jobs.$inferSelect;
 
@@ -149,7 +154,13 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   payments: many(payments),
 }));
 
-export const insertInvoiceSchema = createInsertSchema(invoices).omit({ id: true, createdAt: true });
+export const insertInvoiceSchema = createInsertSchema(invoices)
+  .omit({ id: true, createdAt: true })
+  .extend({
+    issueDate: z.coerce.date().optional(),
+    dueDate: z.coerce.date(),
+    lastReminderSent: z.coerce.date().optional().nullable(),
+  });
 export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
 export type Invoice = typeof invoices.$inferSelect;
 
@@ -171,7 +182,11 @@ export const paymentsRelations = relations(payments, ({ one }) => ({
   }),
 }));
 
-export const insertPaymentSchema = createInsertSchema(payments).omit({ id: true });
+export const insertPaymentSchema = createInsertSchema(payments)
+  .omit({ id: true })
+  .extend({
+    paymentDate: z.coerce.date().optional(),
+  });
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 export type Payment = typeof payments.$inferSelect;
 
@@ -194,7 +209,11 @@ export const employeesRelations = relations(employees, ({ many }) => ({
   payrollRecords: many(payrollRecords),
 }));
 
-export const insertEmployeeSchema = createInsertSchema(employees).omit({ id: true, createdAt: true });
+export const insertEmployeeSchema = createInsertSchema(employees)
+  .omit({ id: true, createdAt: true })
+  .extend({
+    hireDate: z.coerce.date().optional().nullable(),
+  });
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 export type Employee = typeof employees.$inferSelect;
 
@@ -243,7 +262,11 @@ export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
   }),
 }));
 
-export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({ id: true, createdAt: true });
+export const insertTimeEntrySchema = createInsertSchema(timeEntries)
+  .omit({ id: true, createdAt: true })
+  .extend({
+    date: z.coerce.date(),
+  });
 export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
 export type TimeEntry = typeof timeEntries.$inferSelect;
 

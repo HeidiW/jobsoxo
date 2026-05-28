@@ -19,6 +19,10 @@ function parseNumeric(value: unknown): number {
   return 0;
 }
 
+function badRequest(res: Response, err: z.ZodError) {
+  return res.status(400).json({ error: "Invalid request data", details: err.flatten().fieldErrors });
+}
+
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
     return res.status(401).json({ error: "Unauthorized" });
@@ -361,7 +365,9 @@ export async function registerRoutes(
 
   app.post("/api/clients", async (req, res) => {
     try {
-      const client = await storage.createClient(req.body);
+      const parsed = insertClientSchema.safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const client = await storage.createClient(parsed.data);
       res.status(201).json(client);
     } catch (error) {
       console.error("Create client error:", error);
@@ -371,7 +377,9 @@ export async function registerRoutes(
 
   app.patch("/api/clients/:id", async (req, res) => {
     try {
-      const client = await storage.updateClient(req.params.id, req.body);
+      const parsed = insertClientSchema.partial().safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const client = await storage.updateClient(req.params.id, parsed.data);
       if (!client) {
         return res.status(404).json({ error: "Client not found" });
       }
@@ -425,10 +433,9 @@ export async function registerRoutes(
 
   app.post("/api/jobs", async (req, res) => {
     try {
-      const body = { ...req.body };
-      if (body.startDate) body.startDate = new Date(body.startDate);
-      if (body.endDate) body.endDate = new Date(body.endDate);
-      const job = await storage.createJob(body);
+      const parsed = insertJobSchema.safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const job = await storage.createJob(parsed.data);
       res.status(201).json(job);
     } catch (error) {
       console.error("Create job error:", error);
@@ -438,10 +445,9 @@ export async function registerRoutes(
 
   app.patch("/api/jobs/:id", async (req, res) => {
     try {
-      const body = { ...req.body };
-      if (body.startDate) body.startDate = new Date(body.startDate);
-      if (body.endDate) body.endDate = new Date(body.endDate);
-      const job = await storage.updateJob(req.params.id, body);
+      const parsed = insertJobSchema.partial().safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const job = await storage.updateJob(req.params.id, parsed.data);
       if (!job) {
         return res.status(404).json({ error: "Job not found" });
       }
@@ -475,7 +481,9 @@ export async function registerRoutes(
 
   app.post("/api/line-items", async (req, res) => {
     try {
-      const item = await storage.createLineItem(req.body);
+      const parsed = insertLineItemSchema.safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const item = await storage.createLineItem(parsed.data);
       res.status(201).json(item);
     } catch (error) {
       console.error("Create line item error:", error);
@@ -485,7 +493,9 @@ export async function registerRoutes(
 
   app.patch("/api/line-items/:id", async (req, res) => {
     try {
-      const item = await storage.updateLineItem(req.params.id, req.body);
+      const parsed = insertLineItemSchema.partial().safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const item = await storage.updateLineItem(req.params.id, parsed.data);
       if (!item) {
         return res.status(404).json({ error: "Line item not found" });
       }
@@ -551,9 +561,26 @@ export async function registerRoutes(
     }
   });
 
+  const createInvoiceInputSchema = insertInvoiceSchema
+    .pick({ clientId: true, jobId: true, taxRate: true, dueDate: true, notes: true, termsAndConditions: true })
+    .extend({
+      lineItems: z.array(z.object({
+        category: z.string(),
+        description: z.string(),
+        quantity: z.union([z.string(), z.number()]),
+        unit: z.string(),
+        rate: z.union([z.string(), z.number()]),
+        isChangeOrder: z.boolean().optional(),
+        changeOrderReason: z.string().optional().nullable(),
+      })).optional(),
+      send: z.boolean().optional(),
+    });
+
   app.post("/api/invoices", async (req, res) => {
     try {
-      const { lineItems: items, send, ...invoiceData } = req.body;
+      const inputParsed = createInvoiceInputSchema.safeParse(req.body);
+      if (!inputParsed.success) return badRequest(res, inputParsed.error);
+      const { lineItems: items, send, ...invoiceData } = inputParsed.data;
       
       let subtotal = 0;
       if (items && items.length > 0) {
@@ -634,6 +661,21 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/invoices/:id", async (req, res) => {
+    try {
+      const parsed = insertInvoiceSchema.partial().safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const invoice = await storage.updateInvoice(req.params.id, parsed.data);
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+      res.json(invoice);
+    } catch (error) {
+      console.error("Update invoice error:", error);
+      res.status(500).json({ error: "Failed to update invoice" });
+    }
+  });
+
   app.post("/api/invoices/:id/send", async (req, res) => {
     try {
       const invoice = await storage.getInvoice(req.params.id);
@@ -706,12 +748,12 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Invoice not found" });
       }
 
-      const payment = await storage.createPayment({
-        ...req.body,
-        invoiceId: req.params.id,
-      });
+      const parsed = insertPaymentSchema.safeParse({ ...req.body, invoiceId: req.params.id });
+      if (!parsed.success) return badRequest(res, parsed.error);
 
-      const newAmountPaid = Number(invoice.amountPaid) + Number(req.body.amount);
+      const payment = await storage.createPayment(parsed.data);
+
+      const newAmountPaid = Number(invoice.amountPaid) + Number(parsed.data.amount);
       const newBalance = Number(invoice.total) - newAmountPaid;
       
       await storage.updateInvoice(req.params.id, {
@@ -776,7 +818,9 @@ export async function registerRoutes(
 
   app.post("/api/employees", async (req, res) => {
     try {
-      const employee = await storage.createEmployee(req.body);
+      const parsed = insertEmployeeSchema.safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const employee = await storage.createEmployee(parsed.data);
       res.status(201).json(employee);
     } catch (error) {
       console.error("Create employee error:", error);
@@ -786,7 +830,9 @@ export async function registerRoutes(
 
   app.patch("/api/employees/:id", async (req, res) => {
     try {
-      const employee = await storage.updateEmployee(req.params.id, req.body);
+      const parsed = insertEmployeeSchema.partial().safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const employee = await storage.updateEmployee(req.params.id, parsed.data);
       if (!employee) {
         return res.status(404).json({ error: "Employee not found" });
       }
@@ -827,7 +873,9 @@ export async function registerRoutes(
 
   app.post("/api/time-entries", async (req, res) => {
     try {
-      const entry = await storage.createTimeEntry(req.body);
+      const parsed = insertTimeEntrySchema.safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const entry = await storage.createTimeEntry(parsed.data);
       res.status(201).json(entry);
     } catch (error) {
       console.error("Create time entry error:", error);
@@ -856,7 +904,9 @@ export async function registerRoutes(
 
   app.patch("/api/settings", async (req, res) => {
     try {
-      const settings = await storage.updateSettings(req.body);
+      const parsed = insertSettingsSchema.partial().safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const settings = await storage.updateSettings(parsed.data);
       res.json(settings);
     } catch (error) {
       console.error("Update settings error:", error);
