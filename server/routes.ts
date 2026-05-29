@@ -607,7 +607,7 @@ export async function registerRoutes(
         taxAmount: String(taxAmount),
         total: String(total),
         balance: String(total),
-        issueDate: new Date().toISOString(),
+        issueDate: new Date(),
         dueDate: invoiceData.dueDate,
         notes: invoiceData.notes || null,
         termsAndConditions: invoiceData.termsAndConditions || null,
