@@ -85,6 +85,8 @@ export const insertJobSchema = createInsertSchema(jobs)
   .extend({
     startDate: z.coerce.date().optional().nullable(),
     endDate: z.coerce.date().optional().nullable(),
+    squareFootage: z.coerce.string().optional().nullable(),
+    estimatedTotal: z.coerce.string().optional().nullable(),
   });
 export type InsertJob = z.infer<typeof insertJobSchema>;
 export type Job = typeof jobs.$inferSelect;
@@ -115,7 +117,13 @@ export const lineItemsRelations = relations(lineItems, ({ one }) => ({
   }),
 }));
 
-export const insertLineItemSchema = createInsertSchema(lineItems).omit({ id: true });
+export const insertLineItemSchema = createInsertSchema(lineItems)
+  .omit({ id: true })
+  .extend({
+    quantity: z.coerce.string(),
+    rate: z.coerce.string(),
+    amount: z.coerce.string(),
+  });
 export type InsertLineItem = z.infer<typeof insertLineItemSchema>;
 export type LineItem = typeof lineItems.$inferSelect;
 
@@ -160,6 +168,12 @@ export const insertInvoiceSchema = createInsertSchema(invoices)
     issueDate: z.coerce.date().optional(),
     dueDate: z.coerce.date(),
     lastReminderSent: z.coerce.date().optional().nullable(),
+    subtotal: z.coerce.string(),
+    taxRate: z.coerce.string().optional(),
+    taxAmount: z.coerce.string().optional(),
+    total: z.coerce.string(),
+    amountPaid: z.coerce.string().optional(),
+    balance: z.coerce.string(),
   });
 export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
 export type Invoice = typeof invoices.$inferSelect;
@@ -186,6 +200,7 @@ export const insertPaymentSchema = createInsertSchema(payments)
   .omit({ id: true })
   .extend({
     paymentDate: z.coerce.date().optional(),
+    amount: z.coerce.string(),
   });
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 export type Payment = typeof payments.$inferSelect;
@@ -213,6 +228,7 @@ export const insertEmployeeSchema = createInsertSchema(employees)
   .omit({ id: true, createdAt: true })
   .extend({
     hireDate: z.coerce.date().optional().nullable(),
+    hourlyRate: z.coerce.string(),
   });
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 export type Employee = typeof employees.$inferSelect;
@@ -266,6 +282,7 @@ export const insertTimeEntrySchema = createInsertSchema(timeEntries)
   .omit({ id: true, createdAt: true })
   .extend({
     date: z.coerce.date(),
+    hoursWorked: z.coerce.string(),
   });
 export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
 export type TimeEntry = typeof timeEntries.$inferSelect;
@@ -293,7 +310,15 @@ export const payrollRecordsRelations = relations(payrollRecords, ({ one }) => ({
   }),
 }));
 
-export const insertPayrollRecordSchema = createInsertSchema(payrollRecords).omit({ id: true, createdAt: true });
+export const insertPayrollRecordSchema = createInsertSchema(payrollRecords)
+  .omit({ id: true, createdAt: true })
+  .extend({
+    totalHours: z.coerce.string(),
+    hourlyRate: z.coerce.string(),
+    grossPay: z.coerce.string(),
+    deductions: z.coerce.string().optional(),
+    netPay: z.coerce.string(),
+  });
 export type InsertPayrollRecord = z.infer<typeof insertPayrollRecordSchema>;
 export type PayrollRecord = typeof payrollRecords.$inferSelect;
 
@@ -311,6 +336,10 @@ export const settings = pgTable("settings", {
   emailSettings: jsonb("email_settings"),
 });
 
-export const insertSettingsSchema = createInsertSchema(settings).omit({ id: true });
+export const insertSettingsSchema = createInsertSchema(settings)
+  .omit({ id: true })
+  .extend({
+    taxRate: z.coerce.string().optional(),
+  });
 export type InsertSettings = z.infer<typeof insertSettingsSchema>;
 export type Settings = typeof settings.$inferSelect;
