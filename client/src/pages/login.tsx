@@ -276,7 +276,7 @@ export default function Login() {
           </div>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">JobsOxo</h1>
-            <p className="text-sm font-medium text-primary mt-0.5">Price, Manage, Get Paid</p>
+            <p className="text-sm font-medium text-primary mt-0.5">Price · Manage · Get Paid</p>
             <p className="text-sm text-muted-foreground mt-1">
               {currentView === "setup" && "Create your account to get started"}
               {currentView === "login" && "Sign in to your account"}
