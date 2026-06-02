@@ -853,6 +853,32 @@ export async function registerRoutes(
     }
   });
 
+  // Employee Assignments
+  app.get("/api/jobs/:id/assignments", async (req, res) => {
+    try {
+      const assignments = await storage.getAssignmentsByJob(req.params.id);
+      res.json(assignments);
+    } catch (error) {
+      console.error("Get assignments error:", error);
+      res.status(500).json({ error: "Failed to get assignments" });
+    }
+  });
+
+  app.put("/api/jobs/:id/assignments", async (req, res) => {
+    try {
+      const { employeeIds } = req.body;
+      if (!Array.isArray(employeeIds)) {
+        return res.status(400).json({ error: "employeeIds must be an array" });
+      }
+      await storage.setJobAssignments(req.params.id, employeeIds);
+      const assignments = await storage.getAssignmentsByJob(req.params.id);
+      res.json(assignments);
+    } catch (error) {
+      console.error("Set assignments error:", error);
+      res.status(500).json({ error: "Failed to update assignments" });
+    }
+  });
+
   // Time Entries
   app.get("/api/time-entries", async (req, res) => {
     try {

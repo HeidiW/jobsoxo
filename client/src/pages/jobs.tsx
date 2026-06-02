@@ -60,7 +60,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { format } from "date-fns";
-import type { Job, Client } from "@shared/schema";
+import { Users } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import type { Job, Client, Employee, EmployeeAssignment } from "@shared/schema";
 
 const jobFormSchema = z.object({
   clientId: z.string().min(1, "Client is required"),
@@ -72,6 +74,7 @@ const jobFormSchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   estimatedTotal: z.string().optional(),
+  employeeIds: z.array(z.string()).optional(),
 });
 
 type JobFormValues = z.infer<typeof jobFormSchema>;
@@ -107,6 +110,15 @@ function JobForm({
     queryKey: ["/api/clients"],
   });
 
+  const { data: employees } = useQuery<Employee[]>({
+    queryKey: ["/api/employees"],
+  });
+
+  const { data: existingAssignments } = useQuery<EmployeeAssignment[]>({
+    queryKey: ["/api/jobs", job?.id, "assignments"],
+    enabled: isEdit && !!job?.id,
+  });
+
   const form = useForm<JobFormValues>({
     resolver: zodResolver(jobFormSchema),
     defaultValues: {
@@ -119,22 +131,34 @@ function JobForm({
       startDate: job?.startDate ? format(new Date(job.startDate), "yyyy-MM-dd") : "",
       endDate: job?.endDate ? format(new Date(job.endDate), "yyyy-MM-dd") : "",
       estimatedTotal: job?.estimatedTotal?.toString() || "",
+      employeeIds: [],
     },
   });
+
+  // Populate employee selections once existing assignments load
+  if (isEdit && existingAssignments && form.getValues("employeeIds")?.length === 0 && existingAssignments.length > 0) {
+    form.setValue("employeeIds", existingAssignments.map((a) => a.employeeId));
+  }
 
   const mutation = useMutation({
     mutationFn: async (data: JobFormValues) => {
       const url = isEdit ? `/api/jobs/${job.id}` : "/api/jobs";
       const method = isEdit ? "PATCH" : "POST";
+      const { employeeIds, ...jobData } = data;
       const payload = {
-        ...data,
-        squareFootage: data.squareFootage ? parseFloat(data.squareFootage) : null,
-        estimatedTotal: data.estimatedTotal ? parseFloat(data.estimatedTotal) : null,
-        startDate: data.startDate ? new Date(data.startDate).toISOString() : null,
-        endDate: data.endDate ? new Date(data.endDate).toISOString() : null,
+        ...jobData,
+        squareFootage: jobData.squareFootage ? parseFloat(jobData.squareFootage) : null,
+        estimatedTotal: jobData.estimatedTotal ? parseFloat(jobData.estimatedTotal) : null,
+        startDate: jobData.startDate ? new Date(jobData.startDate).toISOString() : null,
+        endDate: jobData.endDate ? new Date(jobData.endDate).toISOString() : null,
       };
       const res = await apiRequest(method, url, payload);
-      return res.json();
+      const savedJob = await res.json();
+      // Sync employee assignments
+      await apiRequest("PUT", `/api/jobs/${savedJob.id}/assignments`, {
+        employeeIds: employeeIds || [],
+      });
+      return savedJob;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
@@ -317,6 +341,49 @@ function JobForm({
             </FormItem>
           )}
         />
+        {/* Employees */}
+        {employees && employees.length > 0 && (
+          <FormField
+            control={form.control}
+            name="employeeIds"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="flex items-center gap-1.5">
+                  <Users className="h-4 w-4" />
+                  Assigned Employees
+                </FormLabel>
+                <div className="rounded-md border divide-y max-h-40 overflow-y-auto">
+                  {employees.map((emp) => {
+                    const checked = field.value?.includes(emp.id) ?? false;
+                    return (
+                      <label
+                        key={emp.id}
+                        className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors"
+                        data-testid={`checkbox-employee-${emp.id}`}
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(val) => {
+                            const current = field.value ?? [];
+                            field.onChange(
+                              val ? [...current, emp.id] : current.filter((id) => id !== emp.id)
+                            );
+                          }}
+                        />
+                        <span className="text-sm">{emp.name}</span>
+                        {emp.position && (
+                          <span className="text-xs text-muted-foreground ml-auto">{emp.position}</span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        )}
+
         <div className="flex justify-end gap-2 pt-4">
           <Button type="button" variant="outline" onClick={onClose} data-testid="button-cancel-job">
             Cancel

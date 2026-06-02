@@ -91,6 +91,10 @@ export interface IStorage {
   updateEmployee(id: string, employee: Partial<InsertEmployee>): Promise<Employee | undefined>;
   deleteEmployee(id: string): Promise<void>;
 
+  // Employee Assignments
+  getAssignmentsByJob(jobId: string): Promise<EmployeeAssignment[]>;
+  setJobAssignments(jobId: string, employeeIds: string[]): Promise<void>;
+
   // Time Entries
   getTimeEntries(): Promise<TimeEntry[]>;
   getTimeEntriesByEmployee(employeeId: string): Promise<TimeEntry[]>;
@@ -359,6 +363,20 @@ export class DatabaseStorage implements IStorage {
     } else {
       const [newSettings] = await db.insert(settings).values(settingsData as InsertSettings).returning();
       return newSettings;
+    }
+  }
+
+  // Employee Assignments
+  async getAssignmentsByJob(jobId: string): Promise<EmployeeAssignment[]> {
+    return db.select().from(employeeAssignments).where(eq(employeeAssignments.jobId, jobId));
+  }
+
+  async setJobAssignments(jobId: string, employeeIds: string[]): Promise<void> {
+    await db.delete(employeeAssignments).where(eq(employeeAssignments.jobId, jobId));
+    if (employeeIds.length > 0) {
+      await db.insert(employeeAssignments).values(
+        employeeIds.map((employeeId) => ({ employeeId, jobId }))
+      );
     }
   }
 
