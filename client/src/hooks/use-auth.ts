@@ -4,6 +4,7 @@ import { apiRequest, queryClient, getQueryFn } from "@/lib/queryClient";
 interface AuthUser {
   id: string;
   username: string;
+  isAdmin: boolean;
 }
 
 export function useAuth() {

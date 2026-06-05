@@ -21,6 +21,7 @@ import {
   type InsertPayrollRecord,
   type Settings,
   type InsertSettings,
+  type Invite,
   users,
   clients,
   jobs,
@@ -32,6 +33,7 @@ import {
   timeEntries,
   payrollRecords,
   settings,
+  invites,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql, isNull, or } from "drizzle-orm";
@@ -103,6 +105,13 @@ export interface IStorage {
   // Settings
   getSettings(): Promise<Settings | undefined>;
   updateSettings(settings: Partial<InsertSettings>): Promise<Settings>;
+
+  // Invites
+  getInvites(): Promise<Invite[]>;
+  getInviteByCode(code: string): Promise<Invite | undefined>;
+  createInvite(code: string, label?: string): Promise<Invite>;
+  markInviteUsed(code: string, userId: string): Promise<void>;
+  deleteInvite(id: string): Promise<void>;
 
   // Dashboard
   getDashboardStats(): Promise<{
@@ -364,6 +373,29 @@ export class DatabaseStorage implements IStorage {
       const [newSettings] = await db.insert(settings).values(settingsData as InsertSettings).returning();
       return newSettings;
     }
+  }
+
+  // Invites
+  async getInvites(): Promise<Invite[]> {
+    return db.select().from(invites).orderBy(desc(invites.createdAt));
+  }
+
+  async getInviteByCode(code: string): Promise<Invite | undefined> {
+    const [invite] = await db.select().from(invites).where(eq(invites.code, code));
+    return invite || undefined;
+  }
+
+  async createInvite(code: string, label?: string): Promise<Invite> {
+    const [invite] = await db.insert(invites).values({ code, label: label || null }).returning();
+    return invite;
+  }
+
+  async markInviteUsed(code: string, userId: string): Promise<void> {
+    await db.update(invites).set({ usedAt: new Date(), usedByUserId: userId }).where(eq(invites.code, code));
+  }
+
+  async deleteInvite(id: string): Promise<void> {
+    await db.delete(invites).where(eq(invites.id, id));
   }
 
   // Employee Assignments

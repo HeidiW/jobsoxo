@@ -69,8 +69,24 @@ const forgotSchema = z.object({
   username: z.string().min(1, "Username is required"),
 });
 
+const signupSchema = z.object({
+  username: z.string().min(3, "At least 3 characters"),
+  password: z
+    .string()
+    .min(10, "At least 10 characters")
+    .regex(/[A-Z]/, "Must contain an uppercase letter")
+    .regex(/[a-z]/, "Must contain a lowercase letter")
+    .regex(/[^A-Za-z0-9]/, "Must contain a special character (e.g. !@#$%)"),
+  confirmPassword: z.string().min(1, "Please confirm your password"),
+  inviteCode: z.string().min(1, "Invite code is required"),
+}).refine((d) => d.password === d.confirmPassword, {
+  message: "Passwords do not match",
+  path: ["confirmPassword"],
+});
+
 type LoginValues = z.infer<typeof loginSchema>;
 type SetupValues = z.infer<typeof setupSchema>;
+type SignupValues = z.infer<typeof signupSchema>;
 type ForgotValues = z.infer<typeof forgotSchema>;
 
 // ─── Password strength ────────────────────────────────────────────────────────
@@ -141,7 +157,7 @@ type ProviderKey = (typeof PROVIDERS)[number]["key"];
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-type View = "login" | "setup" | "forgot" | "forgot-sent";
+type View = "login" | "setup" | "signup" | "forgot" | "forgot-sent";
 
 export default function Login() {
   const { toast } = useToast();
@@ -189,12 +205,18 @@ export default function Login() {
     defaultValues: { username: "", password: "", confirmPassword: "" },
   });
 
+  const signupForm = useForm<SignupValues>({
+    resolver: zodResolver(signupSchema),
+    defaultValues: { username: "", password: "", confirmPassword: "", inviteCode: "" },
+  });
+
   const forgotForm = useForm<ForgotValues>({
     resolver: zodResolver(forgotSchema),
     defaultValues: { username: "" },
   });
 
   const passwordValue = useWatch({ control: setupForm.control, name: "password" });
+  const signupPasswordValue = useWatch({ control: signupForm.control, name: "password" });
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
@@ -229,6 +251,27 @@ export default function Login() {
     onError: (err: Error) => {
       toast({
         title: "Setup failed",
+        description: err.message.replace(/^\d+:\s*/, ""),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const signupMutation = useMutation({
+    mutationFn: async (data: SignupValues) => {
+      const res = await apiRequest("POST", "/api/auth/signup", {
+        username: data.username,
+        password: data.password,
+        inviteCode: data.inviteCode,
+      });
+      return res.json();
+    },
+    onSuccess: (user) => {
+      queryClient.setQueryData(["/api/auth/me"], user);
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Sign up failed",
         description: err.message.replace(/^\d+:\s*/, ""),
         variant: "destructive",
       });
@@ -280,6 +323,7 @@ export default function Login() {
             <p className="text-sm text-muted-foreground mt-1">
               {currentView === "setup" && "Create your account to get started"}
               {currentView === "login" && "Sign in to your account"}
+              {currentView === "signup" && "Create your account with an invite code"}
               {currentView === "forgot" && "Reset your password"}
               {currentView === "forgot-sent" && "Check your email"}
             </p>
@@ -379,6 +423,58 @@ export default function Login() {
             </>
           )}
 
+          {/* Signup form (invite-based) */}
+          {currentView === "signup" && (
+            <Form {...signupForm}>
+              <form onSubmit={signupForm.handleSubmit((d) => signupMutation.mutate(d))} className="space-y-4">
+                <FormField control={signupForm.control} name="username" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Username</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="Choose a username" autoComplete="username" data-testid="input-signup-username" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={signupForm.control} name="password" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="password" placeholder="10+ chars, A-Z, a-z, !@#$%" autoComplete="new-password" data-testid="input-signup-password" />
+                    </FormControl>
+                    <PasswordStrength password={signupPasswordValue} />
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={signupForm.control} name="confirmPassword" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Confirm Password</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="password" placeholder="Repeat your password" autoComplete="new-password" data-testid="input-signup-confirm" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={signupForm.control} name="inviteCode" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Invite Code</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="8-character code" autoComplete="off" className="font-mono uppercase tracking-widest" data-testid="input-signup-invite-code" onChange={(e) => field.onChange(e.target.value.toUpperCase())} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <Button type="submit" className="w-full" disabled={signupMutation.isPending} data-testid="button-create-account-invite">
+                  {signupMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Create Account
+                </Button>
+                <button type="button" onClick={() => setView("login")} className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-back-to-login-from-signup">
+                  Already have an account? <span className="font-medium">Sign in</span>
+                </button>
+              </form>
+            </Form>
+          )}
+
           {/* Login form */}
           {currentView === "login" && (
             <div className="space-y-4">
@@ -452,6 +548,17 @@ export default function Login() {
                   </div>
                 </>
               )}
+
+              <div className="pt-2 border-t text-center">
+                <button
+                  type="button"
+                  onClick={() => setView("signup")}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  data-testid="link-signup-with-invite"
+                >
+                  Have an invite code? <span className="font-medium">Create account</span>
+                </button>
+              </div>
             </div>
           )}
 

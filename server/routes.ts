@@ -7,7 +7,7 @@ import {
   insertClientSchema, insertJobSchema, insertLineItemSchema, insertInvoiceSchema,
   insertPaymentSchema, insertEmployeeSchema, insertTimeEntrySchema, insertSettingsSchema
 } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { sendInvoiceEmail, processOverdueReminders, sendPasswordResetEmail } from "./email";
 import bcrypt from "bcryptjs";
@@ -48,6 +48,15 @@ export async function registerRoutes(
     }
   });
 
+  function validatePassword(password: string): string | null {
+    if (password.length < 10) return "Password must be at least 10 characters";
+    if (!/[A-Z]/.test(password)) return "Password must contain an uppercase letter";
+    if (!/[a-z]/.test(password)) return "Password must contain a lowercase letter";
+    if (!/[^A-Za-z0-9]/.test(password)) return "Password must contain a special character";
+    return null;
+  }
+
+  // First-time setup — creates the admin account (only when no users exist)
   app.post("/api/auth/register", async (req, res) => {
     try {
       const [existing] = await db.select().from(users).limit(1);
@@ -58,24 +67,38 @@ export async function registerRoutes(
       if (!username || !password) {
         return res.status(400).json({ error: "Username and password required" });
       }
-      if (password.length < 10) {
-        return res.status(400).json({ error: "Password must be at least 10 characters" });
-      }
-      if (!/[A-Z]/.test(password)) {
-        return res.status(400).json({ error: "Password must contain an uppercase letter" });
-      }
-      if (!/[a-z]/.test(password)) {
-        return res.status(400).json({ error: "Password must contain a lowercase letter" });
-      }
-      if (!/[^A-Za-z0-9]/.test(password)) {
-        return res.status(400).json({ error: "Password must contain a special character" });
-      }
+      const pwErr = validatePassword(password);
+      if (pwErr) return res.status(400).json({ error: pwErr });
       const hash = await bcrypt.hash(password, 10);
-      const user = await storage.createUser({ username, password: hash });
+      const user = await storage.createUser({ username, password: hash, isAdmin: true });
       req.session.userId = user.id;
-      res.status(201).json({ id: user.id, username: user.username });
+      res.status(201).json({ id: user.id, username: user.username, isAdmin: user.isAdmin });
     } catch (error) {
       console.error("Register error:", error);
+      res.status(500).json({ error: "Failed to create account" });
+    }
+  });
+
+  // Invite-based signup — requires a valid unused invite code
+  app.post("/api/auth/signup", async (req, res) => {
+    try {
+      const { username, password, inviteCode } = req.body;
+      if (!username || !password || !inviteCode) {
+        return res.status(400).json({ error: "Username, password, and invite code are required" });
+      }
+      const pwErr = validatePassword(password);
+      if (pwErr) return res.status(400).json({ error: pwErr });
+      const invite = await storage.getInviteByCode(inviteCode.trim().toUpperCase());
+      if (!invite) return res.status(400).json({ error: "Invalid invite code" });
+      if (invite.usedAt) return res.status(400).json({ error: "This invite code has already been used" });
+      const hash = await bcrypt.hash(password, 10);
+      const user = await storage.createUser({ username, password: hash, isAdmin: false });
+      await storage.markInviteUsed(invite.code, user.id);
+      req.session.userId = user.id;
+      res.status(201).json({ id: user.id, username: user.username, isAdmin: user.isAdmin });
+    } catch (error: any) {
+      if (error?.code === "23505") return res.status(409).json({ error: "Username already taken" });
+      console.error("Signup error:", error);
       res.status(500).json({ error: "Failed to create account" });
     }
   });
@@ -109,11 +132,19 @@ export async function registerRoutes(
       if (!req.session.userId) {
         return res.status(401).json({ error: "Not authenticated" });
       }
-      const user = await storage.getUser(req.session.userId);
+      let user = await storage.getUser(req.session.userId);
       if (!user) {
         return res.status(401).json({ error: "User not found" });
       }
-      res.json({ id: user.id, username: user.username });
+      // Self-heal: if no admin exists yet (e.g. after first migration), promote current user
+      if (!user.isAdmin) {
+        const [{ count }] = await db.select({ count: sql<number>`count(*)` }).from(users).where(eq(users.isAdmin, true));
+        if (Number(count) === 0) {
+          await db.update(users).set({ isAdmin: true }).where(eq(users.id, user.id));
+          user = { ...user, isAdmin: true };
+        }
+      }
+      res.json({ id: user.id, username: user.username, isAdmin: user.isAdmin });
     } catch (error) {
       res.status(500).json({ error: "Failed to get user" });
     }
@@ -906,6 +937,44 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Create time entry error:", error);
       res.status(500).json({ error: "Failed to create time entry" });
+    }
+  });
+
+  // Invites (admin only)
+  app.get("/api/invites", async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.isAdmin) return res.status(403).json({ error: "Admin access required" });
+      const all = await storage.getInvites();
+      res.json(all);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get invites" });
+    }
+  });
+
+  app.post("/api/invites", async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.isAdmin) return res.status(403).json({ error: "Admin access required" });
+      const { label } = req.body;
+      const code = Array.from({ length: 8 }, () =>
+        "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"[Math.floor(Math.random() * 32)]
+      ).join("");
+      const invite = await storage.createInvite(code, label || undefined);
+      res.status(201).json(invite);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create invite" });
+    }
+  });
+
+  app.delete("/api/invites/:id", async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.isAdmin) return res.status(403).json({ error: "Admin access required" });
+      await storage.deleteInvite(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete invite" });
     }
   });
 

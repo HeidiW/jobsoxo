@@ -12,6 +12,7 @@ export const users = pgTable("users", {
   email: text("email"),
   phone: text("phone"),
   address: text("address"),
+  isAdmin: boolean("is_admin").default(false).notNull(),
   resetToken: text("reset_token"),
   resetTokenExpiry: timestamp("reset_token_expiry"),
 });
@@ -19,6 +20,20 @@ export const users = pgTable("users", {
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+// Invite codes — admin-generated single-use codes for new user registration
+export const invites = pgTable("invites", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  code: text("code").notNull().unique(),
+  label: text("label"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  usedAt: timestamp("used_at"),
+  usedByUserId: varchar("used_by_user_id").references(() => users.id),
+});
+
+export const insertInviteSchema = createInsertSchema(invites).omit({ id: true, createdAt: true, usedAt: true, usedByUserId: true });
+export type InsertInvite = z.infer<typeof insertInviteSchema>;
+export type Invite = typeof invites.$inferSelect;
 
 // OAuth accounts — links social identity providers to local users
 export const oauthAccounts = pgTable("oauth_accounts", {

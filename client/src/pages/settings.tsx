@@ -28,8 +28,15 @@ import {
   Receipt,
   Clock,
   Save,
+  Users,
+  Plus,
+  Trash2,
+  Copy,
+  Check,
 } from "lucide-react";
-import type { Settings } from "@shared/schema";
+import { useState } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import type { Settings, Invite } from "@shared/schema";
 
 const settingsFormSchema = z.object({
   companyName: z.string().optional(),
@@ -61,7 +68,156 @@ function SettingsSkeleton() {
   );
 }
 
+function InvitePanel() {
+  const { toast } = useToast();
+  const [label, setLabel] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const { data: invites = [], isLoading } = useQuery<Invite[]>({
+    queryKey: ["/api/invites"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/invites", { label: label.trim() || undefined });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invites"] });
+      setLabel("");
+      toast({ title: "Invite code created" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to create code", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/invites/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invites"] });
+      toast({ title: "Invite code removed" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to remove code", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const copyCode = (invite: Invite) => {
+    navigator.clipboard.writeText(invite.code);
+    setCopiedId(invite.id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const unused = invites.filter((i) => !i.usedAt);
+  const used = invites.filter((i) => i.usedAt);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Users className="h-5 w-5" />
+          Team Access
+        </CardTitle>
+        <CardDescription>
+          Generate single-use invite codes so others can create an account on your JobsOxo site
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Create new invite */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="Label (e.g. For Mike) — optional"
+            className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            data-testid="input-invite-label"
+          />
+          <Button
+            type="button"
+            onClick={() => createMutation.mutate()}
+            disabled={createMutation.isPending}
+            data-testid="button-create-invite"
+            className="shrink-0"
+          >
+            <Plus className="h-4 w-4 mr-1.5" />
+            Generate Code
+          </Button>
+        </div>
+
+        {/* Active (unused) codes */}
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading...</p>
+        ) : unused.length === 0 && used.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No invite codes yet — generate one above to share with your team
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {unused.length > 0 && (
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Active codes</p>
+            )}
+            {unused.map((invite) => (
+              <div key={invite.id} className="flex items-center justify-between p-3 rounded-md bg-muted/50 gap-3" data-testid={`invite-row-${invite.id}`}>
+                <div className="min-w-0">
+                  <span className="font-mono text-sm font-semibold tracking-widest">{invite.code}</span>
+                  {invite.label && <span className="ml-2 text-xs text-muted-foreground">— {invite.label}</span>}
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    onClick={() => copyCode(invite)}
+                    data-testid={`button-copy-invite-${invite.id}`}
+                  >
+                    {copiedId === invite.id ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 text-destructive hover:text-destructive"
+                    onClick={() => deleteMutation.mutate(invite.id)}
+                    disabled={deleteMutation.isPending}
+                    data-testid={`button-revoke-invite-${invite.id}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+
+            {used.length > 0 && (
+              <>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide pt-1">Used codes</p>
+                {used.map((invite) => (
+                  <div key={invite.id} className="flex items-center justify-between p-3 rounded-md opacity-50 gap-3" data-testid={`invite-row-used-${invite.id}`}>
+                    <div className="min-w-0">
+                      <span className="font-mono text-sm tracking-widest line-through">{invite.code}</span>
+                      {invite.label && <span className="ml-2 text-xs text-muted-foreground">— {invite.label}</span>}
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0">Used</span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Each code can only be used once. Share it directly with the person you want to invite.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SettingsPage() {
+  const { user } = useAuth();
   const { toast } = useToast();
 
   const { data: settings, isLoading } = useQuery<Settings>({
@@ -325,6 +481,9 @@ export default function SettingsPage() {
           </div>
         </form>
       </Form>
+
+      {/* Only admins can manage invite codes */}
+      {user?.isAdmin && <InvitePanel />}
     </div>
   );
 }
