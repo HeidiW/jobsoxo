@@ -28,6 +28,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -41,9 +49,19 @@ import {
   DollarSign,
   Clock,
   CheckCircle,
+  Banknote,
+  CreditCard,
+  Building2,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { Invoice, Client, Job } from "@shared/schema";
+
+const PAYMENT_METHODS = [
+  { value: "cash", label: "Cash", icon: Banknote },
+  { value: "check", label: "Cheque", icon: FileText },
+  { value: "bank_transfer", label: "Bank Transfer", icon: Building2 },
+  { value: "credit_card", label: "Card", icon: CreditCard },
+] as const;
 
 interface InvoiceWithRelations extends Invoice {
   client: Client;
@@ -92,6 +110,11 @@ export default function Invoices() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
+  // Quick-pay dialog state
+  const [quickPayInvoice, setQuickPayInvoice] = useState<InvoiceWithRelations | null>(null);
+  const [quickPayMethod, setQuickPayMethod] = useState<string>("cash");
+  const [quickPayDate, setQuickPayDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
+
   const { data: invoices, isLoading } = useQuery<InvoiceWithRelations[]>({
     queryKey: ["/api/invoices"],
   });
@@ -103,41 +126,37 @@ export default function Invoices() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      toast({
-        title: "Invoice sent",
-        description: "The invoice has been sent to the client.",
-      });
+      toast({ title: "Invoice sent", description: "The invoice has been sent to the client." });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error sending invoice",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Error sending invoice", description: error.message, variant: "destructive" });
     },
   });
 
   const markPaidMutation = useMutation({
-    mutationFn: async (invoiceId: string) => {
-      const res = await apiRequest("POST", `/api/invoices/${invoiceId}/mark-paid`);
+    mutationFn: async ({ invoiceId, paymentMethod, paymentDate }: { invoiceId: string; paymentMethod: string; paymentDate: string }) => {
+      const res = await apiRequest("POST", `/api/invoices/${invoiceId}/mark-paid`, {
+        paymentMethod,
+        paymentDate: new Date(paymentDate).toISOString(),
+      });
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
-      toast({
-        title: "Invoice marked as paid",
-        description: "The invoice status has been updated.",
-      });
+      setQuickPayInvoice(null);
+      toast({ title: "Payment recorded", description: "Invoice marked as paid and payment logged." });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error updating invoice",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Error recording payment", description: error.message, variant: "destructive" });
     },
   });
+
+  const openQuickPay = (invoice: InvoiceWithRelations) => {
+    setQuickPayInvoice(invoice);
+    setQuickPayMethod("cash");
+    setQuickPayDate(format(new Date(), "yyyy-MM-dd"));
+  };
 
   const filteredInvoices = invoices?.filter((invoice) => {
     const matchesSearch =
@@ -167,7 +186,90 @@ export default function Invoices() {
     { total: 0, paid: 0, outstanding: 0, overdue: 0 }
   ) || { total: 0, paid: 0, outstanding: 0, overdue: 0 };
 
+  const formatCurrencyShort = (amount: string | number | null | undefined) => {
+    if (!amount) return "$0";
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Number(amount));
+  };
+
   return (
+    <>
+    {/* Quick Pay Dialog */}
+    <Dialog open={!!quickPayInvoice} onOpenChange={(open) => !open && setQuickPayInvoice(null)}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CheckCircle className="h-5 w-5 text-green-600" />
+            Record Payment
+          </DialogTitle>
+        </DialogHeader>
+        {quickPayInvoice && (
+          <div className="space-y-4 py-2">
+            <div className="rounded-md bg-muted/50 p-3 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Invoice</span>
+                <span className="font-mono font-medium">{quickPayInvoice.invoiceNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Client</span>
+                <span className="font-medium">{quickPayInvoice.client?.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Amount due</span>
+                <span className="font-mono font-semibold text-green-700 dark:text-green-400">{formatCurrency(quickPayInvoice.balance)}</span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>How was payment received?</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {PAYMENT_METHODS.map(({ value, label, icon: Icon }) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setQuickPayMethod(value)}
+                    data-testid={`button-pay-method-${value}`}
+                    className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                      quickPayMethod === value
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-input bg-background hover:bg-accent"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="quick-pay-date">Payment date</Label>
+              <Input
+                id="quick-pay-date"
+                type="date"
+                value={quickPayDate}
+                onChange={(e) => setQuickPayDate(e.target.value)}
+                data-testid="input-quick-pay-date"
+              />
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setQuickPayInvoice(null)} data-testid="button-cancel-quick-pay">
+            Cancel
+          </Button>
+          <Button
+            className="bg-green-600 hover:bg-green-700 text-white"
+            disabled={markPaidMutation.isPending}
+            onClick={() => quickPayInvoice && markPaidMutation.mutate({ invoiceId: quickPayInvoice.id, paymentMethod: quickPayMethod, paymentDate: quickPayDate })}
+            data-testid="button-confirm-quick-pay"
+          >
+            <CheckCircle className="h-4 w-4 mr-2" />
+            {markPaidMutation.isPending ? "Saving..." : "Confirm Payment"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
@@ -314,53 +416,59 @@ export default function Invoices() {
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" data-testid={`button-invoice-actions-${invoice.id}`}>
-                              <MoreHorizontal className="h-4 w-4" />
+                        <div className="flex items-center justify-end gap-1">
+                          {invoice.status !== "paid" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 text-green-700 border-green-300 hover:bg-green-50 hover:text-green-800 dark:text-green-400 dark:border-green-700 dark:hover:bg-green-950 gap-1.5"
+                              onClick={() => openQuickPay(invoice)}
+                              data-testid={`button-mark-paid-${invoice.id}`}
+                            >
+                              <CheckCircle className="h-3.5 w-3.5" />
+                              Mark Paid
                             </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem asChild>
-                              <Link href={`/invoices/${invoice.id}`} data-testid={`button-view-invoice-${invoice.id}`}>
-                                <Eye className="h-4 w-4 mr-2" />
-                                View
-                              </Link>
-                            </DropdownMenuItem>
-                            {invoice.status !== "paid" && (
-                              <>
-                                <DropdownMenuItem
-                                  onClick={() => sendInvoiceMutation.mutate(invoice.id)}
-                                  disabled={sendInvoiceMutation.isPending}
-                                  data-testid={`button-send-invoice-${invoice.id}`}
-                                >
-                                  <Mail className="h-4 w-4 mr-2" />
-                                  Send to Client
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem asChild>
-                                  <Link href={`/invoices/${invoice.id}/payment`} data-testid={`button-record-payment-${invoice.id}`}>
-                                    <DollarSign className="h-4 w-4 mr-2" />
-                                    Record Payment
-                                  </Link>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => markPaidMutation.mutate(invoice.id)}
-                                  disabled={markPaidMutation.isPending}
-                                  data-testid={`button-mark-paid-${invoice.id}`}
-                                >
-                                  <CheckCircle className="h-4 w-4 mr-2" />
-                                  Mark as Paid
-                                </DropdownMenuItem>
-                              </>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem data-testid={`button-download-invoice-${invoice.id}`}>
-                              <Download className="h-4 w-4 mr-2" />
-                              Download PDF
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                          )}
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-invoice-actions-${invoice.id}`}>
+                                <MoreHorizontal className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem asChild>
+                                <Link href={`/invoices/${invoice.id}`} data-testid={`button-view-invoice-${invoice.id}`}>
+                                  <Eye className="h-4 w-4 mr-2" />
+                                  View
+                                </Link>
+                              </DropdownMenuItem>
+                              {invoice.status !== "paid" && (
+                                <>
+                                  <DropdownMenuItem
+                                    onClick={() => sendInvoiceMutation.mutate(invoice.id)}
+                                    disabled={sendInvoiceMutation.isPending}
+                                    data-testid={`button-send-invoice-${invoice.id}`}
+                                  >
+                                    <Mail className="h-4 w-4 mr-2" />
+                                    Send to Client
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem asChild>
+                                    <Link href={`/invoices/${invoice.id}/payment`} data-testid={`button-record-payment-${invoice.id}`}>
+                                      <DollarSign className="h-4 w-4 mr-2" />
+                                      Record Partial Payment
+                                    </Link>
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem data-testid={`button-download-invoice-${invoice.id}`}>
+                                <Download className="h-4 w-4 mr-2" />
+                                Download PDF
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -371,5 +479,6 @@ export default function Invoices() {
         </CardContent>
       </Card>
     </div>
+    </>
   );
 }

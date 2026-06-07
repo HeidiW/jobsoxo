@@ -758,13 +758,29 @@ export async function registerRoutes(
       if (!invoice) {
         return res.status(404).json({ error: "Invoice not found" });
       }
-      
+
+      const paymentMethod = req.body.paymentMethod || "cash";
+      const paymentDate = req.body.paymentDate ? new Date(req.body.paymentDate) : new Date();
+      const balance = Number(invoice.balance ?? invoice.total);
+
+      // Only create a payment record if there is still a balance owed
+      if (balance > 0) {
+        await storage.createPayment({
+          invoiceId: invoice.id,
+          amount: String(balance),
+          paymentMethod,
+          paymentDate,
+          referenceNumber: req.body.referenceNumber || null,
+          notes: req.body.notes || null,
+        });
+      }
+
       const updated = await storage.updateInvoice(req.params.id, {
         status: "paid",
         amountPaid: invoice.total,
         balance: "0",
       });
-      
+
       res.json(updated);
     } catch (error) {
       console.error("Mark paid error:", error);
