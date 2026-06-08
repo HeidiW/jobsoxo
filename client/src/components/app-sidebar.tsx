@@ -4,6 +4,7 @@ import {
   Users,
   Briefcase,
   FileText,
+  AlertTriangle,
   Calendar,
   DollarSign,
   Settings,
@@ -30,6 +31,7 @@ const navItems = [
   { title: "Clients", url: "/clients", icon: Users },
   { title: "Jobs", url: "/jobs", icon: Briefcase },
   { title: "Invoices", url: "/invoices", icon: FileText },
+  { title: "Change Orders", url: "/change-orders", icon: AlertTriangle },
   { title: "Scheduling", url: "/scheduling", icon: Calendar },
   { title: "Payroll", url: "/payroll", icon: DollarSign },
 ];

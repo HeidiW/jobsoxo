@@ -14,6 +14,7 @@ import Dashboard from "@/pages/dashboard";
 import Clients from "@/pages/clients";
 import Jobs from "@/pages/jobs";
 import JobDetail from "@/pages/job-detail";
+import ChangeOrders from "@/pages/change-orders";
 import JobLineItems from "@/pages/job-line-items";
 import Invoices from "@/pages/invoices";
 import InvoiceNew from "@/pages/invoice-new";
@@ -33,6 +34,7 @@ function Router() {
       <Route path="/jobs" component={Jobs} />
       <Route path="/jobs/:id/line-items" component={JobLineItems} />
       <Route path="/jobs/:id" component={JobDetail} />
+      <Route path="/change-orders" component={ChangeOrders} />
       <Route path="/invoices" component={Invoices} />
       <Route path="/invoices/new" component={InvoiceNew} />
       <Route path="/invoices/:id" component={InvoiceDetail} />

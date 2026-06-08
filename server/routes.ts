@@ -657,6 +657,29 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/change-orders", async (req, res) => {
+    try {
+      const allItems = await db
+        .select()
+        .from(lineItems)
+        .where(eq(lineItems.isChangeOrder, true));
+
+      const enriched = await Promise.all(
+        allItems.map(async (item) => {
+          const invoice = item.invoiceId ? await storage.getInvoice(item.invoiceId) : null;
+          const job = item.jobId ? await storage.getJob(item.jobId) : (invoice?.jobId ? await storage.getJob(invoice.jobId) : null);
+          const client = job ? await storage.getClient(job.clientId) : null;
+          return { ...item, invoice, job, client };
+        })
+      );
+
+      res.json(enriched);
+    } catch (error) {
+      console.error("Get change orders error:", error);
+      res.status(500).json({ error: "Failed to get change orders" });
+    }
+  });
+
   app.get("/api/invoices/:id", async (req, res) => {
     try {
       const invoice = await storage.getInvoice(req.params.id);
