@@ -383,73 +383,96 @@ export default function JobDetail() {
           </CardContent>
         </Card>
 
-        {/* Change Orders */}
-        {allChangeOrders.length > 0 && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-                <span>Change Orders</span>
+        {/* Change Orders — always visible */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+              <span>Change Orders</span>
+              {allChangeOrders.length > 0 && (
                 <Badge className="bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900 dark:text-amber-200">
                   {allChangeOrders.length}
                 </Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border border-amber-200 dark:border-amber-800">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-amber-50/50 dark:bg-amber-950/20">
-                      <TableHead>Description &amp; Reason</TableHead>
-                      <TableHead className="hidden md:table-cell">Invoice</TableHead>
-                      <TableHead className="hidden md:table-cell">Category</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {allChangeOrders.map((co) => (
-                      <TableRow key={co.id} className="bg-amber-50/30 dark:bg-amber-950/10">
-                        <TableCell>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="font-medium text-sm">{co.description}</span>
-                            {co.changeOrderReason && (
-                              <span className="text-xs text-muted-foreground italic">
-                                {co.changeOrderReason}
-                              </span>
-                            )}
-                          </div>
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          <Button variant="link" size="sm" className="h-auto p-0 font-mono text-xs" asChild>
-                            <Link href={`/invoices/${co.invoice.id}`}>
-                              {co.invoice.invoiceNumber}
-                            </Link>
-                          </Button>
-                        </TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          <Badge variant="secondary" className="text-xs">
-                            {co.category.replace("_", " ")}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-mono font-medium text-amber-700 dark:text-amber-400">
-                          +{fmt(co.amount)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="mt-3 flex justify-end">
-                <p className="text-sm text-muted-foreground">
-                  Total change order value:{" "}
-                  <span className="font-mono font-semibold text-amber-700 dark:text-amber-400">
-                    +{fmt(allChangeOrders.reduce((s, co) => s + Number(co.amount), 0))}
-                  </span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {allChangeOrders.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                <AlertTriangle className="h-8 w-8 text-amber-300 dark:text-amber-700 mx-auto mb-3" />
+                <p className="font-medium text-foreground">No change orders yet</p>
+                <p className="mt-1 max-w-sm mx-auto">
+                  Open an invoice for this job and use the "Add Change Order" form to record scope changes.
                 </p>
+                {job.invoices.length > 0 && (
+                  <div className="mt-4 flex flex-wrap gap-2 justify-center">
+                    {job.invoices.map((inv) => (
+                      <Button key={inv.id} variant="outline" size="sm" asChild>
+                        <Link href={`/invoices/${inv.id}`}>
+                          {inv.invoiceNumber} →
+                        </Link>
+                      </Button>
+                    ))}
+                  </div>
+                )}
               </div>
-            </CardContent>
-          </Card>
-        )}
+            ) : (
+              <>
+                <div className="rounded-md border border-amber-200 dark:border-amber-800">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-amber-50/50 dark:bg-amber-950/20">
+                        <TableHead>Description &amp; Reason</TableHead>
+                        <TableHead className="hidden md:table-cell">Invoice</TableHead>
+                        <TableHead className="hidden md:table-cell">Category</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {allChangeOrders.map((co) => (
+                        <TableRow key={co.id} className="bg-amber-50/30 dark:bg-amber-950/10">
+                          <TableCell>
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-medium text-sm">{co.description}</span>
+                              {co.changeOrderReason && (
+                                <span className="text-xs text-muted-foreground italic">
+                                  {co.changeOrderReason}
+                                </span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            <Button variant="link" size="sm" className="h-auto p-0 font-mono text-xs" asChild>
+                              <Link href={`/invoices/${co.invoice.id}`}>
+                                {co.invoice.invoiceNumber}
+                              </Link>
+                            </Button>
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell">
+                            <Badge variant="secondary" className="text-xs">
+                              {co.category.replace("_", " ")}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-mono font-medium text-amber-700 dark:text-amber-400">
+                            +{fmt(co.amount)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                <div className="mt-3 flex justify-end">
+                  <p className="text-sm text-muted-foreground">
+                    Total change order value:{" "}
+                    <span className="font-mono font-semibold text-amber-700 dark:text-amber-400">
+                      +{fmt(allChangeOrders.reduce((s, co) => s + Number(co.amount), 0))}
+                    </span>
+                  </p>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </>
   );
