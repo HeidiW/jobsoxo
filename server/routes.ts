@@ -547,6 +547,66 @@ export async function registerRoutes(
     }
   });
 
+  // Add a line item (incl. change orders) to an existing invoice and recalc totals
+  app.post("/api/invoices/:id/line-items", async (req, res) => {
+    try {
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+
+      const bodySchema = z.object({
+        category: z.string().min(1),
+        description: z.string().min(1),
+        quantity: z.coerce.number().positive(),
+        unit: z.string().min(1),
+        rate: z.coerce.number().positive(),
+        isChangeOrder: z.boolean().optional().default(false),
+        changeOrderReason: z.string().optional().nullable(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+
+      const { quantity, rate, ...rest } = parsed.data;
+      const amount = quantity * rate;
+
+      const newItem = await storage.createLineItem({
+        invoiceId: invoice.id,
+        jobId: invoice.jobId ?? null,
+        category: rest.category,
+        description: rest.description,
+        quantity: String(quantity),
+        unit: rest.unit,
+        rate: String(rate),
+        amount: String(amount),
+        isChangeOrder: rest.isChangeOrder,
+        changeOrderReason: rest.changeOrderReason ?? null,
+      });
+
+      // Recalculate invoice totals from all its line items
+      const allItems = await db
+        .select()
+        .from(lineItems)
+        .where(eq(lineItems.invoiceId, invoice.id));
+      const newSubtotal = allItems.reduce((s, i) => s + Number(i.amount), 0);
+      const newTax = newSubtotal * (Number(invoice.taxRate) / 100);
+      const newTotal = newSubtotal + newTax;
+      const alreadyPaid = Number(invoice.amountPaid);
+      const newBalance = newTotal - alreadyPaid;
+
+      await storage.updateInvoice(invoice.id, {
+        subtotal: String(newSubtotal),
+        taxAmount: String(newTax),
+        total: String(newTotal),
+        balance: String(newBalance),
+        status: newBalance <= 0 ? "paid" : invoice.status === "paid" ? "partial" : invoice.status,
+      });
+
+      res.status(201).json(newItem);
+    } catch (error) {
+      console.error("Add invoice line item error:", error);
+      res.status(500).json({ error: "Failed to add line item" });
+    }
+  });
+
   // Invoices
   app.get("/api/invoices", async (req, res) => {
     try {

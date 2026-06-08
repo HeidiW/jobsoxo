@@ -1,10 +1,28 @@
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -14,6 +32,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   ArrowLeft,
@@ -27,6 +48,9 @@ import {
   Phone,
   MapPin,
   Printer,
+  Plus,
+  X,
+  AlertTriangle,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { Invoice, Client, LineItem, Payment } from "@shared/schema";
@@ -36,6 +60,16 @@ interface InvoiceDetail extends Invoice {
   lineItems: LineItem[];
   payments: Payment[];
 }
+
+const changeOrderSchema = z.object({
+  category: z.enum(["materials", "labor", "square_footage", "other"]),
+  description: z.string().min(1, "Description is required"),
+  quantity: z.string().min(1, "Quantity is required"),
+  unit: z.string().min(1, "Unit is required"),
+  rate: z.string().min(1, "Rate is required"),
+  changeOrderReason: z.string().min(1, "Reason for change order is required"),
+});
+type ChangeOrderValues = z.infer<typeof changeOrderSchema>;
 
 function InvoiceStatusBadge({ status }: { status: string }) {
   const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
@@ -72,10 +106,220 @@ function InvoiceDetailSkeleton() {
   );
 }
 
+function ChangeOrderForm({
+  invoiceId,
+  onSuccess,
+  onCancel,
+}: {
+  invoiceId: string;
+  onSuccess: () => void;
+  onCancel: () => void;
+}) {
+  const { toast } = useToast();
+
+  const form = useForm<ChangeOrderValues>({
+    resolver: zodResolver(changeOrderSchema),
+    defaultValues: {
+      category: "labor",
+      description: "",
+      quantity: "",
+      unit: "hours",
+      rate: "",
+      changeOrderReason: "",
+    },
+  });
+
+  const category = form.watch("category");
+  const quantity = parseFloat(form.watch("quantity") || "0");
+  const rate = parseFloat(form.watch("rate") || "0");
+  const previewAmount = isNaN(quantity * rate) ? 0 : quantity * rate;
+
+  useEffect(() => {
+    if (category === "labor") form.setValue("unit", "hours");
+    else if (category === "materials") form.setValue("unit", "each");
+    else if (category === "square_footage") form.setValue("unit", "sqft");
+  }, [category, form]);
+
+  const addMutation = useMutation({
+    mutationFn: async (data: ChangeOrderValues) => {
+      const res = await apiRequest("POST", `/api/invoices/${invoiceId}/line-items`, {
+        ...data,
+        quantity: parseFloat(data.quantity),
+        rate: parseFloat(data.rate),
+        isChangeOrder: true,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices", invoiceId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      toast({ title: "Change order added", description: "The invoice total has been updated." });
+      onSuccess();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error adding change order", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const formatCurrency = (n: number) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(n);
+
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20 p-4">
+      <div className="flex items-center gap-2 mb-4">
+        <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+        <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">New Change Order</span>
+      </div>
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit((d) => addMutation.mutate(d))} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <FormField
+              control={form.control}
+              name="category"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Category</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-co-category">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="materials">Materials</SelectItem>
+                      <SelectItem value="labor">Labor</SelectItem>
+                      <SelectItem value="square_footage">Square Footage</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="unit"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Unit</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-co-unit">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="hours">Hours</SelectItem>
+                      <SelectItem value="each">Each</SelectItem>
+                      <SelectItem value="sqft">Sq Ft</SelectItem>
+                      <SelectItem value="gallon">Gallon</SelectItem>
+                      <SelectItem value="linear_ft">Linear Ft</SelectItem>
+                      <SelectItem value="flat">Flat Rate</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+
+          <FormField
+            control={form.control}
+            name="description"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Description</FormLabel>
+                <FormControl>
+                  <Input placeholder="e.g. Additional coats on feature wall" {...field} data-testid="input-co-description" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <div className="grid grid-cols-3 gap-4">
+            <FormField
+              control={form.control}
+              name="quantity"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Quantity</FormLabel>
+                  <FormControl>
+                    <Input type="number" step="0.01" placeholder="0" {...field} data-testid="input-co-quantity" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="rate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Rate (£)</FormLabel>
+                  <FormControl>
+                    <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-co-rate" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <div className="space-y-2">
+              <FormLabel className="text-muted-foreground">Amount</FormLabel>
+              <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 font-mono text-sm font-medium">
+                {formatCurrency(previewAmount)}
+              </div>
+            </div>
+          </div>
+
+          <FormField
+            control={form.control}
+            name="changeOrderReason"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Reason for Change Order <span className="text-destructive">*</span></FormLabel>
+                <FormControl>
+                  <Textarea
+                    placeholder="Explain what changed and why (e.g. client requested additional feature wall, scope agreed on site)"
+                    className="resize-none"
+                    rows={2}
+                    {...field}
+                    data-testid="input-co-reason"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <Button type="button" variant="ghost" size="sm" onClick={onCancel} data-testid="button-cancel-co">
+              <X className="h-4 w-4 mr-1" />
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={addMutation.isPending}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              data-testid="button-save-co"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              {addMutation.isPending ? "Adding..." : `Add Change Order${previewAmount > 0 ? " · " + formatCurrency(previewAmount) : ""}`}
+            </Button>
+          </div>
+        </form>
+      </Form>
+    </div>
+  );
+}
+
 export default function InvoiceDetail() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const [showChangeOrderForm, setShowChangeOrderForm] = useState(false);
 
   const { data: invoice, isLoading } = useQuery<InvoiceDetail>({
     queryKey: ["/api/invoices", id],
@@ -90,17 +334,10 @@ export default function InvoiceDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      toast({
-        title: "Invoice sent",
-        description: "The invoice has been sent to the client.",
-      });
+      toast({ title: "Invoice sent", description: "The invoice has been sent to the client." });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error sending invoice",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Error sending invoice", description: error.message, variant: "destructive" });
     },
   });
 
@@ -113,27 +350,16 @@ export default function InvoiceDetail() {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
-      toast({
-        title: "Invoice marked as paid",
-        description: "The invoice status has been updated.",
-      });
+      toast({ title: "Invoice marked as paid", description: "The invoice status has been updated." });
     },
     onError: (error: Error) => {
-      toast({
-        title: "Error updating invoice",
-        description: error.message,
-        variant: "destructive",
-      });
+      toast({ title: "Error updating invoice", description: error.message, variant: "destructive" });
     },
   });
 
   const formatCurrency = (amount: string | number | null | undefined) => {
     if (!amount) return "$0.00";
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-    }).format(Number(amount));
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(Number(amount));
   };
 
   if (isLoading) {
@@ -158,6 +384,9 @@ export default function InvoiceDetail() {
       </div>
     );
   }
+
+  const baseItems = invoice.lineItems?.filter((i) => !i.isChangeOrder) ?? [];
+  const changeOrders = invoice.lineItems?.filter((i) => i.isChangeOrder) ?? [];
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -207,13 +436,12 @@ export default function InvoiceDetail() {
         </div>
       </div>
 
+      {/* Client & Invoice Info */}
       <Card className="mb-6">
         <CardContent className="pt-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div>
-              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">
-                Bill To
-              </h3>
+              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">Bill To</h3>
               <div className="space-y-2">
                 <p className="font-medium text-lg">{invoice.client?.name}</p>
                 {invoice.client?.address && (
@@ -261,55 +489,152 @@ export default function InvoiceDetail() {
         </CardContent>
       </Card>
 
+      {/* Line Items */}
       <Card className="mb-6">
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
           <CardTitle>Line Items</CardTitle>
+          {invoice.status !== "paid" && !showChangeOrderForm && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950"
+              onClick={() => setShowChangeOrderForm(true)}
+              data-testid="button-add-change-order"
+            >
+              <AlertTriangle className="h-4 w-4 mr-1.5" />
+              Add Change Order
+            </Button>
+          )}
         </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="w-24">Category</TableHead>
-                  <TableHead className="w-24 text-right">Qty</TableHead>
-                  <TableHead className="w-28 text-right">Rate</TableHead>
-                  <TableHead className="w-28 text-right">Amount</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {invoice.lineItems?.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>
-                      <span className="font-medium">{item.description}</span>
-                      {item.isChangeOrder && (
-                        <Badge variant="outline" className="ml-2 text-xs">
-                          Change Order
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className="text-xs">
-                        {item.category.replace("_", " ")}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {Number(item.quantity)} {item.unit}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {formatCurrency(item.rate)}
-                    </TableCell>
-                    <TableCell className="text-right font-mono font-medium">
-                      {formatCurrency(item.amount)}
-                    </TableCell>
+        <CardContent className="space-y-4">
+          {/* Base line items */}
+          {baseItems.length > 0 && (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="w-24">Category</TableHead>
+                    <TableHead className="w-24 text-right">Qty</TableHead>
+                    <TableHead className="w-28 text-right">Rate</TableHead>
+                    <TableHead className="w-28 text-right">Amount</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {baseItems.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        <span className="font-medium">{item.description}</span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="text-xs">
+                          {item.category.replace("_", " ")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {Number(item.quantity)} {item.unit}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatCurrency(item.rate)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-medium">
+                        {formatCurrency(item.amount)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
 
-          <div className="mt-6 flex justify-end">
-            <div className="w-64 space-y-2">
+          {/* Change orders section */}
+          {changeOrders.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+                  Change Orders ({changeOrders.length})
+                </span>
+              </div>
+              <div className="rounded-md border border-amber-200 dark:border-amber-800">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-amber-50/50 dark:bg-amber-950/20">
+                      <TableHead>Description &amp; Reason</TableHead>
+                      <TableHead className="w-24">Category</TableHead>
+                      <TableHead className="w-24 text-right">Qty</TableHead>
+                      <TableHead className="w-28 text-right">Rate</TableHead>
+                      <TableHead className="w-28 text-right">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {changeOrders.map((item) => (
+                      <TableRow key={item.id} className="bg-amber-50/30 dark:bg-amber-950/10">
+                        <TableCell>
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{item.description}</span>
+                              <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900 dark:text-amber-200 dark:border-amber-700">
+                                Change Order
+                              </Badge>
+                            </div>
+                            {item.changeOrderReason && (
+                              <span className="text-xs text-muted-foreground italic">
+                                Reason: {item.changeOrderReason}
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="text-xs">
+                            {item.category.replace("_", " ")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          {Number(item.quantity)} {item.unit}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          {formatCurrency(item.rate)}
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-medium text-amber-700 dark:text-amber-400">
+                          +{formatCurrency(item.amount)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
+          {/* Change order form */}
+          {showChangeOrderForm && (
+            <ChangeOrderForm
+              invoiceId={invoice.id}
+              onSuccess={() => setShowChangeOrderForm(false)}
+              onCancel={() => setShowChangeOrderForm(false)}
+            />
+          )}
+
+          {/* Totals */}
+          <div className="mt-2 flex justify-end">
+            <div className="w-72 space-y-2">
+              {changeOrders.length > 0 && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Base subtotal</span>
+                    <span className="font-mono">
+                      {formatCurrency(baseItems.reduce((s, i) => s + Number(i.amount), 0))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm text-amber-700 dark:text-amber-400">
+                    <span>Change orders</span>
+                    <span className="font-mono">
+                      +{formatCurrency(changeOrders.reduce((s, i) => s + Number(i.amount), 0))}
+                    </span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Subtotal</span>
                 <span className="font-mono">{formatCurrency(invoice.subtotal)}</span>
@@ -343,6 +668,7 @@ export default function InvoiceDetail() {
         </CardContent>
       </Card>
 
+      {/* Payment History */}
       {invoice.payments && invoice.payments.length > 0 && (
         <Card className="mb-6">
           <CardHeader>
@@ -383,22 +709,19 @@ export default function InvoiceDetail() {
         </Card>
       )}
 
+      {/* Notes / Terms */}
       {(invoice.notes || invoice.termsAndConditions) && (
-        <Card>
+        <Card className="mb-6">
           <CardContent className="pt-6">
             {invoice.notes && (
               <div className="mb-4">
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">
-                  Notes
-                </h3>
+                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">Notes</h3>
                 <p className="text-sm">{invoice.notes}</p>
               </div>
             )}
             {invoice.termsAndConditions && (
               <div>
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">
-                  Terms & Conditions
-                </h3>
+                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">Terms & Conditions</h3>
                 <p className="text-sm">{invoice.termsAndConditions}</p>
               </div>
             )}
