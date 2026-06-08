@@ -19,21 +19,17 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubItem,
-  SidebarMenuSubButton,
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
 
-const topNavItems = [
+const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Clients", url: "/clients", icon: Users },
-];
-
-const bottomNavItems = [
+  { title: "Jobs", url: "/jobs", icon: Briefcase },
+  { title: "Invoices", url: "/invoices", icon: FileText },
   { title: "Scheduling", url: "/scheduling", icon: Calendar },
   { title: "Payroll", url: "/payroll", icon: DollarSign },
 ];
@@ -45,10 +41,6 @@ const settingsItems = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout, isLoggingOut } = useAuth();
-
-  const jobsActive = location === "/jobs" || (location.startsWith("/jobs") && !location.startsWith("/jobs/new"));
-  const invoicesActive = location.startsWith("/invoices");
-  const jobsOrInvoicesActive = jobsActive || invoicesActive;
 
   return (
     <Sidebar>
@@ -68,41 +60,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Main Menu</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {topNavItems.map((item) => {
-                const isActive = location === item.url || (item.url !== "/" && location.startsWith(item.url));
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={item.url} data-testid={`nav-${item.title.toLowerCase()}`}>
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-
-              {/* Jobs with Invoices as sub-item */}
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={jobsOrInvoicesActive}>
-                  <Link href="/jobs" data-testid="nav-jobs">
-                    <Briefcase className="h-4 w-4" />
-                    <span>Jobs</span>
-                  </Link>
-                </SidebarMenuButton>
-                <SidebarMenuSub>
-                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton asChild isActive={invoicesActive}>
-                      <Link href="/invoices" data-testid="nav-invoices">
-                        <FileText className="h-4 w-4" />
-                        <span>Invoices</span>
-                      </Link>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
-                </SidebarMenuSub>
-              </SidebarMenuItem>
-
-              {bottomNavItems.map((item) => {
+              {navItems.map((item) => {
                 const isActive = location === item.url || (item.url !== "/" && location.startsWith(item.url));
                 return (
                   <SidebarMenuItem key={item.title}>
