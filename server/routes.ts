@@ -455,7 +455,39 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Job not found" });
       }
       const client = await storage.getClient(job.clientId);
-      res.json({ ...job, client });
+
+      // Invoices linked to this job, with their line items
+      const jobInvoices = await storage.getInvoices();
+      const linkedInvoices = jobInvoices.filter((inv) => inv.jobId === job.id);
+      const invoicesWithItems = await Promise.all(
+        linkedInvoices.map(async (inv) => {
+          const items = await db
+            .select()
+            .from(lineItems)
+            .where(eq(lineItems.invoiceId, inv.id));
+          return { ...inv, lineItems: items };
+        })
+      );
+
+      // Employee assignments with employee details
+      const assignments = await storage.getAssignmentsByJob(job.id);
+      const assignedEmployees = await Promise.all(
+        assignments.map((a) => storage.getEmployee(a.employeeId))
+      );
+
+      // Outstanding balance across all invoices for this job
+      const outstandingBalance = linkedInvoices.reduce(
+        (sum, inv) => sum + Number(inv.balance ?? 0),
+        0
+      );
+
+      res.json({
+        ...job,
+        client,
+        invoices: invoicesWithItems,
+        employees: assignedEmployees.filter(Boolean),
+        outstandingBalance: String(outstandingBalance),
+      });
     } catch (error) {
       console.error("Get job error:", error);
       res.status(500).json({ error: "Failed to get job" });

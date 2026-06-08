@@ -1,0 +1,1 @@
+- [JobForm extraction](job-form-extraction.md) — JobForm lives in client/src/components/job-form.tsx; jobs.tsx imports from there, not local.
