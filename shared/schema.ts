@@ -243,7 +243,7 @@ export const insertEmployeeSchema = createInsertSchema(employees)
   .omit({ id: true, createdAt: true })
   .extend({
     hireDate: z.coerce.date().optional().nullable(),
-    hourlyRate: z.coerce.string(),
+    hourlyRate: z.string().min(1),
   });
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 export type Employee = typeof employees.$inferSelect;
@@ -297,7 +297,7 @@ export const insertTimeEntrySchema = createInsertSchema(timeEntries)
   .omit({ id: true, createdAt: true })
   .extend({
     date: z.coerce.date(),
-    hoursWorked: z.coerce.string(),
+    hoursWorked: z.string().min(1),
   });
 export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
 export type TimeEntry = typeof timeEntries.$inferSelect;
