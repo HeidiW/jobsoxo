@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, boolean, jsonb, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -341,20 +341,26 @@ export const insertPayrollRecordSchema = createInsertSchema(payrollRecords)
 export type InsertPayrollRecord = z.infer<typeof insertPayrollRecordSchema>;
 export type PayrollRecord = typeof payrollRecords.$inferSelect;
 
-// Inbox Tasks — Gmail-synced email items shown as a daily to-do list
-export const inboxTasks = pgTable("inbox_tasks", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  emailId: text("email_id").notNull(),
-  subject: text("subject").notNull().default("(No subject)"),
-  sender: text("sender").notNull(),
-  senderEmail: text("sender_email"),
-  snippet: text("snippet"),
-  receivedAt: timestamp("received_at").notNull(),
-  isRead: boolean("is_read").default(true),
-  isDone: boolean("is_done").default(false).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+// Inbox Tasks — Gmail-synced email items shown as a shared daily to-do list.
+// One Gmail account is connected by an admin; all authenticated users share
+// the same task list (shared-mailbox model for a small business team).
+export const inboxTasks = pgTable(
+  "inbox_tasks",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    emailId: text("email_id").notNull(),
+    subject: text("subject").notNull().default("(No subject)"),
+    sender: text("sender").notNull(),
+    senderEmail: text("sender_email"),
+    snippet: text("snippet"),
+    receivedAt: timestamp("received_at").notNull(),
+    isRead: boolean("is_read").default(true),
+    isDone: boolean("is_done").default(false).notNull(),
+    doneBy: varchar("done_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [unique("inbox_tasks_email_id_unique").on(t.emailId)]
+);
 
 export const insertInboxTaskSchema = createInsertSchema(inboxTasks).omit({ id: true, createdAt: true });
 export type InsertInboxTask = z.infer<typeof insertInboxTaskSchema>;

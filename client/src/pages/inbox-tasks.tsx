@@ -496,8 +496,8 @@ export default function InboxTasks() {
             </Button>
           )}
 
-          {/* Sync (admin only) */}
-          {isAdmin && connected && (
+          {/* Sync — admin can trigger; non-admins see a passive refresh hint */}
+          {connected && isAdmin && (
             <Button
               size="sm"
               onClick={() => syncMutation.mutate()}

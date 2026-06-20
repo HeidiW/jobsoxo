@@ -124,10 +124,10 @@ export interface IStorage {
   markInviteUsed(code: string, userId: string): Promise<void>;
   deleteInvite(id: string): Promise<void>;
 
-  // Inbox Tasks
-  getInboxTasks(userId: string): Promise<InboxTask[]>;
+  // Inbox Tasks — shared mailbox model (no per-user partitioning)
+  getInboxTasks(): Promise<InboxTask[]>;
   upsertInboxTask(task: InsertInboxTask): Promise<InboxTask>;
-  markInboxTaskDone(userId: string, emailId: string, isDone: boolean): Promise<InboxTask | undefined>;
+  markInboxTaskDone(emailId: string, isDone: boolean, doneBy?: string): Promise<InboxTask | undefined>;
   deleteAllInboxTasks(): Promise<void>;
 
   // Dashboard
@@ -460,12 +460,11 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // Inbox Tasks
-  async getInboxTasks(userId: string): Promise<InboxTask[]> {
+  // Inbox Tasks — shared mailbox model
+  async getInboxTasks(): Promise<InboxTask[]> {
     return db
       .select()
       .from(inboxTasks)
-      .where(eq(inboxTasks.userId, userId))
       .orderBy(desc(inboxTasks.receivedAt));
   }
 
@@ -473,10 +472,10 @@ export class DatabaseStorage implements IStorage {
     const [existing] = await db
       .select()
       .from(inboxTasks)
-      .where(and(eq(inboxTasks.userId, task.userId), eq(inboxTasks.emailId, task.emailId)));
+      .where(eq(inboxTasks.emailId, task.emailId));
 
     if (existing) {
-      // Preserve the isDone state — only update metadata
+      // Preserve isDone/doneBy — only update Gmail metadata
       const [updated] = await db
         .update(inboxTasks)
         .set({
@@ -496,11 +495,11 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async markInboxTaskDone(userId: string, emailId: string, isDone: boolean): Promise<InboxTask | undefined> {
+  async markInboxTaskDone(emailId: string, isDone: boolean, doneBy?: string): Promise<InboxTask | undefined> {
     const [updated] = await db
       .update(inboxTasks)
-      .set({ isDone })
-      .where(and(eq(inboxTasks.userId, userId), eq(inboxTasks.emailId, emailId)))
+      .set({ isDone, doneBy: isDone ? (doneBy ?? null) : null })
+      .where(eq(inboxTasks.emailId, emailId))
       .returning();
     return updated ?? undefined;
   }

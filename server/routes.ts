@@ -1259,10 +1259,10 @@ export async function registerRoutes(
     }
   });
 
-  // Return cached inbox tasks for the current user
+  // Return cached inbox tasks — shared mailbox, all authenticated users
   app.get("/api/inbox/tasks", async (req, res) => {
     try {
-      const tasks = await storage.getInboxTasks(req.session.userId!);
+      const tasks = await storage.getInboxTasks();
       res.json(tasks);
     } catch (error) {
       console.error("Get inbox tasks error:", error);
@@ -1270,16 +1270,47 @@ export async function registerRoutes(
     }
   });
 
-  // Sync inbox from Gmail — admin only (single connected mailbox)
+  // GET /api/inbox/messages — fetches the last 50 messages live from Gmail,
+  // upserts them into the shared cache, then returns the full cached list.
+  // Falls back to cache if Gmail is unreachable. All authenticated users can read.
+  app.get("/api/inbox/messages", async (req, res) => {
+    try {
+      // Attempt live fetch and upsert into cache
+      try {
+        const messages = await fetchGmailInbox(50);
+        await Promise.all(
+          messages.map((m) =>
+            storage.upsertInboxTask({
+              emailId: m.id,
+              subject: m.subject,
+              sender: m.sender,
+              senderEmail: m.senderEmail ?? null,
+              snippet: m.snippet ?? null,
+              receivedAt: m.receivedAt,
+              isRead: m.isRead,
+              isDone: false,
+              doneBy: null,
+            })
+          )
+        );
+      } catch {
+        // If Gmail is not connected or token expired, fall through to cache
+      }
+      const tasks = await storage.getInboxTasks();
+      res.json(tasks);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get inbox messages" });
+    }
+  });
+
+  // Sync inbox from Gmail — admin only (writes to shared cache)
   app.post("/api/inbox/sync", requireAdmin, async (req, res) => {
     try {
       const messages = await fetchGmailInbox(50);
-      const userId = req.session.userId!;
 
       await Promise.all(
         messages.map((m) =>
           storage.upsertInboxTask({
-            userId,
             emailId: m.id,
             subject: m.subject,
             sender: m.sender,
@@ -1288,11 +1319,12 @@ export async function registerRoutes(
             receivedAt: m.receivedAt,
             isRead: m.isRead,
             isDone: false,
+            doneBy: null,
           })
         )
       );
 
-      const tasks = await storage.getInboxTasks(userId);
+      const tasks = await storage.getInboxTasks();
       res.json(tasks);
     } catch (error: any) {
       const msg = error?.message ?? "Failed to sync Gmail";
@@ -1307,28 +1339,14 @@ export async function registerRoutes(
     }
   });
 
-  // Alias: GET /api/inbox/messages — returns cached tasks (same as /api/inbox/tasks)
-  app.get("/api/inbox/messages", async (req, res) => {
-    try {
-      const tasks = await storage.getInboxTasks(req.session.userId!);
-      res.json(tasks);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get inbox messages" });
-    }
-  });
-
-  // Toggle done state — spec alias: PATCH /api/inbox/messages/:emailId/done
+  // Toggle done — shared mailbox; any authenticated user can mark any task
   app.patch("/api/inbox/messages/:emailId/done", async (req, res) => {
     try {
       const { isDone } = req.body;
       if (typeof isDone !== "boolean") {
         return res.status(400).json({ error: "isDone (boolean) is required" });
       }
-      const task = await storage.markInboxTaskDone(
-        req.session.userId!,
-        req.params.emailId,
-        isDone
-      );
+      const task = await storage.markInboxTaskDone(req.params.emailId, isDone, req.session.userId!);
       if (!task) return res.status(404).json({ error: "Task not found" });
       res.json(task);
     } catch (error) {
@@ -1336,18 +1354,13 @@ export async function registerRoutes(
     }
   });
 
-  // Toggle done state for an inbox task — any authenticated user (their own tasks)
   app.patch("/api/inbox/tasks/:emailId/done", async (req, res) => {
     try {
       const { isDone } = req.body;
       if (typeof isDone !== "boolean") {
         return res.status(400).json({ error: "isDone (boolean) is required" });
       }
-      const task = await storage.markInboxTaskDone(
-        req.session.userId!,
-        req.params.emailId,
-        isDone
-      );
+      const task = await storage.markInboxTaskDone(req.params.emailId, isDone, req.session.userId!);
       if (!task) return res.status(404).json({ error: "Task not found" });
       res.json(task);
     } catch (error) {
