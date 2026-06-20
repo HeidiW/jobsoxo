@@ -73,6 +73,49 @@ export async function isGmailConnected(): Promise<boolean> {
   return !!token;
 }
 
+export async function getGmailConnectionId(): Promise<string | null> {
+  const conn = await getGmailConnection();
+  return conn?.id ?? null;
+}
+
+/**
+ * Revoke/disconnect the Gmail connector by deleting the connection through
+ * the Replit connector proxy. After this call, isGmailConnected() returns false.
+ */
+export async function revokeGmailConnection(): Promise<boolean> {
+  if (!CONNECTORS_HOST || !REPL_IDENTITY) return false;
+
+  const conn = await getGmailConnection();
+  if (!conn) return true; // already disconnected
+
+  try {
+    const res = await fetch(
+      `https://${CONNECTORS_HOST}/api/v2/connection/${conn.id}`,
+      {
+        method: "DELETE",
+        headers: { "X-Replit-Identity": REPL_IDENTITY },
+      }
+    );
+    // 200, 204, or 404 (already gone) all mean "no longer connected"
+    return res.ok || res.status === 404;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Returns the OAuth initiation URL for the Gmail connector. Opening this URL
+ * in a browser tab starts the Google OAuth flow through Replit's connector proxy.
+ */
+export function getGmailOAuthUrl(): string | null {
+  if (!CONNECTORS_HOST || !REPL_IDENTITY) return null;
+  return (
+    `https://${CONNECTORS_HOST}/api/v2/authorize` +
+    `?connectorConfigId=ccfg_google-mail_B959E7249792448ABBA58D46AF` +
+    `&replIdentity=${encodeURIComponent(REPL_IDENTITY)}`
+  );
+}
+
 export async function fetchGmailInbox(maxResults = 50): Promise<GmailMessage[]> {
   const token = await getGmailAccessToken();
   if (!token) throw new Error("Gmail not connected");

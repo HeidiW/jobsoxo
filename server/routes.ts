@@ -12,7 +12,7 @@ import { z } from "zod";
 import { sendInvoiceEmail, processOverdueReminders, sendPasswordResetEmail } from "./email";
 import bcrypt from "bcryptjs";
 import { passport, setupOAuthStrategies, getEnabledProviders, callbackUrl } from "./oauth";
-import { isGmailConnected, fetchGmailInbox } from "./gmail";
+import { isGmailConnected, fetchGmailInbox, revokeGmailConnection, getGmailOAuthUrl } from "./gmail";
 
 function parseNumeric(value: unknown): number {
   if (typeof value === "number") return value;
@@ -1230,29 +1230,29 @@ export async function registerRoutes(
     }
   });
 
-  // Initiate OAuth — redirects the browser through Replit connector OAuth flow.
-  // Returns a redirect URL the frontend opens in a new tab / popup.
+  // Initiate Gmail OAuth — returns the connector authorize URL for the frontend
+  // to open in a new tab. This is the runtime equivalent of proposeIntegration:
+  // the Replit connector proxy handles the Google OAuth handshake and stores
+  // the resulting tokens, after which isGmailConnected() returns true.
   app.get("/api/inbox/connect", requireAdmin, async (req, res) => {
-    const connHost = process.env.REPLIT_CONNECTORS_HOSTNAME;
-    const replIdentity = process.env.REPL_IDENTITY;
-
-    if (!connHost || !replIdentity) {
+    const authUrl = getGmailOAuthUrl();
+    if (!authUrl) {
       return res.status(503).json({
-        error: "Replit connector infrastructure not available in this environment.",
+        error: "Replit connector infrastructure not available in this environment. " +
+               "Connect Gmail from the Replit integrations panel (puzzle-piece icon) instead.",
         code: "NO_CONNECTOR_HOST",
       });
     }
-
-    // Return the OAuth initiation URL — the frontend opens it in a new window
-    const authUrl = `https://${connHost}/api/v2/authorize?connectorConfigId=ccfg_google-mail_B959E7249792448ABBA58D46AF&replIdentity=${encodeURIComponent(replIdentity)}`;
     res.json({ authUrl });
   });
 
-  // Disconnect — clears all cached inbox tasks for all users (mailbox access revoked)
+  // Disconnect — revokes the OAuth token via the Replit connector proxy AND
+  // clears all cached inbox tasks. After this, isGmailConnected() returns false.
   app.post("/api/inbox/disconnect", requireAdmin, async (req, res) => {
     try {
+      const revoked = await revokeGmailConnection();
       await storage.deleteAllInboxTasks();
-      res.json({ disconnected: true });
+      res.json({ disconnected: true, revoked });
     } catch (error) {
       console.error("Inbox disconnect error:", error);
       res.status(500).json({ error: "Failed to disconnect inbox" });
@@ -1304,6 +1304,35 @@ export async function registerRoutes(
       }
       console.error("Gmail sync error:", error);
       res.status(500).json({ error: msg });
+    }
+  });
+
+  // Alias: GET /api/inbox/messages — returns cached tasks (same as /api/inbox/tasks)
+  app.get("/api/inbox/messages", async (req, res) => {
+    try {
+      const tasks = await storage.getInboxTasks(req.session.userId!);
+      res.json(tasks);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get inbox messages" });
+    }
+  });
+
+  // Toggle done state — spec alias: PATCH /api/inbox/messages/:emailId/done
+  app.patch("/api/inbox/messages/:emailId/done", async (req, res) => {
+    try {
+      const { isDone } = req.body;
+      if (typeof isDone !== "boolean") {
+        return res.status(400).json({ error: "isDone (boolean) is required" });
+      }
+      const task = await storage.markInboxTaskDone(
+        req.session.userId!,
+        req.params.emailId,
+        isDone
+      );
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      res.json(task);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update task" });
     }
   });
 
