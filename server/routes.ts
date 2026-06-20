@@ -13,7 +13,11 @@ import { z } from "zod";
 import { sendInvoiceEmail, processOverdueReminders, sendPasswordResetEmail } from "./email";
 import bcrypt from "bcryptjs";
 import { passport, setupOAuthStrategies, getEnabledProviders, callbackUrl } from "./oauth";
-import { isGmailConnected, fetchGmailInbox, revokeGmailConnection, getGmailOAuthUrl } from "./gmail";
+import {
+  isGmailConnected, fetchGmailInbox, revokeGmailConnection, getGmailOAuthUrl,
+  buildGmailAuthUrl, exchangeGmailCode,
+  isUserGmailConnected, getUserGmailEmail, fetchUserGmailInbox,
+} from "./gmail";
 import { getLastInboxSyncTime } from "./scheduler";
 
 function parseNumeric(value: unknown): number {
@@ -1250,13 +1254,88 @@ export async function registerRoutes(
     }).catch(() => res.status(500).json({ error: "Auth check failed" }));
   }
 
-  // Connection status — any authenticated user can check (display the badge)
-  app.get("/api/inbox/status", async (req, res) => {
+  // ── Per-user Gmail OAuth ──────────────────────────────────────────────────
+
+  // Redirect user's browser to Google OAuth consent screen
+  app.get("/api/gmail/auth", requireAuth, (req, res) => {
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+      return res.status(503).json({ error: "Google OAuth not configured" });
+    }
+    const crypto = require("crypto") as typeof import("crypto");
+    const state = crypto.randomBytes(16).toString("hex");
+    req.session.gmailOAuthState = state;
     try {
-      const connected = await isGmailConnected();
-      res.json({ connected });
+      const authUrl = buildGmailAuthUrl(state);
+      res.redirect(authUrl);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Google redirects here after user consents
+  app.get("/api/gmail/callback", async (req, res) => {
+    const { code, state, error } = req.query as Record<string, string>;
+    const baseUrl = (process.env.APP_URL || "http://localhost:5000").replace(/\/$/, "");
+
+    if (error) {
+      return res.redirect(`${baseUrl}/inbox-tasks?gmail_error=${encodeURIComponent(error)}`);
+    }
+
+    // CSRF check — state must match what we stored in session
+    if (!req.session.userId) {
+      return res.redirect(`${baseUrl}/login?error=session_expired`);
+    }
+    if (!state || state !== req.session.gmailOAuthState) {
+      return res.redirect(`${baseUrl}/inbox-tasks?gmail_error=invalid_state`);
+    }
+    delete req.session.gmailOAuthState;
+
+    try {
+      const tokens = await exchangeGmailCode(code);
+      await storage.saveGoogleToken(req.session.userId, {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+        gmailEmail: tokens.email,
+      });
+      res.redirect(`${baseUrl}/inbox-tasks?gmail_connected=1`);
+    } catch (err: any) {
+      console.error("Gmail OAuth callback error:", err);
+      res.redirect(`${baseUrl}/inbox-tasks?gmail_error=${encodeURIComponent(err.message)}`);
+    }
+  });
+
+  // Per-user Gmail connection status — returns { connected, email }
+  app.get("/api/gmail/status", requireAuth, async (req, res) => {
+    try {
+      const connected = await isUserGmailConnected(req.session.userId!);
+      const email = connected ? await getUserGmailEmail(req.session.userId!) : null;
+      res.json({ connected, email });
     } catch {
-      res.json({ connected: false });
+      res.json({ connected: false, email: null });
+    }
+  });
+
+  // Disconnect — removes the user's Google token and their inbox task cache
+  app.delete("/api/gmail/disconnect", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteGoogleToken(req.session.userId!);
+      await storage.deleteUserInboxTasks(req.session.userId!);
+      res.json({ disconnected: true });
+    } catch (err) {
+      console.error("Gmail disconnect error:", err);
+      res.status(500).json({ error: "Failed to disconnect Gmail" });
+    }
+  });
+
+  // Connection status — any authenticated user can check (display the badge)
+  app.get("/api/inbox/status", requireAuth, async (req, res) => {
+    try {
+      const connected = await isUserGmailConnected(req.session.userId!);
+      const email = connected ? await getUserGmailEmail(req.session.userId!) : null;
+      res.json({ connected, email });
+    } catch {
+      res.json({ connected: false, email: null });
     }
   });
 
@@ -1310,14 +1389,12 @@ export async function registerRoutes(
     }
   });
 
-  // GET /api/inbox/messages — fetches the live last-50 inbox emails from the
-  // app-level Gmail connector, upserts into the requesting user's cache
-  // (preserving isDone), and returns their task list. Admin-only because the
-  // connector token is shared at the Repl level (not per-user OAuth).
-  app.get("/api/inbox/messages", requireAdmin, async (req, res) => {
+  // GET /api/inbox/messages — fetches the user's live last-50 inbox emails
+  // using their personal Gmail token, upserts into cache, returns task list.
+  app.get("/api/inbox/messages", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
     try {
-      const messages = await fetchGmailInbox(50);
+      const messages = await fetchUserGmailInbox(userId, 50);
       await Promise.all(
         messages.map((m) =>
           storage.upsertInboxTask({
@@ -1350,11 +1427,11 @@ export async function registerRoutes(
     }
   });
 
-  // POST /api/inbox/sync — admin-only: syncs Gmail inbox into this user's cache
-  app.post("/api/inbox/sync", requireAdmin, async (req, res) => {
+  // POST /api/inbox/sync — syncs the user's Gmail inbox into their cache
+  app.post("/api/inbox/sync", requireAuth, async (req, res) => {
     const userId = req.session.userId!;
     try {
-      const messages = await fetchGmailInbox(50);
+      const messages = await fetchUserGmailInbox(userId, 50);
       await Promise.all(
         messages.map((m) =>
           storage.upsertInboxTask({

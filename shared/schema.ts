@@ -365,6 +365,20 @@ export const insertPayrollRecordSchema = createInsertSchema(payrollRecords)
 export type InsertPayrollRecord = z.infer<typeof insertPayrollRecordSchema>;
 export type PayrollRecord = typeof payrollRecords.$inferSelect;
 
+// Google Tokens — per-user Gmail OAuth tokens (access + refresh)
+export const googleTokens = pgTable("google_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token"),
+  expiresAt: timestamp("expires_at"),
+  gmailEmail: text("gmail_email"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type GoogleToken = typeof googleTokens.$inferSelect;
+export type InsertGoogleToken = typeof googleTokens.$inferInsert;
+
 // Inbox Tasks — Gmail-synced email items shown as a per-user daily to-do list.
 // Each user connects their own Gmail account; tasks are scoped to that user.
 export const inboxTasks = pgTable("inbox_tasks", {

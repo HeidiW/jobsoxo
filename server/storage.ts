@@ -24,6 +24,7 @@ import {
   type Invite,
   type InboxTask,
   type InsertInboxTask,
+  type GoogleToken,
   users,
   clients,
   jobs,
@@ -37,6 +38,7 @@ import {
   settings,
   invites,
   inboxTasks,
+  googleTokens,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql, isNull, or } from "drizzle-orm";
@@ -124,6 +126,12 @@ export interface IStorage {
   createInvite(code: string, label?: string): Promise<Invite>;
   markInviteUsed(code: string, userId: string): Promise<void>;
   deleteInvite(id: string): Promise<void>;
+
+  // Google Tokens — per-user Gmail OAuth
+  getGoogleToken(userId: string): Promise<GoogleToken | undefined>;
+  saveGoogleToken(userId: string, data: { accessToken: string; refreshToken?: string | null; expiresAt?: Date | null; gmailEmail?: string | null }): Promise<GoogleToken>;
+  deleteGoogleToken(userId: string): Promise<void>;
+  getUsersWithGmailTokens(): Promise<User[]>;
 
   // Inbox Tasks — per-user (each user's own Gmail connection)
   getUsersWithInboxTasks(): Promise<User[]>;
@@ -587,6 +595,52 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAllInboxTasks(): Promise<void> {
     await db.delete(inboxTasks);
+  }
+
+  // Google Tokens — per-user Gmail OAuth
+  async getGoogleToken(userId: string): Promise<GoogleToken | undefined> {
+    const [token] = await db.select().from(googleTokens).where(eq(googleTokens.userId, userId));
+    return token ?? undefined;
+  }
+
+  async saveGoogleToken(userId: string, data: { accessToken: string; refreshToken?: string | null; expiresAt?: Date | null; gmailEmail?: string | null }): Promise<GoogleToken> {
+    const existing = await this.getGoogleToken(userId);
+    if (existing) {
+      const [updated] = await db
+        .update(googleTokens)
+        .set({
+          accessToken: data.accessToken,
+          ...(data.refreshToken !== undefined ? { refreshToken: data.refreshToken } : {}),
+          ...(data.expiresAt !== undefined ? { expiresAt: data.expiresAt } : {}),
+          ...(data.gmailEmail !== undefined ? { gmailEmail: data.gmailEmail } : {}),
+        })
+        .where(eq(googleTokens.userId, userId))
+        .returning();
+      return updated;
+    }
+    const [created] = await db
+      .insert(googleTokens)
+      .values({
+        userId,
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken ?? null,
+        expiresAt: data.expiresAt ?? null,
+        gmailEmail: data.gmailEmail ?? null,
+      })
+      .returning();
+    return created;
+  }
+
+  async deleteGoogleToken(userId: string): Promise<void> {
+    await db.delete(googleTokens).where(eq(googleTokens.userId, userId));
+  }
+
+  async getUsersWithGmailTokens(): Promise<User[]> {
+    const rows = await db
+      .select({ user: users })
+      .from(googleTokens)
+      .innerJoin(users, eq(googleTokens.userId, users.id));
+    return rows.map((r) => r.user);
   }
 
   // Dashboard

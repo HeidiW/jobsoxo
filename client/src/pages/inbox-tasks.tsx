@@ -40,7 +40,6 @@ import {
   CircleDot,
   PlugZap,
   Unplug,
-  ExternalLink,
   MoreHorizontal,
   X,
   BellOff,
@@ -50,7 +49,6 @@ import {
 } from "lucide-react";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 import type { InboxTask } from "@shared/schema";
-import { useAuth } from "@/hooks/use-auth";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -65,13 +63,11 @@ function snoozeOptionDates(): { label: string; date: Date }[] {
   const tomorrow = midnightOn(new Date(now));
   tomorrow.setDate(tomorrow.getDate() + 1);
 
-  // "This weekend" = next Saturday; if today is already Sat/Sun advance to next Sat
   const weekend = midnightOn(new Date(now));
-  const dayOfWeek = weekend.getDay(); // 0=Sun,6=Sat
+  const dayOfWeek = weekend.getDay();
   const daysToSat = dayOfWeek === 6 ? 7 : (6 - dayOfWeek);
   weekend.setDate(weekend.getDate() + daysToSat);
 
-  // "Next week" = next Monday
   const nextWeek = midnightOn(new Date(now));
   const daysToMon = dayOfWeek === 1 ? 7 : (8 - dayOfWeek) % 7 || 7;
   nextWeek.setDate(nextWeek.getDate() + daysToMon);
@@ -123,37 +119,29 @@ function groupByDay(tasks: InboxTask[]) {
 function NotConnectedCard({
   onConnect,
   connecting,
-  isAdmin,
 }: {
   onConnect: () => void;
   connecting: boolean;
-  isAdmin: boolean;
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto">
       <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-6">
         <Mail className="h-8 w-8 text-muted-foreground" />
       </div>
-      <h2 className="text-xl font-semibold mb-2">
-        {isAdmin ? "Connect Gmail" : "Gmail not connected"}
-      </h2>
+      <h2 className="text-xl font-semibold mb-2">Connect your Gmail</h2>
       <p className="text-muted-foreground mb-2 leading-relaxed">
-        {isAdmin
-          ? "Connect the business Gmail account to see inbox emails as a shared daily to-do list. Only inbox emails are read — nothing is sent or modified."
-          : "An admin needs to connect the business Gmail account before inbox tasks are available here."}
+        Connect your Gmail account to see your inbox as a daily to-do list.
+        Only inbox emails are read — nothing is sent or modified.
       </p>
-      {isAdmin && (
-        <Button
-          className="mt-4"
-          onClick={onConnect}
-          disabled={connecting}
-          data-testid="button-connect-gmail"
-        >
-          <PlugZap className="h-4 w-4 mr-2" />
-          {connecting ? "Opening…" : "Connect Gmail"}
-          <ExternalLink className="h-3 w-3 ml-1 opacity-60" />
-        </Button>
-      )}
+      <Button
+        className="mt-4"
+        onClick={onConnect}
+        disabled={connecting}
+        data-testid="button-connect-gmail"
+      >
+        <PlugZap className="h-4 w-4 mr-2" />
+        {connecting ? "Redirecting…" : "Connect Gmail"}
+      </Button>
     </div>
   );
 }
@@ -163,11 +151,9 @@ function NotConnectedCard({
 function EmptyInboxCard({
   onRefresh,
   loading,
-  isAdmin,
 }: {
   onRefresh: () => void;
   loading: boolean;
-  isAdmin: boolean;
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -176,12 +162,10 @@ function EmptyInboxCard({
       <p className="text-muted-foreground mt-1 mb-4">
         No emails in your inbox right now.
       </p>
-      {isAdmin && (
-        <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
-      )}
+      <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
+        <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+        Refresh
+      </Button>
     </div>
   );
 }
@@ -423,8 +407,6 @@ function TasksSkeleton() {
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
-
 // ── Hidden task row ───────────────────────────────────────────────────────────
 
 function HiddenTaskRow({
@@ -493,22 +475,52 @@ function HiddenTaskRow({
 
 export default function InboxTasks() {
   const { toast } = useToast();
-  const { user } = useAuth();
-  const isAdmin = !!user?.isAdmin;
 
   const [showDone, setShowDone] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
+  const [connecting, setConnecting] = useState(false);
 
-  // Connection status — polling every 30 s
+  // Handle OAuth redirect result on page load
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const gmailConnected = params.get("gmail_connected");
+    const gmailError = params.get("gmail_error");
+
+    if (gmailConnected === "1") {
+      toast({ title: "Gmail connected!", description: "Your inbox is syncing now." });
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/status"] });
+      // Trigger immediate refresh
+      setTimeout(() => refreshMutation.mutate(), 500);
+    } else if (gmailError) {
+      const msg = gmailError === "invalid_state"
+        ? "Security check failed. Please try connecting again."
+        : gmailError === "access_denied"
+        ? "Gmail access was denied. You can try again any time."
+        : `Gmail connection error: ${gmailError}`;
+      toast({ title: "Gmail connection failed", description: msg, variant: "destructive" });
+    }
+
+    // Clean URL
+    if (gmailConnected || gmailError) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("gmail_connected");
+      url.searchParams.delete("gmail_error");
+      window.history.replaceState({}, "", url.toString());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Connection status — polling every 30 s (now returns { connected, email })
   const { data: status, isLoading: statusLoading } = useQuery<{
     connected: boolean;
+    email: string | null;
   }>({
     queryKey: ["/api/inbox/status"],
     refetchInterval: 30_000,
   });
 
-  // Last auto-sync timestamp — polling every 60 s so badge refreshes after background sync
+  // Last auto-sync timestamp — polling every 60 s
   const { data: syncInfo } = useQuery<{ lastSyncedAt: string | null }>({
     queryKey: ["/api/inbox/last-sync"],
     refetchInterval: 60_000,
@@ -522,12 +534,13 @@ export default function InboxTasks() {
   });
 
   // Hidden (dismissed + snoozed) tasks — fetched on demand when panel is opened
+  const connected = status?.connected ?? false;
   const { data: hiddenTasks = [], isLoading: hiddenLoading } = useQuery<InboxTask[]>({
     queryKey: ["/api/inbox/tasks/hidden"],
     enabled: showHidden && connected,
   });
 
-  // Refresh — fetches live from Gmail and upserts into cache (any user)
+  // Refresh — fetches live from the user's Gmail and upserts into cache
   const refreshMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("GET", "/api/inbox/messages");
@@ -546,10 +559,9 @@ export default function InboxTasks() {
     },
   });
 
-  // Admin-only: auto-fetch on page load when connected but cache is empty
+  // Auto-fetch on page load when connected but cache is empty
   useEffect(() => {
     if (
-      isAdmin &&
       status?.connected &&
       !tasksLoading &&
       tasks.length === 0 &&
@@ -558,50 +570,18 @@ export default function InboxTasks() {
       refreshMutation.mutate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, status?.connected, tasksLoading]);
+  }, [status?.connected, tasksLoading]);
 
-  // Connect — opens Gmail OAuth in a new tab (any user can connect their own account)
-  const connectMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("GET", "/api/inbox/connect");
-      return res.json() as Promise<{ authUrl?: string; error?: string; code?: string }>;
-    },
-    onSuccess: (data) => {
-      if (data.authUrl) {
-        window.open(data.authUrl, "_blank", "noopener,noreferrer");
-        toast({
-          title: "Gmail OAuth opened",
-          description:
-            "Complete the authorisation in the new tab, then click Refresh here.",
-        });
-      } else if (data.code === "NO_CONNECTOR_HOST") {
-        toast({
-          title: "Use the Integrations panel",
-          description:
-            "Click the puzzle-piece icon in the Replit sidebar to connect Gmail, then refresh.",
-        });
-      } else {
-        toast({
-          title: "Could not start OAuth",
-          description: data.error ?? "Unknown error",
-          variant: "destructive",
-        });
-      }
-    },
-    onError: () => {
-      toast({
-        title: "Could not start Gmail connection",
-        description:
-          "Try connecting Gmail from the Replit integrations panel (puzzle-piece icon).",
-        variant: "destructive",
-      });
-    },
-  });
+  // Connect — redirect browser to Google OAuth flow
+  const handleConnect = () => {
+    setConnecting(true);
+    window.location.href = "/api/gmail/auth";
+  };
 
-  // Disconnect — revokes OAuth and clears this user's cached tasks
+  // Disconnect — removes the user's Google token and cached tasks
   const disconnectMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/inbox/disconnect");
+      await apiRequest("DELETE", "/api/gmail/disconnect");
     },
     onSuccess: () => {
       queryClient.setQueryData(["/api/inbox/tasks"], []);
@@ -613,8 +593,6 @@ export default function InboxTasks() {
       toast({ title: "Failed to disconnect", variant: "destructive" });
     },
   });
-
-  const connected = status?.connected ?? false;
 
   const visibleTasks = showDone ? tasks : tasks.filter((t) => !t.isDone);
   const groups = groupByDay(visibleTasks);
@@ -691,7 +669,7 @@ export default function InboxTasks() {
           <AlertDialogHeader>
             <AlertDialogTitle>Disconnect Gmail?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will revoke Gmail access and remove your cached inbox tasks.
+              This will remove your Gmail connection and delete your cached inbox tasks.
               You can reconnect at any time.
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -746,26 +724,27 @@ export default function InboxTasks() {
             ) : (
               <WifiOff className="h-3 w-3" />
             )}
-            {connected ? "Gmail connected" : "Not connected"}
+            {connected
+              ? (status?.email ? status.email : "Gmail connected")
+              : "Not connected"}
           </div>
 
-          {/* Admin-only: Connect (when not connected) */}
-          {isAdmin && !connected && (
+          {/* Connect (when not connected) */}
+          {!connected && !isLoading && (
             <Button
               variant="outline"
               size="sm"
-              onClick={() => connectMutation.mutate()}
-              disabled={connectMutation.isPending}
+              onClick={handleConnect}
+              disabled={connecting}
               data-testid="button-connect-gmail"
             >
               <PlugZap className="h-4 w-4 mr-1.5" />
-              {connectMutation.isPending ? "Opening…" : "Connect Gmail"}
-              <ExternalLink className="h-3 w-3 ml-1 opacity-60" />
+              {connecting ? "Redirecting…" : "Connect Gmail"}
             </Button>
           )}
 
-          {/* Admin-only: Disconnect */}
-          {isAdmin && connected && (
+          {/* Disconnect */}
+          {connected && (
             <Button
               variant="outline"
               size="sm"
@@ -778,7 +757,7 @@ export default function InboxTasks() {
             </Button>
           )}
 
-          {/* Show/hide done — all users */}
+          {/* Show/hide done */}
           {connected && tasks.length > 0 && (
             <Button
               variant="outline"
@@ -791,8 +770,8 @@ export default function InboxTasks() {
             </Button>
           )}
 
-          {/* Admin-only: Refresh (live Gmail fetch) */}
-          {isAdmin && connected && (
+          {/* Refresh (live Gmail fetch) */}
+          {connected && (
             <Button
               size="sm"
               onClick={() => refreshMutation.mutate()}
@@ -861,15 +840,13 @@ export default function InboxTasks() {
             <TasksSkeleton />
           ) : showNotConnected ? (
             <NotConnectedCard
-              onConnect={() => connectMutation.mutate()}
-              connecting={connectMutation.isPending}
-              isAdmin={isAdmin}
+              onConnect={handleConnect}
+              connecting={connecting}
             />
           ) : showEmptyConnected ? (
             <EmptyInboxCard
               onRefresh={() => refreshMutation.mutate()}
               loading={refreshMutation.isPending}
-              isAdmin={isAdmin}
             />
           ) : showList ? (
             <>

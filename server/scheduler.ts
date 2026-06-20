@@ -1,15 +1,16 @@
 /**
  * Background scheduler for periodic Gmail inbox sync.
  *
- * Runs a sync for all users who already have inbox tasks at a configurable
- * time each day (default: 08:00 local server time). The hour can be overridden
- * via the INBOX_SYNC_HOUR environment variable (0-23).
+ * Runs a daily sync for every user who has connected their own Gmail account
+ * (i.e. has a row in the google_tokens table). The sync hour is configurable
+ * via the Settings page (persisted in the settings table) or the
+ * INBOX_SYNC_HOUR environment variable (0-23). Defaults to 08:00.
  *
  * lastSyncedAt is persisted in the settings table so it survives restarts.
  */
 
 import { storage } from "./storage";
-import { fetchGmailInbox, isGmailConnected } from "./gmail";
+import { fetchUserGmailInbox } from "./gmail";
 import { log } from "./index";
 
 let schedulerTimer: ReturnType<typeof setTimeout> | null = null;
@@ -24,26 +25,20 @@ export async function getLastInboxSyncTime(): Promise<Date | null> {
   }
 }
 
-async function syncInboxForUsersWithTasks(): Promise<void> {
-  const connected = await isGmailConnected();
-  if (!connected) {
-    log("Inbox auto-sync skipped — Gmail not connected", "scheduler");
-    return;
-  }
+async function syncInboxForConnectedUsers(): Promise<void> {
+  const connectedUsers = await storage.getUsersWithGmailTokens();
 
-  const targetUsers = await storage.getUsersWithInboxTasks();
-  if (targetUsers.length === 0) {
-    log("Inbox auto-sync skipped — no users with inbox tasks found", "scheduler");
+  if (connectedUsers.length === 0) {
+    log("Inbox auto-sync skipped — no users with Gmail connected", "scheduler");
     return;
   }
 
   let synced = 0;
   let errors = 0;
 
-  const messages = await fetchGmailInbox(50);
-
-  for (const user of targetUsers) {
+  for (const user of connectedUsers) {
     try {
+      const messages = await fetchUserGmailInbox(user.id, 50);
       await Promise.all(
         messages.map((m) =>
           storage.upsertInboxTask({
@@ -70,7 +65,7 @@ async function syncInboxForUsersWithTasks(): Promise<void> {
   await storage.setLastInboxSync(syncTime);
 
   log(
-    `Inbox auto-sync complete — ${messages.length} messages, ${synced} users synced, ${errors} errors`,
+    `Inbox auto-sync complete — ${connectedUsers.length} users processed, ${synced} synced, ${errors} errors`,
     "scheduler"
   );
 }
@@ -127,7 +122,7 @@ export function startInboxScheduler(): void {
     schedulerTimer = setTimeout(async () => {
       log("Inbox auto-sync starting…", "scheduler");
       try {
-        await syncInboxForUsersWithTasks();
+        await syncInboxForConnectedUsers();
       } catch (err) {
         log(`Inbox auto-sync failed: ${err}`, "scheduler");
       }

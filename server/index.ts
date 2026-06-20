@@ -9,6 +9,7 @@ import { startInboxScheduler } from "./scheduler";
 declare module "express-session" {
   interface SessionData {
     userId: string;
+    gmailOAuthState?: string;
   }
 }
 
