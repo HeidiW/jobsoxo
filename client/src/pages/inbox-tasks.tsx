@@ -15,6 +15,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -30,6 +36,9 @@ import {
   PlugZap,
   Unplug,
   ExternalLink,
+  MoreHorizontal,
+  X,
+  BellOff,
 } from "lucide-react";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 import type { InboxTask } from "@shared/schema";
@@ -145,9 +154,13 @@ function EmptyInboxCard({
 function TaskRow({
   task,
   onToggle,
+  onDismiss,
+  onSnooze,
 }: {
   task: InboxTask;
   onToggle: (emailId: string, isDone: boolean) => void;
+  onDismiss: (emailId: string) => void;
+  onSnooze: (emailId: string) => void;
 }) {
   const initials = senderInitials(task.sender);
   const color = senderColor(task.senderEmail ?? task.sender);
@@ -201,10 +214,43 @@ function TaskRow({
           )}
         </div>
       </div>
-      <div className="shrink-0 text-xs text-muted-foreground whitespace-nowrap pt-0.5">
-        {isToday(receivedAt)
-          ? format(receivedAt, "h:mm a")
-          : format(receivedAt, "MMM d")}
+      <div className="shrink-0 flex items-center gap-1 pt-0.5">
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
+          {isToday(receivedAt)
+            ? format(receivedAt, "h:mm a")
+            : format(receivedAt, "MMM d")}
+        </span>
+        <div onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                data-testid={`button-actions-${task.emailId}`}
+              >
+                <MoreHorizontal className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => onSnooze(task.emailId)}
+                data-testid={`menu-snooze-${task.emailId}`}
+              >
+                <BellOff className="h-4 w-4 mr-2" />
+                Snooze until tomorrow
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onDismiss(task.emailId)}
+                className="text-destructive focus:text-destructive"
+                data-testid={`menu-dismiss-${task.emailId}`}
+              >
+                <X className="h-4 w-4 mr-2" />
+                Dismiss
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </div>
   );
@@ -216,10 +262,14 @@ function Section({
   label,
   tasks,
   onToggle,
+  onDismiss,
+  onSnooze,
 }: {
   label: string;
   tasks: InboxTask[];
   onToggle: (emailId: string, isDone: boolean) => void;
+  onDismiss: (emailId: string) => void;
+  onSnooze: (emailId: string) => void;
 }) {
   if (!tasks.length) return null;
   const undoneCount = tasks.filter((t) => !t.isDone).length;
@@ -237,7 +287,13 @@ function Section({
       </div>
       <div className="space-y-0.5">
         {tasks.map((t) => (
-          <TaskRow key={t.id} task={t} onToggle={onToggle} />
+          <TaskRow
+            key={t.id}
+            task={t}
+            onToggle={onToggle}
+            onDismiss={onDismiss}
+            onSnooze={onSnooze}
+          />
         ))}
       </div>
     </div>
@@ -398,15 +454,35 @@ export default function InboxTasks() {
   const showList = !isLoading && connected && visibleTasks.length > 0;
 
   const handleToggle = (emailId: string, isDone: boolean) => {
-    // Optimistic update
     queryClient.setQueryData(["/api/inbox/tasks"], (old: InboxTask[] = []) =>
       old.map((t) => (t.emailId === emailId ? { ...t, isDone } : t))
     );
     apiRequest("PATCH", `/api/inbox/tasks/${emailId}/done`, { isDone }).catch(() => {
-      // Rollback on failure
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
       toast({ title: "Couldn't update task", variant: "destructive" });
     });
+  };
+
+  const handleDismiss = (emailId: string) => {
+    queryClient.setQueryData(["/api/inbox/tasks"], (old: InboxTask[] = []) =>
+      old.filter((t) => t.emailId !== emailId)
+    );
+    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/dismiss`).catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
+      toast({ title: "Couldn't dismiss task", variant: "destructive" });
+    });
+    toast({ title: "Email dismissed" });
+  };
+
+  const handleSnooze = (emailId: string) => {
+    queryClient.setQueryData(["/api/inbox/tasks"], (old: InboxTask[] = []) =>
+      old.filter((t) => t.emailId !== emailId)
+    );
+    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/snooze`).catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
+      toast({ title: "Couldn't snooze task", variant: "destructive" });
+    });
+    toast({ title: "Snoozed until tomorrow" });
   };
 
   return (
@@ -602,13 +678,27 @@ export default function InboxTasks() {
             />
           ) : showList ? (
             <>
-              <Section label="Today" tasks={groups.today} onToggle={handleToggle} />
+              <Section
+                label="Today"
+                tasks={groups.today}
+                onToggle={handleToggle}
+                onDismiss={handleDismiss}
+                onSnooze={handleSnooze}
+              />
               <Section
                 label="Yesterday"
                 tasks={groups.yesterday}
                 onToggle={handleToggle}
+                onDismiss={handleDismiss}
+                onSnooze={handleSnooze}
               />
-              <Section label="Earlier" tasks={groups.earlier} onToggle={handleToggle} />
+              <Section
+                label="Earlier"
+                tasks={groups.earlier}
+                onToggle={handleToggle}
+                onDismiss={handleDismiss}
+                onSnooze={handleSnooze}
+              />
             </>
           ) : null}
         </CardContent>
@@ -618,7 +708,7 @@ export default function InboxTasks() {
       {tasks.length > 0 && (
         <p className="text-xs text-muted-foreground text-center mt-4">
           <Clock className="h-3 w-3 inline mr-1" />
-          Click an email row or its checkbox to mark it done · Use Refresh to sync latest inbox
+          Click a row or checkbox to mark done · Hover a row for dismiss/snooze options
         </p>
       )}
     </div>

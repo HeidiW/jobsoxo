@@ -130,6 +130,8 @@ export interface IStorage {
   getInboxTasks(userId: string): Promise<InboxTask[]>;
   upsertInboxTask(task: InsertInboxTask): Promise<InboxTask>;
   markInboxTaskDone(userId: string, emailId: string, isDone: boolean): Promise<InboxTask | undefined>;
+  dismissInboxTask(userId: string, emailId: string): Promise<InboxTask | undefined>;
+  snoozeInboxTask(userId: string, emailId: string, until: Date): Promise<InboxTask | undefined>;
   deleteUserInboxTasks(userId: string): Promise<void>;
   deleteAllInboxTasks(): Promise<void>;
 
@@ -483,10 +485,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getInboxTasks(userId: string): Promise<InboxTask[]> {
+    const now = new Date();
     return db
       .select()
       .from(inboxTasks)
-      .where(eq(inboxTasks.userId, userId))
+      .where(
+        and(
+          eq(inboxTasks.userId, userId),
+          eq(inboxTasks.dismissed, false),
+          or(isNull(inboxTasks.snoozedUntil), lte(inboxTasks.snoozedUntil, now))
+        )
+      )
       .orderBy(desc(inboxTasks.receivedAt));
   }
 
@@ -521,6 +530,24 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(inboxTasks)
       .set({ isDone })
+      .where(and(eq(inboxTasks.userId, userId), eq(inboxTasks.emailId, emailId)))
+      .returning();
+    return updated ?? undefined;
+  }
+
+  async dismissInboxTask(userId: string, emailId: string): Promise<InboxTask | undefined> {
+    const [updated] = await db
+      .update(inboxTasks)
+      .set({ dismissed: true })
+      .where(and(eq(inboxTasks.userId, userId), eq(inboxTasks.emailId, emailId)))
+      .returning();
+    return updated ?? undefined;
+  }
+
+  async snoozeInboxTask(userId: string, emailId: string, until: Date): Promise<InboxTask | undefined> {
+    const [updated] = await db
+      .update(inboxTasks)
+      .set({ snoozedUntil: until })
       .where(and(eq(inboxTasks.userId, userId), eq(inboxTasks.emailId, emailId)))
       .returning();
     return updated ?? undefined;

@@ -1375,6 +1375,33 @@ export async function registerRoutes(
     }
   });
 
+  // Dismiss — permanently removes task from list for this user
+  app.patch("/api/inbox/tasks/:emailId/dismiss", async (req, res) => {
+    try {
+      const task = await storage.dismissInboxTask(req.session.userId!, req.params.emailId);
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      res.json(task);
+    } catch (error) {
+      console.error("Dismiss inbox task error:", error);
+      res.status(500).json({ error: "Failed to dismiss task" });
+    }
+  });
+
+  // Snooze until tomorrow — hides task until start of next day
+  app.patch("/api/inbox/tasks/:emailId/snooze", async (req, res) => {
+    try {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+      const task = await storage.snoozeInboxTask(req.session.userId!, req.params.emailId, tomorrow);
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      res.json(task);
+    } catch (error) {
+      console.error("Snooze inbox task error:", error);
+      res.status(500).json({ error: "Failed to snooze task" });
+    }
+  });
+
   // Settings
   app.get("/api/settings", async (req, res) => {
     try {
