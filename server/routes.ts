@@ -1426,7 +1426,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/settings", async (req, res) => {
+  app.patch("/api/settings", requireAuth, requireAdmin, async (req, res) => {
     try {
       const parsed = insertSettingsSchema.partial().safeParse(req.body);
       if (!parsed.success) return badRequest(res, parsed.error);

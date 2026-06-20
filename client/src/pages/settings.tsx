@@ -46,6 +46,7 @@ const settingsFormSchema = z.object({
   taxRate: z.string().optional(),
   invoicePrefix: z.string().optional(),
   invoiceTerms: z.string().optional(),
+  inboxSyncHour: z.coerce.number().int().min(0).max(23).optional(),
 });
 
 type SettingsFormValues = z.infer<typeof settingsFormSchema>;
@@ -234,6 +235,7 @@ export default function SettingsPage() {
       taxRate: settings?.taxRate?.toString() || "0",
       invoicePrefix: settings?.invoicePrefix || "INV",
       invoiceTerms: settings?.invoiceTerms || "",
+      inboxSyncHour: settings?.inboxSyncHour ?? 8,
     },
   });
 
@@ -242,6 +244,7 @@ export default function SettingsPage() {
       const payload = {
         ...data,
         taxRate: parseFloat(data.taxRate || "0"),
+        inboxSyncHour: data.inboxSyncHour ?? 8,
       };
       const res = await apiRequest("PATCH", "/api/settings", payload);
       return res.json();
@@ -472,6 +475,46 @@ export default function SettingsPage() {
               </p>
             </CardContent>
           </Card>
+
+          {user?.isAdmin && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Inbox Sync Schedule
+                </CardTitle>
+                <CardDescription>
+                  Configure when the daily Gmail inbox sync runs
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <FormField
+                  control={form.control}
+                  name="inboxSyncHour"
+                  render={({ field }) => (
+                    <FormItem className="max-w-xs">
+                      <FormLabel>Inbox sync hour (0–23)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={23}
+                          step={1}
+                          placeholder="8"
+                          {...field}
+                          data-testid="input-inbox-sync-hour"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Hour of the day (server local time) when inbox auto-sync runs. Changes apply at the next scheduling cycle — no restart needed.
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+            </Card>
+          )}
 
           <div className="flex justify-end">
             <Button type="submit" disabled={updateSettingsMutation.isPending} data-testid="button-save-settings">

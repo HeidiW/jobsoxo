@@ -400,12 +400,14 @@ export const settings = pgTable("settings", {
   reminderIntervals: jsonb("reminder_intervals").default([7, 14, 30]), // days after due date
   emailSettings: jsonb("email_settings"),
   lastInboxSync: timestamp("last_inbox_sync"),
+  inboxSyncHour: integer("inbox_sync_hour").default(8), // 0-23, hour of day for daily inbox sync
 });
 
 export const insertSettingsSchema = createInsertSchema(settings)
   .omit({ id: true })
   .extend({
     taxRate: z.coerce.string().optional(),
+    inboxSyncHour: z.number().int().min(0).max(23).optional().nullable(),
   });
 export type InsertSettings = z.infer<typeof insertSettingsSchema>;
 export type Settings = typeof settings.$inferSelect;

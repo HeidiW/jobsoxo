@@ -90,16 +90,33 @@ function msUntilNextHour(hour: number): number {
 }
 
 /**
- * Start the daily inbox auto-sync scheduler.
- * Call once at server startup.
+ * Read the configured inbox sync hour from the database.
+ * Falls back to the INBOX_SYNC_HOUR env var, then to 8.
  */
-export function startInboxScheduler(): void {
-  const syncHour = Math.min(
+async function getInboxSyncHour(): Promise<number> {
+  try {
+    const s = await storage.getSettings();
+    if (s?.inboxSyncHour != null) {
+      return Math.min(23, Math.max(0, s.inboxSyncHour));
+    }
+  } catch {
+    // ignore — fall through to env/default
+  }
+  return Math.min(
     23,
     Math.max(0, parseInt(process.env.INBOX_SYNC_HOUR ?? "8", 10) || 8)
   );
+}
 
-  const scheduleNext = () => {
+/**
+ * Start the daily inbox auto-sync scheduler.
+ * Call once at server startup.
+ * The sync hour is re-read from the database at each rescheduling cycle,
+ * so changes take effect without a server restart.
+ */
+export function startInboxScheduler(): void {
+  const scheduleNext = async () => {
+    const syncHour = await getInboxSyncHour();
     const delay = msUntilNextHour(syncHour);
     const nextRun = new Date(Date.now() + delay);
     log(

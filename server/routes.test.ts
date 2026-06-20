@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
-import { buildTestApp } from "./test-helpers";
+import { buildTestApp, buildAdminTestApp } from "./test-helpers";
 
 let app: Express;
 
@@ -584,5 +584,53 @@ describe("POST /api/time-entries — validation", () => {
 
     expect(res.body.error).toBe("Invalid request data");
     expect(res.body.details).toHaveProperty("date");
+  });
+});
+
+describe("PATCH /api/settings — access control", () => {
+  it("returns 403 for non-admin users", async () => {
+    const res = await request(app)
+      .patch("/api/settings")
+      .send({ inboxSyncHour: 9 })
+      .expect(403);
+
+    expect(res.body.error).toBe("Admin access required");
+  });
+});
+
+describe("PATCH /api/settings — inboxSyncHour validation", () => {
+  let adminApp: Express;
+
+  beforeAll(async () => {
+    adminApp = await buildAdminTestApp();
+  });
+
+  it("returns 400 when inboxSyncHour is above 23", async () => {
+    const res = await request(adminApp)
+      .patch("/api/settings")
+      .send({ inboxSyncHour: 24 })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("inboxSyncHour");
+  });
+
+  it("returns 400 when inboxSyncHour is below 0", async () => {
+    const res = await request(adminApp)
+      .patch("/api/settings")
+      .send({ inboxSyncHour: -1 })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("inboxSyncHour");
+  });
+
+  it("allows admin to set a valid inboxSyncHour", async () => {
+    const res = await request(adminApp)
+      .patch("/api/settings")
+      .send({ inboxSyncHour: 9 })
+      .expect(200);
+
+    expect(res.body.inboxSyncHour).toBe(9);
   });
 });
