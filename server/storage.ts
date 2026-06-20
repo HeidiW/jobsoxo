@@ -22,6 +22,8 @@ import {
   type Settings,
   type InsertSettings,
   type Invite,
+  type InboxTask,
+  type InsertInboxTask,
   users,
   clients,
   jobs,
@@ -34,6 +36,7 @@ import {
   payrollRecords,
   settings,
   invites,
+  inboxTasks,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql, isNull, or } from "drizzle-orm";
@@ -120,6 +123,11 @@ export interface IStorage {
   createInvite(code: string, label?: string): Promise<Invite>;
   markInviteUsed(code: string, userId: string): Promise<void>;
   deleteInvite(id: string): Promise<void>;
+
+  // Inbox Tasks
+  getInboxTasks(userId: string): Promise<InboxTask[]>;
+  upsertInboxTask(task: InsertInboxTask): Promise<InboxTask>;
+  markInboxTaskDone(userId: string, emailId: string, isDone: boolean): Promise<InboxTask | undefined>;
 
   // Dashboard
   getDashboardStats(): Promise<{
@@ -449,6 +457,51 @@ export class DatabaseStorage implements IStorage {
         employeeIds.map((employeeId) => ({ employeeId, jobId }))
       );
     }
+  }
+
+  // Inbox Tasks
+  async getInboxTasks(userId: string): Promise<InboxTask[]> {
+    return db
+      .select()
+      .from(inboxTasks)
+      .where(eq(inboxTasks.userId, userId))
+      .orderBy(desc(inboxTasks.receivedAt));
+  }
+
+  async upsertInboxTask(task: InsertInboxTask): Promise<InboxTask> {
+    const [existing] = await db
+      .select()
+      .from(inboxTasks)
+      .where(and(eq(inboxTasks.userId, task.userId), eq(inboxTasks.emailId, task.emailId)));
+
+    if (existing) {
+      // Preserve the isDone state — only update metadata
+      const [updated] = await db
+        .update(inboxTasks)
+        .set({
+          subject: task.subject,
+          sender: task.sender,
+          senderEmail: task.senderEmail,
+          snippet: task.snippet,
+          receivedAt: task.receivedAt,
+          isRead: task.isRead,
+        })
+        .where(eq(inboxTasks.id, existing.id))
+        .returning();
+      return updated;
+    }
+
+    const [created] = await db.insert(inboxTasks).values(task).returning();
+    return created;
+  }
+
+  async markInboxTaskDone(userId: string, emailId: string, isDone: boolean): Promise<InboxTask | undefined> {
+    const [updated] = await db
+      .update(inboxTasks)
+      .set({ isDone })
+      .where(and(eq(inboxTasks.userId, userId), eq(inboxTasks.emailId, emailId)))
+      .returning();
+    return updated ?? undefined;
   }
 
   // Dashboard

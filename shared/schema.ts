@@ -341,6 +341,25 @@ export const insertPayrollRecordSchema = createInsertSchema(payrollRecords)
 export type InsertPayrollRecord = z.infer<typeof insertPayrollRecordSchema>;
 export type PayrollRecord = typeof payrollRecords.$inferSelect;
 
+// Inbox Tasks — Gmail-synced email items shown as a daily to-do list
+export const inboxTasks = pgTable("inbox_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  emailId: text("email_id").notNull(),
+  subject: text("subject").notNull().default("(No subject)"),
+  sender: text("sender").notNull(),
+  senderEmail: text("sender_email"),
+  snippet: text("snippet"),
+  receivedAt: timestamp("received_at").notNull(),
+  isRead: boolean("is_read").default(true),
+  isDone: boolean("is_done").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertInboxTaskSchema = createInsertSchema(inboxTasks).omit({ id: true, createdAt: true });
+export type InsertInboxTask = z.infer<typeof insertInboxTaskSchema>;
+export type InboxTask = typeof inboxTasks.$inferSelect;
+
 // Settings table for company info and email configuration
 export const settings = pgTable("settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

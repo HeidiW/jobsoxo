@@ -10,6 +10,7 @@ import {
   Settings,
   PaintBucket,
   LogOut,
+  Inbox,
 } from "lucide-react";
 import {
   Sidebar,
@@ -24,7 +25,11 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
+import { isToday } from "date-fns";
+import type { InboxTask } from "@shared/schema";
 
 const navItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -43,6 +48,18 @@ const settingsItems = [
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout, isLoggingOut } = useAuth();
+
+  const { data: inboxTasks } = useQuery<InboxTask[]>({
+    queryKey: ["/api/inbox/tasks"],
+    refetchInterval: 60_000,
+  });
+
+  const inboxBadge = inboxTasks
+    ? inboxTasks.filter((t) => !t.isDone && isToday(new Date(t.receivedAt))).length
+    : 0;
+
+  const isInboxActive =
+    location === "/inbox-tasks" || location.startsWith("/inbox-tasks");
 
   return (
     <Sidebar>
@@ -63,11 +80,16 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item) => {
-                const isActive = location === item.url || (item.url !== "/" && location.startsWith(item.url));
+                const isActive =
+                  location === item.url ||
+                  (item.url !== "/" && location.startsWith(item.url));
                 return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={item.url} data-testid={`nav-${item.title.toLowerCase()}`}>
+                      <Link
+                        href={item.url}
+                        data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
+                      >
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
                       </Link>
@@ -75,6 +97,24 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 );
               })}
+
+              {/* Inbox Tasks with badge */}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isInboxActive}>
+                  <Link href="/inbox-tasks" data-testid="nav-inbox-tasks">
+                    <Inbox className="h-4 w-4" />
+                    <span>Inbox Tasks</span>
+                    {inboxBadge > 0 && (
+                      <Badge
+                        className="ml-auto h-4 min-w-4 px-1 text-[10px] bg-primary text-primary-foreground leading-none"
+                        data-testid="badge-inbox-count"
+                      >
+                        {inboxBadge}
+                      </Badge>
+                    )}
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -87,7 +127,10 @@ export function AppSidebar() {
                 return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton asChild isActive={isActive}>
-                      <Link href={item.url} data-testid={`nav-${item.title.toLowerCase()}`}>
+                      <Link
+                        href={item.url}
+                        data-testid={`nav-${item.title.toLowerCase()}`}
+                      >
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
                       </Link>

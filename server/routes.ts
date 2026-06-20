@@ -12,6 +12,7 @@ import { z } from "zod";
 import { sendInvoiceEmail, processOverdueReminders, sendPasswordResetEmail } from "./email";
 import bcrypt from "bcryptjs";
 import { passport, setupOAuthStrategies, getEnabledProviders, callbackUrl } from "./oauth";
+import { isGmailConnected, fetchGmailInbox } from "./gmail";
 
 function parseNumeric(value: unknown): number {
   if (typeof value === "number") return value;
@@ -1203,6 +1204,86 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete invite" });
+    }
+  });
+
+  // ── Inbox (Gmail) ─────────────────────────────────────────────────────────
+
+  // Check if Gmail is connected and return cached tasks
+  app.get("/api/inbox/status", async (req, res) => {
+    try {
+      const connected = await isGmailConnected();
+      res.json({ connected });
+    } catch {
+      res.json({ connected: false });
+    }
+  });
+
+  // Return cached inbox tasks for the current user
+  app.get("/api/inbox/tasks", async (req, res) => {
+    try {
+      const tasks = await storage.getInboxTasks(req.session.userId!);
+      res.json(tasks);
+    } catch (error) {
+      console.error("Get inbox tasks error:", error);
+      res.status(500).json({ error: "Failed to get inbox tasks" });
+    }
+  });
+
+  // Sync inbox from Gmail, upsert into DB, return merged list
+  app.post("/api/inbox/sync", async (req, res) => {
+    try {
+      const messages = await fetchGmailInbox(50);
+      const userId = req.session.userId!;
+
+      await Promise.all(
+        messages.map((m) =>
+          storage.upsertInboxTask({
+            userId,
+            emailId: m.id,
+            subject: m.subject,
+            sender: m.sender,
+            senderEmail: m.senderEmail ?? null,
+            snippet: m.snippet ?? null,
+            receivedAt: m.receivedAt,
+            isRead: m.isRead,
+            isDone: false,
+          })
+        )
+      );
+
+      const tasks = await storage.getInboxTasks(userId);
+      res.json(tasks);
+    } catch (error: any) {
+      const msg = error?.message ?? "Failed to sync Gmail";
+      if (msg.includes("not connected")) {
+        return res.status(503).json({ error: "Gmail not connected", code: "NOT_CONNECTED" });
+      }
+      if (msg.includes("expired")) {
+        return res.status(401).json({ error: msg, code: "TOKEN_EXPIRED" });
+      }
+      console.error("Gmail sync error:", error);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // Toggle done state for an inbox task
+  app.patch("/api/inbox/tasks/:emailId/done", async (req, res) => {
+    try {
+      const { isDone } = req.body;
+      if (typeof isDone !== "boolean") {
+        return res.status(400).json({ error: "isDone (boolean) is required" });
+      }
+      const task = await storage.markInboxTaskDone(
+        req.session.userId!,
+        req.params.emailId,
+        isDone
+      );
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      res.json(task);
+    } catch (error) {
+      console.error("Toggle inbox task error:", error);
+      res.status(500).json({ error: "Failed to update task" });
     }
   });
 

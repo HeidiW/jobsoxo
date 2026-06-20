@@ -22,6 +22,7 @@ import InvoiceDetail from "@/pages/invoice-detail";
 import InvoicePayment from "@/pages/invoice-payment";
 import Scheduling from "@/pages/scheduling";
 import Payroll from "@/pages/payroll";
+import InboxTasks from "@/pages/inbox-tasks";
 import Settings from "@/pages/settings";
 import Login from "@/pages/login";
 import ResetPassword from "@/pages/reset-password";
@@ -41,6 +42,7 @@ function Router() {
       <Route path="/invoices/:id/payment" component={InvoicePayment} />
       <Route path="/scheduling" component={Scheduling} />
       <Route path="/payroll" component={Payroll} />
+      <Route path="/inbox-tasks" component={InboxTasks} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
