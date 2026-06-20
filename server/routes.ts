@@ -1234,7 +1234,7 @@ export async function registerRoutes(
   // to open in a new tab. This is the runtime equivalent of proposeIntegration:
   // the Replit connector proxy handles the Google OAuth handshake and stores
   // the resulting tokens, after which isGmailConnected() returns true.
-  app.get("/api/inbox/connect", async (req, res) => {
+  app.get("/api/inbox/connect", requireAdmin, async (req, res) => {
     const authUrl = getGmailOAuthUrl();
     if (!authUrl) {
       return res.status(503).json({
@@ -1248,7 +1248,7 @@ export async function registerRoutes(
 
   // Disconnect — revokes the OAuth token via the Replit connector proxy AND
   // clears all cached inbox tasks. After this, isGmailConnected() returns false.
-  app.post("/api/inbox/disconnect", async (req, res) => {
+  app.post("/api/inbox/disconnect", requireAdmin, async (req, res) => {
     try {
       const revoked = await revokeGmailConnection();
       await storage.deleteUserInboxTasks(req.session.userId!);
@@ -1271,9 +1271,10 @@ export async function registerRoutes(
   });
 
   // GET /api/inbox/messages — fetches the live last-50 inbox emails from the
-  // requesting user's connected Gmail, upserts into cache (preserving isDone),
-  // then returns that user's task list. Falls back to cache if not connected.
-  app.get("/api/inbox/messages", async (req, res) => {
+  // app-level Gmail connector, upserts into the requesting user's cache
+  // (preserving isDone), and returns their task list. Admin-only because the
+  // connector token is shared at the Repl level (not per-user OAuth).
+  app.get("/api/inbox/messages", requireAdmin, async (req, res) => {
     const userId = req.session.userId!;
     try {
       const messages = await fetchGmailInbox(50);
@@ -1309,8 +1310,8 @@ export async function registerRoutes(
     }
   });
 
-  // POST /api/inbox/sync — syncs the requesting user's Gmail inbox (upsert, no delete)
-  app.post("/api/inbox/sync", async (req, res) => {
+  // POST /api/inbox/sync — admin-only: syncs Gmail inbox into this user's cache
+  app.post("/api/inbox/sync", requireAdmin, async (req, res) => {
     const userId = req.session.userId!;
     try {
       const messages = await fetchGmailInbox(50);

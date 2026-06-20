@@ -77,37 +77,52 @@ function groupByDay(tasks: InboxTask[]) {
 function NotConnectedCard({
   onConnect,
   connecting,
+  isAdmin,
 }: {
   onConnect: () => void;
   connecting: boolean;
+  isAdmin: boolean;
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto">
       <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-6">
         <Mail className="h-8 w-8 text-muted-foreground" />
       </div>
-      <h2 className="text-xl font-semibold mb-2">Connect your Gmail</h2>
+      <h2 className="text-xl font-semibold mb-2">
+        {isAdmin ? "Connect Gmail" : "Gmail not connected"}
+      </h2>
       <p className="text-muted-foreground mb-2 leading-relaxed">
-        Connect your Gmail account to see your inbox emails as a daily to-do
-        list. Only inbox emails are read — nothing is sent or modified.
+        {isAdmin
+          ? "Connect the business Gmail account to see inbox emails as a shared daily to-do list. Only inbox emails are read — nothing is sent or modified."
+          : "An admin needs to connect the business Gmail account before inbox tasks are available here."}
       </p>
-      <Button
-        className="mt-4"
-        onClick={onConnect}
-        disabled={connecting}
-        data-testid="button-connect-gmail"
-      >
-        <PlugZap className="h-4 w-4 mr-2" />
-        {connecting ? "Opening…" : "Connect Gmail"}
-        <ExternalLink className="h-3 w-3 ml-1 opacity-60" />
-      </Button>
+      {isAdmin && (
+        <Button
+          className="mt-4"
+          onClick={onConnect}
+          disabled={connecting}
+          data-testid="button-connect-gmail"
+        >
+          <PlugZap className="h-4 w-4 mr-2" />
+          {connecting ? "Opening…" : "Connect Gmail"}
+          <ExternalLink className="h-3 w-3 ml-1 opacity-60" />
+        </Button>
+      )}
     </div>
   );
 }
 
 // ── Empty-inbox card (connected, but inbox is empty) ─────────────────────────
 
-function EmptyInboxCard({ onRefresh, loading }: { onRefresh: () => void; loading: boolean }) {
+function EmptyInboxCard({
+  onRefresh,
+  loading,
+  isAdmin,
+}: {
+  onRefresh: () => void;
+  loading: boolean;
+  isAdmin: boolean;
+}) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <CheckCheck className="h-12 w-12 text-green-500 mb-4" />
@@ -115,10 +130,12 @@ function EmptyInboxCard({ onRefresh, loading }: { onRefresh: () => void; loading
       <p className="text-muted-foreground mt-1 mb-4">
         No emails in your inbox right now.
       </p>
-      <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
-        <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
-        Refresh
-      </Button>
+      {isAdmin && (
+        <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
+          <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
+      )}
     </div>
   );
 }
@@ -288,9 +305,10 @@ export default function InboxTasks() {
     },
   });
 
-  // Auto-fetch on page load when connected but cache is empty
+  // Admin-only: auto-fetch on page load when connected but cache is empty
   useEffect(() => {
     if (
+      isAdmin &&
       status?.connected &&
       !tasksLoading &&
       tasks.length === 0 &&
@@ -298,9 +316,8 @@ export default function InboxTasks() {
     ) {
       refreshMutation.mutate();
     }
-    // Only trigger when connection/loading state changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status?.connected, tasksLoading]);
+  }, [isAdmin, status?.connected, tasksLoading]);
 
   // Connect — opens Gmail OAuth in a new tab (any user can connect their own account)
   const connectMutation = useMutation({
@@ -441,8 +458,8 @@ export default function InboxTasks() {
             {connected ? "Gmail connected" : "Not connected"}
           </div>
 
-          {/* Connect (when not connected) */}
-          {!connected && (
+          {/* Admin-only: Connect (when not connected) */}
+          {isAdmin && !connected && (
             <Button
               variant="outline"
               size="sm"
@@ -456,8 +473,8 @@ export default function InboxTasks() {
             </Button>
           )}
 
-          {/* Disconnect (when connected, admin only for safety) */}
-          {connected && isAdmin && (
+          {/* Admin-only: Disconnect */}
+          {isAdmin && connected && (
             <Button
               variant="outline"
               size="sm"
@@ -470,7 +487,7 @@ export default function InboxTasks() {
             </Button>
           )}
 
-          {/* Show/hide done */}
+          {/* Show/hide done — all users */}
           {connected && tasks.length > 0 && (
             <Button
               variant="outline"
@@ -483,8 +500,8 @@ export default function InboxTasks() {
             </Button>
           )}
 
-          {/* Refresh — available to all users when connected */}
-          {connected && (
+          {/* Admin-only: Refresh (live Gmail fetch) */}
+          {isAdmin && connected && (
             <Button
               size="sm"
               onClick={() => refreshMutation.mutate()}
@@ -555,11 +572,13 @@ export default function InboxTasks() {
             <NotConnectedCard
               onConnect={() => connectMutation.mutate()}
               connecting={connectMutation.isPending}
+              isAdmin={isAdmin}
             />
           ) : showEmptyConnected ? (
             <EmptyInboxCard
               onRefresh={() => refreshMutation.mutate()}
               loading={refreshMutation.isPending}
+              isAdmin={isAdmin}
             />
           ) : showList ? (
             <>
