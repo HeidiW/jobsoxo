@@ -1071,6 +1071,103 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/time-entries/:id", async (req, res) => {
+    try {
+      await storage.deleteTimeEntry(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete time entry error:", error);
+      res.status(500).json({ error: "Failed to delete time entry" });
+    }
+  });
+
+  // Payroll Records
+  app.get("/api/payroll-records", async (req, res) => {
+    try {
+      const records = await storage.getPayrollRecords();
+      const enriched = await Promise.all(
+        records.map(async (r) => {
+          const employee = await storage.getEmployee(r.employeeId);
+          return { ...r, employee };
+        })
+      );
+      res.json(enriched);
+    } catch (error) {
+      console.error("Get payroll records error:", error);
+      res.status(500).json({ error: "Failed to get payroll records" });
+    }
+  });
+
+  // Run payroll for a date range — creates one record per active employee
+  app.post("/api/payroll-records/run", async (req, res) => {
+    try {
+      const { periodStart, periodEnd, deductionRate } = req.body;
+      if (!periodStart || !periodEnd) {
+        return res.status(400).json({ error: "periodStart and periodEnd are required" });
+      }
+      const start = new Date(periodStart);
+      const end = new Date(periodEnd);
+      if (isNaN(start.getTime()) || isNaN(end.getTime()) || start >= end) {
+        return res.status(400).json({ error: "Invalid date range" });
+      }
+
+      const activeEmployees = (await storage.getEmployees()).filter((e) => e.status === "active");
+      const periodEntries = await storage.getTimeEntriesByPeriod(start, end);
+      const rate = Number(deductionRate ?? 0) / 100;
+
+      const created = await Promise.all(
+        activeEmployees.map(async (emp) => {
+          const empEntries = periodEntries.filter((e) => e.employeeId === emp.id);
+          const totalHours = empEntries.reduce((s, e) => s + Number(e.hoursWorked), 0);
+          const hourlyRate = Number(emp.hourlyRate);
+          const grossPay = totalHours * hourlyRate;
+          const deductions = grossPay * rate;
+          const netPay = grossPay - deductions;
+
+          return storage.createPayrollRecord({
+            employeeId: emp.id,
+            periodStart: start,
+            periodEnd: end,
+            totalHours: String(totalHours),
+            hourlyRate: String(hourlyRate),
+            grossPay: String(grossPay),
+            deductions: String(deductions),
+            netPay: String(netPay),
+            status: "pending",
+          });
+        })
+      );
+
+      res.status(201).json(created);
+    } catch (error) {
+      console.error("Run payroll error:", error);
+      res.status(500).json({ error: "Failed to run payroll" });
+    }
+  });
+
+  app.patch("/api/payroll-records/:id", async (req, res) => {
+    try {
+      const updates: Record<string, unknown> = {};
+      if (req.body.status) updates.status = req.body.status;
+      if (req.body.status === "paid") updates.paidDate = new Date();
+      const record = await storage.updatePayrollRecord(req.params.id, updates as Parameters<typeof storage.updatePayrollRecord>[1]);
+      if (!record) return res.status(404).json({ error: "Payroll record not found" });
+      res.json(record);
+    } catch (error) {
+      console.error("Update payroll record error:", error);
+      res.status(500).json({ error: "Failed to update payroll record" });
+    }
+  });
+
+  app.delete("/api/payroll-records/:id", async (req, res) => {
+    try {
+      await storage.updatePayrollRecord(req.params.id, { status: "pending" });
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete payroll record" });
+    }
+  });
+
   // Invites (admin only)
   app.get("/api/invites", async (req, res) => {
     try {

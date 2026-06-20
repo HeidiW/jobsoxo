@@ -100,7 +100,15 @@ export interface IStorage {
   // Time Entries
   getTimeEntries(): Promise<TimeEntry[]>;
   getTimeEntriesByEmployee(employeeId: string): Promise<TimeEntry[]>;
+  getTimeEntriesByPeriod(start: Date, end: Date): Promise<TimeEntry[]>;
   createTimeEntry(timeEntry: InsertTimeEntry): Promise<TimeEntry>;
+  deleteTimeEntry(id: string): Promise<void>;
+
+  // Payroll Records
+  getPayrollRecords(): Promise<PayrollRecord[]>;
+  getPayrollRecordsByEmployee(employeeId: string): Promise<PayrollRecord[]>;
+  createPayrollRecord(record: InsertPayrollRecord): Promise<PayrollRecord>;
+  updatePayrollRecord(id: string, updates: Partial<InsertPayrollRecord>): Promise<PayrollRecord | undefined>;
 
   // Settings
   getSettings(): Promise<Settings | undefined>;
@@ -356,6 +364,37 @@ export class DatabaseStorage implements IStorage {
   async createTimeEntry(timeEntry: InsertTimeEntry): Promise<TimeEntry> {
     const [newEntry] = await db.insert(timeEntries).values(timeEntry).returning();
     return newEntry;
+  }
+
+  async getTimeEntriesByPeriod(start: Date, end: Date): Promise<TimeEntry[]> {
+    return db.select().from(timeEntries)
+      .where(and(gte(timeEntries.date, start), lte(timeEntries.date, end)))
+      .orderBy(desc(timeEntries.date));
+  }
+
+  async deleteTimeEntry(id: string): Promise<void> {
+    await db.delete(timeEntries).where(eq(timeEntries.id, id));
+  }
+
+  // Payroll Records
+  async getPayrollRecords(): Promise<PayrollRecord[]> {
+    return db.select().from(payrollRecords).orderBy(desc(payrollRecords.periodStart));
+  }
+
+  async getPayrollRecordsByEmployee(employeeId: string): Promise<PayrollRecord[]> {
+    return db.select().from(payrollRecords)
+      .where(eq(payrollRecords.employeeId, employeeId))
+      .orderBy(desc(payrollRecords.periodStart));
+  }
+
+  async createPayrollRecord(record: InsertPayrollRecord): Promise<PayrollRecord> {
+    const [newRecord] = await db.insert(payrollRecords).values(record).returning();
+    return newRecord;
+  }
+
+  async updatePayrollRecord(id: string, updates: Partial<InsertPayrollRecord>): Promise<PayrollRecord | undefined> {
+    const [updated] = await db.update(payrollRecords).set(updates).where(eq(payrollRecords.id, id)).returning();
+    return updated || undefined;
   }
 
   // Settings
