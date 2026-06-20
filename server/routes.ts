@@ -18,7 +18,7 @@ import {
   buildGmailAuthUrl, exchangeGmailCode,
   isUserGmailConnected, getUserGmailEmail, fetchUserGmailInbox, revokeUserGmailToken,
 } from "./gmail";
-import { getLastInboxSyncTime, getNextInboxSyncTime } from "./scheduler";
+import { getLastInboxSyncTime, getNextInboxSyncTime, syncInboxForConnectedUsers } from "./scheduler";
 
 function parseNumeric(value: unknown): number {
   if (typeof value === "number") return value;
@@ -1459,6 +1459,18 @@ export async function registerRoutes(
       }
       console.error("Gmail sync error:", error);
       res.status(500).json({ error: msg });
+    }
+  });
+
+  // POST /api/inbox/sync/all — admin-only: run the full inbox sync immediately for all connected users
+  app.post("/api/inbox/sync/all", requireAdmin, async (req, res) => {
+    try {
+      await syncInboxForConnectedUsers();
+      const lastSync = await getLastInboxSyncTime();
+      res.json({ ok: true, lastInboxSync: lastSync });
+    } catch (error: any) {
+      console.error("Admin inbox sync error:", error);
+      res.status(500).json({ error: error?.message ?? "Sync failed" });
     }
   });
 

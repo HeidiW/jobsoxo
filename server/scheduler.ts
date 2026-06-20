@@ -25,7 +25,7 @@ export async function getLastInboxSyncTime(): Promise<Date | null> {
   }
 }
 
-async function syncInboxForConnectedUsers(): Promise<void> {
+export async function syncInboxForConnectedUsers(): Promise<void> {
   const connectedUsers = await storage.getUsersWithGmailTokens();
 
   if (connectedUsers.length === 0) {

@@ -33,6 +33,7 @@ import {
   Trash2,
   Copy,
   Check,
+  RefreshCw,
 } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
@@ -259,6 +260,27 @@ export default function SettingsPage() {
     onError: (error: Error) => {
       toast({
         title: "Error saving settings",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const syncNowMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/inbox/sync/all");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({
+        title: "Inbox synced",
+        description: "The inbox was synced successfully for all connected users.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Sync failed",
         description: error.message,
         variant: "destructive",
       });
@@ -529,6 +551,19 @@ export default function SettingsPage() {
                     </span>
                   </p>
                 )}
+                <div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={syncNowMutation.isPending}
+                    onClick={() => syncNowMutation.mutate()}
+                    data-testid="button-sync-now"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${syncNowMutation.isPending ? "animate-spin" : ""}`} />
+                    {syncNowMutation.isPending ? "Syncing…" : "Sync now"}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           )}
