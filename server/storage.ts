@@ -128,6 +128,7 @@ export interface IStorage {
   getInboxTasks(userId: string): Promise<InboxTask[]>;
   upsertInboxTask(task: InsertInboxTask): Promise<InboxTask>;
   markInboxTaskDone(userId: string, emailId: string, isDone: boolean): Promise<InboxTask | undefined>;
+  deleteAllInboxTasks(): Promise<void>;
 
   // Dashboard
   getDashboardStats(): Promise<{
@@ -502,6 +503,10 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(inboxTasks.userId, userId), eq(inboxTasks.emailId, emailId)))
       .returning();
     return updated ?? undefined;
+  }
+
+  async deleteAllInboxTasks(): Promise<void> {
+    await db.delete(inboxTasks);
   }
 
   // Dashboard

@@ -1208,14 +1208,54 @@ export async function registerRoutes(
   });
 
   // ── Inbox (Gmail) ─────────────────────────────────────────────────────────
+  //
+  // Security model: Gmail is connected at the Replit project level (one OAuth
+  // token per Repl). Access to sync is therefore restricted to admin users only
+  // so that the connected mailbox is never exposed to non-admin accounts.
 
-  // Check if Gmail is connected and return cached tasks
+  function requireAdmin(req: Request, res: Response, next: NextFunction) {
+    storage.getUser(req.session.userId!).then((user) => {
+      if (!user?.isAdmin) return res.status(403).json({ error: "Admin access required" });
+      next();
+    }).catch(() => res.status(500).json({ error: "Auth check failed" }));
+  }
+
+  // Connection status — any authenticated user can check (display the badge)
   app.get("/api/inbox/status", async (req, res) => {
     try {
       const connected = await isGmailConnected();
       res.json({ connected });
     } catch {
       res.json({ connected: false });
+    }
+  });
+
+  // Initiate OAuth — redirects the browser through Replit connector OAuth flow.
+  // Returns a redirect URL the frontend opens in a new tab / popup.
+  app.get("/api/inbox/connect", requireAdmin, async (req, res) => {
+    const connHost = process.env.REPLIT_CONNECTORS_HOSTNAME;
+    const replIdentity = process.env.REPL_IDENTITY;
+
+    if (!connHost || !replIdentity) {
+      return res.status(503).json({
+        error: "Replit connector infrastructure not available in this environment.",
+        code: "NO_CONNECTOR_HOST",
+      });
+    }
+
+    // Return the OAuth initiation URL — the frontend opens it in a new window
+    const authUrl = `https://${connHost}/api/v2/authorize?connectorConfigId=ccfg_google-mail_B959E7249792448ABBA58D46AF&replIdentity=${encodeURIComponent(replIdentity)}`;
+    res.json({ authUrl });
+  });
+
+  // Disconnect — clears all cached inbox tasks for all users (mailbox access revoked)
+  app.post("/api/inbox/disconnect", requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteAllInboxTasks();
+      res.json({ disconnected: true });
+    } catch (error) {
+      console.error("Inbox disconnect error:", error);
+      res.status(500).json({ error: "Failed to disconnect inbox" });
     }
   });
 
@@ -1230,8 +1270,8 @@ export async function registerRoutes(
     }
   });
 
-  // Sync inbox from Gmail, upsert into DB, return merged list
-  app.post("/api/inbox/sync", async (req, res) => {
+  // Sync inbox from Gmail — admin only (single connected mailbox)
+  app.post("/api/inbox/sync", requireAdmin, async (req, res) => {
     try {
       const messages = await fetchGmailInbox(50);
       const userId = req.session.userId!;
@@ -1267,7 +1307,7 @@ export async function registerRoutes(
     }
   });
 
-  // Toggle done state for an inbox task
+  // Toggle done state for an inbox task — any authenticated user (their own tasks)
   app.patch("/api/inbox/tasks/:emailId/done", async (req, res) => {
     try {
       const { isDone } = req.body;

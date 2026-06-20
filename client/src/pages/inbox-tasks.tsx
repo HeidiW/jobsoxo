@@ -1,10 +1,20 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -17,9 +27,13 @@ import {
   Clock,
   Calendar,
   CircleDot,
+  PlugZap,
+  Unplug,
+  ExternalLink,
 } from "lucide-react";
-import { format, isToday, isYesterday, startOfDay } from "date-fns";
+import { format, isToday, isYesterday } from "date-fns";
 import type { InboxTask } from "@shared/schema";
+import { useAuth } from "@/hooks/use-auth";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
 
@@ -49,20 +63,26 @@ function groupByDay(tasks: InboxTask[]) {
   const today: InboxTask[] = [];
   const yesterday: InboxTask[] = [];
   const earlier: InboxTask[] = [];
-
   for (const t of tasks) {
     const d = new Date(t.receivedAt);
     if (isToday(d)) today.push(t);
     else if (isYesterday(d)) yesterday.push(t);
     else earlier.push(t);
   }
-
   return { today, yesterday, earlier };
 }
 
 // ── Not-connected card ─────────────────────────────────────────────────────────
 
-function NotConnectedCard({ onSync }: { onSync: () => void }) {
+function NotConnectedCard({
+  onConnect,
+  isAdmin,
+  connecting,
+}: {
+  onConnect: () => void;
+  isAdmin: boolean;
+  connecting: boolean;
+}) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto">
       <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-6">
@@ -70,17 +90,42 @@ function NotConnectedCard({ onSync }: { onSync: () => void }) {
       </div>
       <h2 className="text-xl font-semibold mb-2">Connect your Gmail</h2>
       <p className="text-muted-foreground mb-2 leading-relaxed">
-        Your Gmail account hasn't been connected yet. Use the{" "}
-        <strong>Connect Gmail</strong> button in the project integrations panel
-        to authorise access, then click <strong>Sync inbox</strong> below to
-        pull in your emails.
+        Connect your Gmail account to see your inbox emails as a daily to-do
+        list. Only inbox emails are read — nothing is sent or modified.
       </p>
-      <p className="text-xs text-muted-foreground mb-8">
-        Only inbox emails are read — no emails are sent or modified.
+      {isAdmin ? (
+        <Button
+          className="mt-4"
+          onClick={onConnect}
+          disabled={connecting}
+          data-testid="button-connect-gmail"
+        >
+          <PlugZap className="h-4 w-4 mr-2" />
+          {connecting ? "Opening…" : "Connect Gmail"}
+          <ExternalLink className="h-3 w-3 ml-1 opacity-60" />
+        </Button>
+      ) : (
+        <p className="text-sm text-muted-foreground mt-4 bg-muted rounded-md px-4 py-3">
+          Ask your admin to connect Gmail from the Inbox Tasks page.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Empty-inbox card (connected, but mailbox is empty) ─────────────────────────
+
+function EmptyInboxCard({ onSync }: { onSync: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <CheckCheck className="h-12 w-12 text-green-500 mb-4" />
+      <h3 className="font-semibold text-lg">All caught up!</h3>
+      <p className="text-muted-foreground mt-1 mb-4">
+        No emails in your inbox right now.
       </p>
-      <Button onClick={onSync} data-testid="button-sync-inbox">
-        <RefreshCw className="h-4 w-4 mr-2" />
-        Sync inbox
+      <Button variant="outline" size="sm" onClick={onSync}>
+        <RefreshCw className="h-4 w-4 mr-1.5" />
+        Refresh
       </Button>
     </div>
   );
@@ -102,14 +147,11 @@ function TaskRow({
   return (
     <div
       className={`flex items-start gap-3 p-3 rounded-lg transition-colors group ${
-        task.isDone
-          ? "opacity-50"
-          : "hover:bg-muted/50 cursor-pointer"
+        task.isDone ? "opacity-50" : "hover:bg-muted/50 cursor-pointer"
       }`}
       onClick={() => onToggle(task.emailId, !task.isDone)}
       data-testid={`row-inbox-${task.emailId}`}
     >
-      {/* Checkbox */}
       <div className="pt-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
         <Checkbox
           checked={task.isDone}
@@ -118,21 +160,21 @@ function TaskRow({
           className="h-4 w-4"
         />
       </div>
-
-      {/* Avatar */}
       <div
         className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-semibold ${color}`}
       >
         {initials}
       </div>
-
-      {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5">
           <span
             className={`text-sm font-medium truncate ${
-              task.isDone ? "line-through text-muted-foreground" : ""
-            } ${!task.isRead && !task.isDone ? "font-semibold" : ""}`}
+              task.isDone
+                ? "line-through text-muted-foreground"
+                : !task.isRead
+                ? "font-semibold"
+                : ""
+            }`}
           >
             {task.subject}
           </span>
@@ -150,8 +192,6 @@ function TaskRow({
           )}
         </div>
       </div>
-
-      {/* Time */}
       <div className="shrink-0 text-xs text-muted-foreground whitespace-nowrap pt-0.5">
         {isToday(receivedAt)
           ? format(receivedAt, "h:mm a")
@@ -173,9 +213,7 @@ function Section({
   onToggle: (emailId: string, isDone: boolean) => void;
 }) {
   if (!tasks.length) return null;
-
   const undoneCount = tasks.filter((t) => !t.isDone).length;
-
   return (
     <div className="mb-6">
       <div className="flex items-center gap-2 mb-2 px-1">
@@ -221,17 +259,81 @@ function TasksSkeleton() {
 
 export default function InboxTasks() {
   const { toast } = useToast();
-  const [showDone, setShowDone] = useState(false);
+  const { user } = useAuth();
+  const isAdmin = !!user?.isAdmin;
 
-  const { data: status } = useQuery<{ connected: boolean }>({
+  const [showDone, setShowDone] = useState(false);
+  const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
+
+  // Connection status (polls every 30 s)
+  const { data: status, isLoading: statusLoading } = useQuery<{
+    connected: boolean;
+  }>({
     queryKey: ["/api/inbox/status"],
     refetchInterval: 30_000,
   });
 
+  // Cached tasks
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<InboxTask[]>({
     queryKey: ["/api/inbox/tasks"],
   });
 
+  // Connect — opens Gmail OAuth in a new tab
+  const connectMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("GET", "/api/inbox/connect");
+      return res.json() as Promise<{ authUrl?: string; error?: string; code?: string }>;
+    },
+    onSuccess: (data) => {
+      if (data.authUrl) {
+        window.open(data.authUrl, "_blank", "noopener,noreferrer");
+        toast({
+          title: "Gmail OAuth opened",
+          description:
+            "Complete the authorisation in the new tab, then click Sync inbox here.",
+        });
+      } else if (data.code === "NO_CONNECTOR_HOST") {
+        // Dev environment — guide admin to the integrations panel
+        toast({
+          title: "Use the Integrations panel",
+          description:
+            "Click the puzzle-piece icon in the Replit sidebar to connect Gmail, then sync here.",
+        });
+      } else {
+        toast({
+          title: "Could not start OAuth",
+          description: data.error ?? "Unknown error",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Could not start Gmail connection",
+        description:
+          "Try connecting Gmail from the Replit integrations panel (puzzle-piece icon).",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Disconnect — clears all cached tasks
+  const disconnectMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/inbox/disconnect");
+    },
+    onSuccess: () => {
+      queryClient.setQueryData(["/api/inbox/tasks"], []);
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/status"] });
+      setShowDisconnectDialog(false);
+      toast({ title: "Gmail disconnected" });
+    },
+    onError: () => {
+      toast({ title: "Failed to disconnect", variant: "destructive" });
+    },
+  });
+
+  // Sync
   const syncMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/inbox/sync");
@@ -240,13 +342,16 @@ export default function InboxTasks() {
     onSuccess: (data: InboxTask[]) => {
       queryClient.setQueryData(["/api/inbox/tasks"], data);
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/status"] });
-      toast({ title: `Synced ${data.length} emails` });
+      toast({ title: `Synced ${data.length} email${data.length !== 1 ? "s" : ""}` });
     },
-    onError: (err: Error & { status?: number }) => {
-      if (err.message?.includes("NOT_CONNECTED") || err.message?.includes("not connected")) {
+    onError: (err: Error) => {
+      if (
+        err.message?.includes("NOT_CONNECTED") ||
+        err.message?.includes("not connected")
+      ) {
         toast({
           title: "Gmail not connected",
-          description: "Complete the Gmail OAuth flow from the integrations panel, then try again.",
+          description: "Click Connect Gmail to authorise access first.",
           variant: "destructive",
         });
       } else {
@@ -255,9 +360,12 @@ export default function InboxTasks() {
     },
   });
 
+  // Toggle done
   const toggleMutation = useMutation({
     mutationFn: async ({ emailId, isDone }: { emailId: string; isDone: boolean }) => {
-      const res = await apiRequest("PATCH", `/api/inbox/tasks/${emailId}/done`, { isDone });
+      const res = await apiRequest("PATCH", `/api/inbox/tasks/${emailId}/done`, {
+        isDone,
+      });
       return res.json() as Promise<InboxTask>;
     },
     onSuccess: (updated) => {
@@ -274,17 +382,51 @@ export default function InboxTasks() {
     toggleMutation.mutate({ emailId, isDone });
   };
 
+  const connected = status?.connected ?? false;
+
   const visibleTasks = showDone ? tasks : tasks.filter((t) => !t.isDone);
   const groups = groupByDay(visibleTasks);
 
   const todayTotal = tasks.filter((t) => isToday(new Date(t.receivedAt))).length;
-  const todayDone = tasks.filter((t) => isToday(new Date(t.receivedAt)) && t.isDone).length;
+  const todayDone = tasks.filter(
+    (t) => isToday(new Date(t.receivedAt)) && t.isDone
+  ).length;
   const todayUndone = todayTotal - todayDone;
   const unreadCount = tasks.filter((t) => !t.isRead && !t.isDone).length;
-  const connected = status?.connected ?? false;
+
+  // Determine what the main content area should show
+  const isLoading = statusLoading || tasksLoading;
+  const showNotConnected = !isLoading && !connected;
+  const showEmptyConnected = !isLoading && connected && visibleTasks.length === 0;
+  const showList = !isLoading && connected && visibleTasks.length > 0;
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
+      {/* Disconnect confirmation */}
+      <AlertDialog
+        open={showDisconnectDialog}
+        onOpenChange={setShowDisconnectDialog}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect Gmail?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove all cached inbox tasks. You can reconnect at any
+              time. The Gmail authorisation in your Replit account is not affected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => disconnectMutation.mutate()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Disconnect
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
@@ -304,6 +446,7 @@ export default function InboxTasks() {
                 ? "text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800"
                 : "text-muted-foreground bg-muted border-border"
             }`}
+            data-testid="status-gmail-connection"
           >
             {connected ? (
               <Wifi className="h-3 w-3" />
@@ -313,105 +456,145 @@ export default function InboxTasks() {
             {connected ? "Gmail connected" : "Not connected"}
           </div>
 
-          {/* Show/hide done */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowDone((v) => !v)}
-            data-testid="button-toggle-done"
-          >
-            <CheckCheck className="h-4 w-4 mr-1.5" />
-            {showDone ? "Hide done" : "Show done"}
-          </Button>
+          {/* Connect / Disconnect (admin only) */}
+          {isAdmin && !connected && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => connectMutation.mutate()}
+              disabled={connectMutation.isPending}
+              data-testid="button-connect-gmail"
+            >
+              <PlugZap className="h-4 w-4 mr-1.5" />
+              {connectMutation.isPending ? "Opening…" : "Connect Gmail"}
+              <ExternalLink className="h-3 w-3 ml-1 opacity-60" />
+            </Button>
+          )}
+          {isAdmin && connected && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDisconnectDialog(true)}
+              data-testid="button-disconnect-gmail"
+              className="text-destructive hover:text-destructive"
+            >
+              <Unplug className="h-4 w-4 mr-1.5" />
+              Disconnect
+            </Button>
+          )}
 
-          {/* Sync */}
-          <Button
-            size="sm"
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-            data-testid="button-sync"
-          >
-            <RefreshCw className={`h-4 w-4 mr-1.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-            {syncMutation.isPending ? "Syncing…" : "Sync inbox"}
-          </Button>
+          {/* Show/hide done */}
+          {connected && tasks.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowDone((v) => !v)}
+              data-testid="button-toggle-done"
+            >
+              <CheckCheck className="h-4 w-4 mr-1.5" />
+              {showDone ? "Hide done" : "Show done"}
+            </Button>
+          )}
+
+          {/* Sync (admin only) */}
+          {isAdmin && connected && (
+            <Button
+              size="sm"
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
+              data-testid="button-sync"
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-1.5 ${
+                  syncMutation.isPending ? "animate-spin" : ""
+                }`}
+              />
+              {syncMutation.isPending ? "Syncing…" : "Sync inbox"}
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-primary" />
-              <div>
-                <p className="text-xs text-muted-foreground">Today</p>
-                <p className="text-xl font-bold">
-                  {todayUndone}
-                  <span className="text-sm font-normal text-muted-foreground ml-1">
-                    / {todayTotal}
-                  </span>
-                </p>
+      {/* Stat cards — only when we have tasks */}
+      {tasks.length > 0 && (
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-primary" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Today</p>
+                  <p className="text-xl font-bold">
+                    {todayUndone}
+                    <span className="text-sm font-normal text-muted-foreground ml-1">
+                      / {todayTotal}
+                    </span>
+                  </p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-2">
-              <CircleDot className="h-4 w-4 text-blue-500" />
-              <div>
-                <p className="text-xs text-muted-foreground">Unread</p>
-                <p className="text-xl font-bold">{unreadCount}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-2">
+                <CircleDot className="h-4 w-4 text-blue-500" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Unread</p>
+                  <p className="text-xl font-bold">{unreadCount}</p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-2">
-              <CheckCheck className="h-4 w-4 text-green-600" />
-              <div>
-                <p className="text-xs text-muted-foreground">Done today</p>
-                <p className="text-xl font-bold">{todayDone}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <div className="flex items-center gap-2">
+                <CheckCheck className="h-4 w-4 text-green-600" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Done today</p>
+                  <p className="text-xl font-bold">{todayDone}</p>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Main content */}
       <Card>
         <CardContent className="pt-4">
-          {tasksLoading ? (
+          {isLoading ? (
             <TasksSkeleton />
-          ) : tasks.length === 0 ? (
-            <NotConnectedCard onSync={() => syncMutation.mutate()} />
-          ) : visibleTasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <CheckCheck className="h-12 w-12 text-green-500 mb-4" />
-              <h3 className="font-semibold text-lg">All caught up!</h3>
-              <p className="text-muted-foreground mt-1">
-                {showDone
-                  ? "No emails in your inbox."
-                  : "All emails actioned. Click 'Show done' to review them."}
-              </p>
-            </div>
-          ) : (
+          ) : showNotConnected ? (
+            // Not connected — prompt to connect
+            <NotConnectedCard
+              onConnect={() => connectMutation.mutate()}
+              isAdmin={isAdmin}
+              connecting={connectMutation.isPending}
+            />
+          ) : showEmptyConnected ? (
+            // Connected but inbox is genuinely empty (or all done and hidden)
+            <EmptyInboxCard onSync={() => syncMutation.mutate()} />
+          ) : showList ? (
+            // Normal checklist
             <>
               <Section label="Today" tasks={groups.today} onToggle={handleToggle} />
-              <Section label="Yesterday" tasks={groups.yesterday} onToggle={handleToggle} />
+              <Section
+                label="Yesterday"
+                tasks={groups.yesterday}
+                onToggle={handleToggle}
+              />
               <Section label="Earlier" tasks={groups.earlier} onToggle={handleToggle} />
             </>
-          )}
+          ) : null}
         </CardContent>
       </Card>
 
-      {/* Footer hint */}
+      {/* Footer */}
       {tasks.length > 0 && (
         <p className="text-xs text-muted-foreground text-center mt-4">
           <Clock className="h-3 w-3 inline mr-1" />
-          Click an email row or its checkbox to mark it done · Last sync:{" "}
-          {syncMutation.isSuccess ? "just now" : "—"}
+          Click an email row or its checkbox to mark it done ·{" "}
+          {syncMutation.isSuccess ? "Just synced" : "Use Sync to refresh"}
         </p>
       )}
     </div>
