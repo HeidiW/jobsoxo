@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -278,6 +278,30 @@ export default function InboxTasks() {
     queryKey: ["/api/inbox/tasks"],
   });
 
+  // Refresh — any authenticated user can call GET /api/inbox/messages
+  // which fetches live from Gmail (50 msgs) and updates the shared cache.
+  const refreshMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("GET", "/api/inbox/messages");
+      return res.json() as Promise<InboxTask[]>;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["/api/inbox/tasks"], data);
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/status"] });
+    },
+    onError: () => {
+      toast({ title: "Refresh failed", variant: "destructive" });
+    },
+  });
+
+  // Auto-fetch on page load when connected but cache is empty
+  useEffect(() => {
+    if (status?.connected && !tasksLoading && tasks.length === 0 && !refreshMutation.isPending) {
+      refreshMutation.mutate();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status?.connected, tasksLoading]);
+
   // Connect — opens Gmail OAuth in a new tab
   const connectMutation = useMutation({
     mutationFn: async () => {
@@ -496,12 +520,30 @@ export default function InboxTasks() {
             </Button>
           )}
 
-          {/* Sync — admin can trigger; non-admins see a passive refresh hint */}
-          {connected && isAdmin && (
+          {/* Refresh — available to all authenticated users when connected */}
+          {connected && (
             <Button
               size="sm"
+              onClick={() => refreshMutation.mutate()}
+              disabled={refreshMutation.isPending || syncMutation.isPending}
+              data-testid="button-refresh"
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-1.5 ${
+                  refreshMutation.isPending ? "animate-spin" : ""
+                }`}
+              />
+              {refreshMutation.isPending ? "Refreshing…" : "Refresh"}
+            </Button>
+          )}
+
+          {/* Sync inbox (admin) — full replace via POST */}
+          {connected && isAdmin && (
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending}
+              disabled={syncMutation.isPending || refreshMutation.isPending}
               data-testid="button-sync"
             >
               <RefreshCw
@@ -573,7 +615,7 @@ export default function InboxTasks() {
             />
           ) : showEmptyConnected ? (
             // Connected but inbox is genuinely empty (or all done and hidden)
-            <EmptyInboxCard onSync={() => syncMutation.mutate()} />
+            <EmptyInboxCard onSync={() => refreshMutation.mutate()} />
           ) : showList ? (
             // Normal checklist
             <>

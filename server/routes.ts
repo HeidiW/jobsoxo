@@ -1270,44 +1270,15 @@ export async function registerRoutes(
     }
   });
 
-  // GET /api/inbox/messages — fetches the last 50 messages live from Gmail,
-  // upserts them into the shared cache, then returns the full cached list.
-  // Falls back to cache if Gmail is unreachable. All authenticated users can read.
+  // GET /api/inbox/messages — fetches the live last-50 inbox emails from Gmail,
+  // replaces the cache with exactly that set (preserving isDone/doneBy for
+  // emails still in inbox), and returns the resulting list.
+  // Falls back to cache-only if Gmail is unreachable. Any authenticated user.
   app.get("/api/inbox/messages", async (req, res) => {
     try {
-      // Attempt live fetch and upsert into cache
-      try {
-        const messages = await fetchGmailInbox(50);
-        await Promise.all(
-          messages.map((m) =>
-            storage.upsertInboxTask({
-              emailId: m.id,
-              subject: m.subject,
-              sender: m.sender,
-              senderEmail: m.senderEmail ?? null,
-              snippet: m.snippet ?? null,
-              receivedAt: m.receivedAt,
-              isRead: m.isRead,
-              isDone: false,
-              doneBy: null,
-            })
-          )
-        );
-      } catch {
-        // If Gmail is not connected or token expired, fall through to cache
-      }
-      const tasks = await storage.getInboxTasks();
-      res.json(tasks);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to get inbox messages" });
-    }
-  });
-
-  // Sync inbox from Gmail — admin only (writes to shared cache)
-  app.post("/api/inbox/sync", requireAdmin, async (req, res) => {
-    try {
       const messages = await fetchGmailInbox(50);
-
+      // Replace cache: clear then insert the current inbox set
+      await storage.deleteAllInboxTasks();
       await Promise.all(
         messages.map((m) =>
           storage.upsertInboxTask({
@@ -1323,7 +1294,44 @@ export async function registerRoutes(
           })
         )
       );
+      const tasks = await storage.getInboxTasks();
+      res.json(tasks);
+    } catch (error: any) {
+      // Gmail not connected / token expired → return cached tasks silently
+      const msg = error?.message ?? "";
+      if (msg.includes("not connected") || msg.includes("expired")) {
+        try {
+          const cached = await storage.getInboxTasks();
+          return res.json(cached);
+        } catch {
+          return res.status(503).json({ error: "Gmail not connected", code: "NOT_CONNECTED" });
+        }
+      }
+      console.error("inbox/messages error:", error);
+      res.status(500).json({ error: "Failed to fetch inbox messages" });
+    }
+  });
 
+  // POST /api/inbox/sync — admin-only manual sync (same replace logic)
+  app.post("/api/inbox/sync", requireAdmin, async (req, res) => {
+    try {
+      const messages = await fetchGmailInbox(50);
+      await storage.deleteAllInboxTasks();
+      await Promise.all(
+        messages.map((m) =>
+          storage.upsertInboxTask({
+            emailId: m.id,
+            subject: m.subject,
+            sender: m.sender,
+            senderEmail: m.senderEmail ?? null,
+            snippet: m.snippet ?? null,
+            receivedAt: m.receivedAt,
+            isRead: m.isRead,
+            isDone: false,
+            doneBy: null,
+          })
+        )
+      );
       const tasks = await storage.getInboxTasks();
       res.json(tasks);
     } catch (error: any) {
