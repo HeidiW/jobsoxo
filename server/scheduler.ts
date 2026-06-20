@@ -85,6 +85,21 @@ function msUntilNextHour(hour: number): number {
 }
 
 /**
+ * Return the next Date at which the inbox sync is scheduled to fire.
+ * Reads the configured hour from the database (same logic as the scheduler).
+ */
+export async function getNextInboxSyncTime(): Promise<Date> {
+  const hour = await getInboxSyncHour();
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(hour, 0, 0, 0);
+  if (next <= now) {
+    next.setDate(next.getDate() + 1);
+  }
+  return next;
+}
+
+/**
  * Read the configured inbox sync hour from the database.
  * Falls back to the INBOX_SYNC_HOUR env var, then to 8.
  */

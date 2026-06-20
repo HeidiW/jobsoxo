@@ -18,7 +18,7 @@ import {
   buildGmailAuthUrl, exchangeGmailCode,
   isUserGmailConnected, getUserGmailEmail, fetchUserGmailInbox, revokeUserGmailToken,
 } from "./gmail";
-import { getLastInboxSyncTime } from "./scheduler";
+import { getLastInboxSyncTime, getNextInboxSyncTime } from "./scheduler";
 
 function parseNumeric(value: unknown): number {
   if (typeof value === "number") return value;
@@ -1553,7 +1553,8 @@ export async function registerRoutes(
           reminderIntervals: [7, 14, 30],
         });
       }
-      res.json(settings);
+      const nextInboxSync = await getNextInboxSyncTime();
+      res.json({ ...settings, nextInboxSync });
     } catch (error) {
       console.error("Get settings error:", error);
       res.status(500).json({ error: "Failed to get settings" });

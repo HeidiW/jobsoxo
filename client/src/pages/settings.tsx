@@ -221,7 +221,7 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const { data: settings, isLoading } = useQuery<Settings>({
+  const { data: settings, isLoading } = useQuery<Settings & { nextInboxSync?: string }>({
     queryKey: ["/api/settings"],
   });
 
@@ -487,7 +487,7 @@ export default function SettingsPage() {
                   Configure when the daily Gmail inbox sync runs
                 </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
                 <FormField
                   control={form.control}
                   name="inboxSyncHour"
@@ -512,6 +512,23 @@ export default function SettingsPage() {
                     </FormItem>
                   )}
                 />
+                {settings?.nextInboxSync && (
+                  <p className="text-sm text-muted-foreground" data-testid="text-next-inbox-sync">
+                    Next sync:{" "}
+                    <span className="font-medium text-foreground">
+                      {(() => {
+                        const next = new Date(settings.nextInboxSync!);
+                        const now = new Date();
+                        const isToday =
+                          next.getFullYear() === now.getFullYear() &&
+                          next.getMonth() === now.getMonth() &&
+                          next.getDate() === now.getDate();
+                        const timeStr = next.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+                        return isToday ? `today at ${timeStr}` : `tomorrow at ${timeStr}`;
+                      })()}
+                    </span>
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}
