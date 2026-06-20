@@ -135,9 +135,9 @@ export const lineItemsRelations = relations(lineItems, ({ one }) => ({
 export const insertLineItemSchema = createInsertSchema(lineItems)
   .omit({ id: true })
   .extend({
-    quantity: z.coerce.string(),
-    rate: z.coerce.string(),
-    amount: z.coerce.string(),
+    quantity: z.string().min(1, "Quantity is required"),
+    rate: z.string().min(1, "Rate is required"),
+    amount: z.string().min(1, "Amount is required"),
   });
 export type InsertLineItem = z.infer<typeof insertLineItemSchema>;
 export type LineItem = typeof lineItems.$inferSelect;
@@ -183,12 +183,12 @@ export const insertInvoiceSchema = createInsertSchema(invoices)
     issueDate: z.coerce.date().optional(),
     dueDate: z.coerce.date(),
     lastReminderSent: z.coerce.date().optional().nullable(),
-    subtotal: z.coerce.string(),
+    subtotal: z.string().min(1, "Subtotal is required"),
     taxRate: z.coerce.string().optional(),
     taxAmount: z.coerce.string().optional(),
-    total: z.coerce.string(),
+    total: z.string().min(1, "Total is required"),
     amountPaid: z.coerce.string().optional(),
-    balance: z.coerce.string(),
+    balance: z.string().min(1, "Balance is required"),
   });
 export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
 export type Invoice = typeof invoices.$inferSelect;
@@ -332,11 +332,11 @@ export const payrollRecordsRelations = relations(payrollRecords, ({ one }) => ({
 export const insertPayrollRecordSchema = createInsertSchema(payrollRecords)
   .omit({ id: true, createdAt: true })
   .extend({
-    totalHours: z.coerce.string(),
-    hourlyRate: z.coerce.string(),
-    grossPay: z.coerce.string(),
+    totalHours: z.string().min(1, "Total hours is required"),
+    hourlyRate: z.string().min(1, "Hourly rate is required"),
+    grossPay: z.string().min(1, "Gross pay is required"),
     deductions: z.coerce.string().optional(),
-    netPay: z.coerce.string(),
+    netPay: z.string().min(1, "Net pay is required"),
   });
 export type InsertPayrollRecord = z.infer<typeof insertPayrollRecordSchema>;
 export type PayrollRecord = typeof payrollRecords.$inferSelect;
