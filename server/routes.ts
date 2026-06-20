@@ -905,13 +905,13 @@ export async function registerRoutes(
 
   app.post("/api/invoices/:id/payments", async (req, res) => {
     try {
+      const parsed = insertPaymentSchema.safeParse({ ...req.body, invoiceId: req.params.id });
+      if (!parsed.success) return badRequest(res, parsed.error);
+
       const invoice = await storage.getInvoice(req.params.id);
       if (!invoice) {
         return res.status(404).json({ error: "Invoice not found" });
       }
-
-      const parsed = insertPaymentSchema.safeParse({ ...req.body, invoiceId: req.params.id });
-      if (!parsed.success) return badRequest(res, parsed.error);
 
       const payment = await storage.createPayment(parsed.data);
 

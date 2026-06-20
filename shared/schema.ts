@@ -215,7 +215,11 @@ export const insertPaymentSchema = createInsertSchema(payments)
   .omit({ id: true })
   .extend({
     paymentDate: z.coerce.date().optional(),
-    amount: z.coerce.string(),
+    amount: z.coerce.number({ required_error: "Amount is required", invalid_type_error: "Amount must be a number" }).positive("Amount must be positive").transform(String),
+    paymentMethod: z.enum(["cash", "check", "credit_card", "bank_transfer"], {
+      required_error: "Payment method is required",
+      invalid_type_error: "Invalid payment method",
+    }),
   });
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 export type Payment = typeof payments.$inferSelect;

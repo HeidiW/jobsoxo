@@ -188,6 +188,38 @@ describe("PATCH /api/employees/:id — validation", () => {
   });
 });
 
+describe("POST /api/invoices/:id/payments — validation", () => {
+  it("returns 400 when amount is missing", async () => {
+    const res = await request(app)
+      .post("/api/invoices/nonexistent-id/payments")
+      .send({ paymentMethod: "cash", paymentDate: "2025-01-15" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("amount");
+  });
+
+  it("returns 400 when paymentMethod is an invalid enum value", async () => {
+    const res = await request(app)
+      .post("/api/invoices/nonexistent-id/payments")
+      .send({ amount: "500", paymentMethod: "bitcoin", paymentDate: "2025-01-15" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("paymentMethod");
+  });
+
+  it("returns 400 when paymentDate is not a valid date", async () => {
+    const res = await request(app)
+      .post("/api/invoices/nonexistent-id/payments")
+      .send({ amount: "500", paymentMethod: "cash", paymentDate: "not-a-date" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("paymentDate");
+  });
+});
+
 describe("POST /api/time-entries — validation", () => {
   it("returns 400 when employeeId is missing", async () => {
     const res = await request(app)
