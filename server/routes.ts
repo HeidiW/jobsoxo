@@ -1114,9 +1114,14 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid date range" });
       }
 
+      const parsedDeductionRate = deductionRate === undefined || deductionRate === null ? 0 : Number(deductionRate);
+      if (isNaN(parsedDeductionRate) || parsedDeductionRate < 0 || parsedDeductionRate > 100) {
+        return res.status(400).json({ error: "deductionRate must be a number between 0 and 100" });
+      }
+
       const activeEmployees = (await storage.getEmployees()).filter((e) => e.status === "active");
       const periodEntries = await storage.getTimeEntriesByPeriod(start, end);
-      const rate = Number(deductionRate ?? 0) / 100;
+      const rate = parsedDeductionRate / 100;
 
       const created = await Promise.all(
         activeEmployees.map(async (emp) => {

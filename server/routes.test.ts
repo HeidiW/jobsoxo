@@ -516,6 +516,35 @@ describe("PATCH /api/payroll-records/:id — non-numeric and negative numeric fi
   });
 });
 
+describe("POST /api/payroll-records/run — deductionRate validation", () => {
+  it("returns 400 when deductionRate is a non-numeric string", async () => {
+    const res = await request(app)
+      .post("/api/payroll-records/run")
+      .send({ periodStart: "2025-01-01", periodEnd: "2025-01-31", deductionRate: "abc" })
+      .expect(400);
+
+    expect(res.body.error).toBe("deductionRate must be a number between 0 and 100");
+  });
+
+  it("returns 400 when deductionRate is negative", async () => {
+    const res = await request(app)
+      .post("/api/payroll-records/run")
+      .send({ periodStart: "2025-01-01", periodEnd: "2025-01-31", deductionRate: -5 })
+      .expect(400);
+
+    expect(res.body.error).toBe("deductionRate must be a number between 0 and 100");
+  });
+
+  it("returns 400 when deductionRate exceeds 100", async () => {
+    const res = await request(app)
+      .post("/api/payroll-records/run")
+      .send({ periodStart: "2025-01-01", periodEnd: "2025-01-31", deductionRate: 200 })
+      .expect(400);
+
+    expect(res.body.error).toBe("deductionRate must be a number between 0 and 100");
+  });
+});
+
 describe("POST /api/time-entries — validation", () => {
   it("returns 400 when employeeId is missing", async () => {
     const res = await request(app)
