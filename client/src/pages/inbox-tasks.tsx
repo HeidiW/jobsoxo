@@ -46,6 +46,7 @@ import {
   ChevronDown,
   ChevronRight,
   RotateCcw,
+  Trash2,
 } from "lucide-react";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 import type { InboxTask } from "@shared/schema";
@@ -412,9 +413,11 @@ function TasksSkeleton() {
 function HiddenTaskRow({
   task,
   onRestore,
+  onDelete,
 }: {
   task: InboxTask;
   onRestore: (emailId: string) => void;
+  onDelete: (emailId: string) => void;
 }) {
   const initials = senderInitials(task.sender);
   const color = senderColor(task.senderEmail ?? task.sender);
@@ -465,6 +468,16 @@ function HiddenTaskRow({
         >
           <RotateCcw className="h-3.5 w-3.5 mr-1" />
           Restore
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+          onClick={() => onDelete(task.emailId)}
+          data-testid={`button-delete-${task.emailId}`}
+        >
+          <Trash2 className="h-3.5 w-3.5 mr-1" />
+          Delete
         </Button>
       </div>
     </div>
@@ -666,6 +679,17 @@ export default function InboxTasks() {
       toast({ title: "Couldn't restore task", variant: "destructive" });
     });
     toast({ title: "Email restored" });
+  };
+
+  const handleDelete = (emailId: string) => {
+    queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
+      old.filter((t) => t.emailId !== emailId)
+    );
+    apiRequest("DELETE", `/api/inbox/tasks/${emailId}`).catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+      toast({ title: "Couldn't delete email", variant: "destructive" });
+    });
+    toast({ title: "Email permanently deleted" });
   };
 
   return (
@@ -952,6 +976,7 @@ export default function InboxTasks() {
                         key={t.id}
                         task={t}
                         onRestore={handleRestore}
+                        onDelete={handleDelete}
                       />
                     ))}
                   </div>

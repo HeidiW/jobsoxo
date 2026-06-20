@@ -1553,6 +1553,16 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/inbox/tasks/:emailId", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteInboxTask(req.session.userId!, req.params.emailId);
+      res.status(204).end();
+    } catch (error) {
+      console.error("Delete inbox task error:", error);
+      res.status(500).json({ error: "Failed to delete task" });
+    }
+  });
+
   // Settings
   app.get("/api/settings", async (req, res) => {
     try {

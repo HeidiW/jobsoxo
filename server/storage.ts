@@ -142,6 +142,7 @@ export interface IStorage {
   dismissInboxTask(userId: string, emailId: string): Promise<InboxTask | undefined>;
   snoozeInboxTask(userId: string, emailId: string, until: Date): Promise<InboxTask | undefined>;
   restoreInboxTask(userId: string, emailId: string): Promise<InboxTask | undefined>;
+  deleteInboxTask(userId: string, emailId: string): Promise<void>;
   deleteUserInboxTasks(userId: string): Promise<void>;
   deleteAllInboxTasks(): Promise<void>;
 
@@ -503,6 +504,7 @@ export class DatabaseStorage implements IStorage {
         and(
           eq(inboxTasks.userId, userId),
           eq(inboxTasks.dismissed, false),
+          eq(inboxTasks.permanentlyDeleted, false),
           or(isNull(inboxTasks.snoozedUntil), lte(inboxTasks.snoozedUntil, now))
         )
       )
@@ -516,6 +518,8 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(inboxTasks.userId, task.userId), eq(inboxTasks.emailId, task.emailId)));
 
     if (existing) {
+      // If permanently deleted, leave the tombstone intact — never re-insert
+      if (existing.permanentlyDeleted) return existing;
       // Preserve isDone — only update Gmail metadata
       const [updated] = await db
         .update(inboxTasks)
@@ -571,6 +575,7 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(inboxTasks.userId, userId),
+          eq(inboxTasks.permanentlyDeleted, false),
           or(
             eq(inboxTasks.dismissed, true),
             sql`${inboxTasks.snoozedUntil} IS NOT NULL AND ${inboxTasks.snoozedUntil} > ${now}`
@@ -587,6 +592,13 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(inboxTasks.userId, userId), eq(inboxTasks.emailId, emailId)))
       .returning();
     return updated ?? undefined;
+  }
+
+  async deleteInboxTask(userId: string, emailId: string): Promise<void> {
+    await db
+      .update(inboxTasks)
+      .set({ permanentlyDeleted: true })
+      .where(and(eq(inboxTasks.userId, userId), eq(inboxTasks.emailId, emailId)));
   }
 
   async deleteUserInboxTasks(userId: string): Promise<void> {

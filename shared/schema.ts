@@ -394,6 +394,7 @@ export const inboxTasks = pgTable("inbox_tasks", {
   isDone: boolean("is_done").default(false).notNull(),
   dismissed: boolean("dismissed").default(false).notNull(),
   snoozedUntil: timestamp("snoozed_until"),
+  permanentlyDeleted: boolean("permanently_deleted").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
