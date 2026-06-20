@@ -34,9 +34,19 @@ interface InvoiceDetail extends Invoice {
 }
 
 const paymentFormSchema = z.object({
-  amount: z.string().min(1, "Amount is required"),
-  paymentMethod: z.enum(["cash", "check", "credit_card", "bank_transfer"]),
-  paymentDate: z.string().min(1, "Payment date is required"),
+  amount: z
+    .string()
+    .min(1, "Amount is required")
+    .refine((val) => !isNaN(parseFloat(val)), "Amount must be a valid number")
+    .refine((val) => parseFloat(val) > 0, "Amount must be greater than zero"),
+  paymentMethod: z.enum(["cash", "check", "credit_card", "bank_transfer"], {
+    required_error: "Payment method is required",
+    invalid_type_error: "Invalid payment method",
+  }),
+  paymentDate: z
+    .string()
+    .min(1, "Payment date is required")
+    .refine((val) => !isNaN(new Date(val).getTime()), "Payment date is invalid"),
   referenceNumber: z.string().optional(),
   notes: z.string().optional(),
 });
