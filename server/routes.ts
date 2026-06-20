@@ -1123,16 +1123,21 @@ export async function registerRoutes(
       const periodEntries = await storage.getTimeEntriesByPeriod(start, end);
       const rate = parsedDeductionRate / 100;
 
-      const created = await Promise.all(
-        activeEmployees.map(async (emp) => {
+      const recordsToCreate = activeEmployees
+        .map((emp) => {
           const empEntries = periodEntries.filter((e) => e.employeeId === emp.id);
           const totalHours = empEntries.reduce((s, e) => s + Number(e.hoursWorked), 0);
           const hourlyRate = Number(emp.hourlyRate);
           const grossPay = totalHours * hourlyRate;
           const deductions = grossPay * rate;
           const netPay = grossPay - deductions;
+          return { emp, totalHours, hourlyRate, grossPay, deductions, netPay };
+        })
+        .filter(({ totalHours }) => totalHours > 0);
 
-          return storage.createPayrollRecord({
+      const created = await Promise.all(
+        recordsToCreate.map(({ emp, totalHours, hourlyRate, grossPay, deductions, netPay }) =>
+          storage.createPayrollRecord({
             employeeId: emp.id,
             periodStart: start,
             periodEnd: end,
@@ -1142,8 +1147,8 @@ export async function registerRoutes(
             deductions: String(deductions),
             netPay: String(netPay),
             status: "pending",
-          });
-        })
+          })
+        )
       );
 
       res.status(201).json(created);

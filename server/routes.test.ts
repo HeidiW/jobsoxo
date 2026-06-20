@@ -420,6 +420,38 @@ describe("POST /api/line-items — negative numeric values", () => {
   });
 });
 
+describe("POST /api/line-items — zero numeric values", () => {
+  it("returns 400 when quantity is zero", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "0", unit: "hours", rate: "50", amount: "100" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("quantity");
+  });
+
+  it("returns 400 when rate is zero", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "2", unit: "hours", rate: "0", amount: "100" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("rate");
+  });
+
+  it("returns 400 when amount is zero", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "2", unit: "hours", rate: "50", amount: "0" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("amount");
+  });
+});
+
 describe("POST /api/invoices/:id/payments — negative and non-numeric amount", () => {
   it("returns 400 when amount is negative", async () => {
     const res = await request(app)
@@ -513,6 +545,43 @@ describe("PATCH /api/payroll-records/:id — non-numeric and negative numeric fi
 
     expect(res.body.error).toBe("Invalid request data");
     expect(res.body.details).toHaveProperty("hourlyRate");
+  });
+});
+
+describe("PATCH /api/payroll-records/:id — zero numeric values", () => {
+  it("returns 400 when totalHours is zero", async () => {
+    const res = await request(app)
+      .patch("/api/payroll-records/nonexistent-id")
+      .send({ totalHours: "0" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("totalHours");
+  });
+
+  it("returns 400 when grossPay is zero", async () => {
+    const res = await request(app)
+      .patch("/api/payroll-records/nonexistent-id")
+      .send({ grossPay: "0" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("grossPay");
+  });
+});
+
+describe("POST /api/payroll-records/run — zero-hour employee filtering", () => {
+  it("returns 201 with an empty array when no employees have time entries in the period", async () => {
+    const res = await request(app)
+      .post("/api/payroll-records/run")
+      .send({ periodStart: "2000-01-01", periodEnd: "2000-01-31" })
+      .expect(201);
+
+    expect(Array.isArray(res.body)).toBe(true);
+    for (const record of res.body) {
+      expect(parseFloat(record.totalHours)).toBeGreaterThan(0);
+      expect(parseFloat(record.grossPay)).toBeGreaterThan(0);
+    }
   });
 });
 

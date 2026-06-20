@@ -160,8 +160,8 @@ export const insertLineItemSchema = createInsertSchema(lineItems)
   .omit({ id: true })
   .extend({
     quantity: positiveNumericString("Quantity"),
-    rate: nonNegativeNumericString("Rate"),
-    amount: nonNegativeNumericString("Amount"),
+    rate: positiveNumericString("Rate"),
+    amount: positiveNumericString("Amount"),
   });
 export type InsertLineItem = z.infer<typeof insertLineItemSchema>;
 export type LineItem = typeof lineItems.$inferSelect;
@@ -356,9 +356,9 @@ export const payrollRecordsRelations = relations(payrollRecords, ({ one }) => ({
 export const insertPayrollRecordSchema = createInsertSchema(payrollRecords)
   .omit({ id: true, createdAt: true })
   .extend({
-    totalHours: nonNegativeNumericString("Total hours"),
+    totalHours: positiveNumericString("Total hours"),
     hourlyRate: positiveNumericString("Hourly rate"),
-    grossPay: nonNegativeNumericString("Gross pay"),
+    grossPay: positiveNumericString("Gross pay"),
     deductions: z.coerce.string().optional(),
     netPay: nonNegativeNumericString("Net pay"),
   });
