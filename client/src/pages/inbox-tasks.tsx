@@ -21,6 +21,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -48,6 +53,35 @@ import type { InboxTask } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+function midnightOn(d: Date): Date {
+  const r = new Date(d);
+  r.setHours(0, 0, 0, 0);
+  return r;
+}
+
+function snoozeOptionDates(): { label: string; date: Date }[] {
+  const now = new Date();
+  const tomorrow = midnightOn(new Date(now));
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  // "This weekend" = next Saturday; if today is already Sat/Sun advance to next Sat
+  const weekend = midnightOn(new Date(now));
+  const dayOfWeek = weekend.getDay(); // 0=Sun,6=Sat
+  const daysToSat = dayOfWeek === 6 ? 7 : (6 - dayOfWeek);
+  weekend.setDate(weekend.getDate() + daysToSat);
+
+  // "Next week" = next Monday
+  const nextWeek = midnightOn(new Date(now));
+  const daysToMon = dayOfWeek === 1 ? 7 : (8 - dayOfWeek) % 7 || 7;
+  nextWeek.setDate(nextWeek.getDate() + daysToMon);
+
+  return [
+    { label: "Tomorrow", date: tomorrow },
+    { label: "This weekend", date: weekend },
+    { label: "Next week", date: nextWeek },
+  ];
+}
 
 function senderInitials(sender: string): string {
   const parts = sender.trim().split(/\s+/);
@@ -163,11 +197,31 @@ function TaskRow({
   task: InboxTask;
   onToggle: (emailId: string, isDone: boolean) => void;
   onDismiss: (emailId: string) => void;
-  onSnooze: (emailId: string) => void;
+  onSnooze: (emailId: string, until: Date) => void;
 }) {
   const initials = senderInitials(task.sender);
   const color = senderColor(task.senderEmail ?? task.sender);
   const receivedAt = new Date(task.receivedAt);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [customDate, setCustomDate] = useState("");
+  const quickOptions = snoozeOptionDates();
+
+  const handleQuickSnooze = (date: Date) => {
+    setSnoozeOpen(false);
+    onSnooze(task.emailId, date);
+  };
+
+  const handleCustomSnooze = () => {
+    if (!customDate) return;
+    const date = new Date(customDate + "T00:00:00");
+    if (isNaN(date.getTime())) return;
+    setSnoozeOpen(false);
+    setCustomDate("");
+    onSnooze(task.emailId, date);
+  };
+
+  const minDate = format(new Date(Date.now() + 86_400_000), "yyyy-MM-dd");
 
   return (
     <div
@@ -224,7 +278,50 @@ function TaskRow({
             : format(receivedAt, "MMM d")}
         </span>
         <div onClick={(e) => e.stopPropagation()}>
-          <DropdownMenu>
+          <Popover open={snoozeOpen} onOpenChange={setSnoozeOpen}>
+            <PopoverTrigger asChild>
+              <span />
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-2" align="end">
+              <p className="text-xs font-semibold text-muted-foreground px-1 mb-1">
+                Snooze until…
+              </p>
+              {quickOptions.map((opt) => (
+                <button
+                  key={opt.label}
+                  className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted transition-colors text-left"
+                  onClick={() => handleQuickSnooze(opt.date)}
+                  data-testid={`snooze-option-${opt.label.toLowerCase().replace(/\s+/g, "-")}-${task.emailId}`}
+                >
+                  <span>{opt.label}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {format(opt.date, "EEE, MMM d")}
+                  </span>
+                </button>
+              ))}
+              <div className="border-t mt-1 pt-1 flex items-center gap-1">
+                <input
+                  type="date"
+                  min={minDate}
+                  value={customDate}
+                  onChange={(e) => setCustomDate(e.target.value)}
+                  className="flex-1 text-xs border rounded px-1.5 py-1 bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                  data-testid={`input-snooze-date-${task.emailId}`}
+                />
+                <Button
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={!customDate}
+                  onClick={handleCustomSnooze}
+                  data-testid={`button-snooze-custom-${task.emailId}`}
+                >
+                  Set
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
@@ -237,11 +334,14 @@ function TaskRow({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem
-                onClick={() => onSnooze(task.emailId)}
+                onClick={() => {
+                  setDropdownOpen(false);
+                  setSnoozeOpen(true);
+                }}
                 data-testid={`menu-snooze-${task.emailId}`}
               >
                 <BellOff className="h-4 w-4 mr-2" />
-                Snooze until tomorrow
+                Snooze…
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => onDismiss(task.emailId)}
@@ -272,7 +372,7 @@ function Section({
   tasks: InboxTask[];
   onToggle: (emailId: string, isDone: boolean) => void;
   onDismiss: (emailId: string) => void;
-  onSnooze: (emailId: string) => void;
+  onSnooze: (emailId: string, until: Date) => void;
 }) {
   if (!tasks.length) return null;
   const undoneCount = tasks.filter((t) => !t.isDone).length;
@@ -554,16 +654,16 @@ export default function InboxTasks() {
     toast({ title: "Email dismissed" });
   };
 
-  const handleSnooze = (emailId: string) => {
+  const handleSnooze = (emailId: string, until: Date) => {
     queryClient.setQueryData(["/api/inbox/tasks"], (old: InboxTask[] = []) =>
       old.filter((t) => t.emailId !== emailId)
     );
-    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/snooze`).catch(() => {
+    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/snooze`, { until: until.toISOString() }).catch(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
       toast({ title: "Couldn't snooze task", variant: "destructive" });
     });
     queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
-    toast({ title: "Snoozed until tomorrow" });
+    toast({ title: `Snoozed until ${format(until, "EEE, MMM d")}` });
   };
 
   const handleRestore = (emailId: string) => {

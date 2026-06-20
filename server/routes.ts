@@ -1392,13 +1392,26 @@ export async function registerRoutes(
     }
   });
 
-  // Snooze until tomorrow — hides task until start of next day
+  // Snooze — hides task until a given date (or tomorrow by default)
   app.patch("/api/inbox/tasks/:emailId/snooze", async (req, res) => {
     try {
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(0, 0, 0, 0);
-      const task = await storage.snoozeInboxTask(req.session.userId!, req.params.emailId, tomorrow);
+      let snoozeUntil: Date;
+      if (req.body?.until) {
+        snoozeUntil = new Date(req.body.until);
+        if (isNaN(snoozeUntil.getTime())) {
+          return res.status(400).json({ error: "Invalid 'until' date" });
+        }
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        if (snoozeUntil <= startOfToday) {
+          return res.status(400).json({ error: "'until' date must be in the future" });
+        }
+      } else {
+        snoozeUntil = new Date();
+        snoozeUntil.setDate(snoozeUntil.getDate() + 1);
+        snoozeUntil.setHours(0, 0, 0, 0);
+      }
+      const task = await storage.snoozeInboxTask(req.session.userId!, req.params.emailId, snoozeUntil);
       if (!task) return res.status(404).json({ error: "Task not found" });
       res.json(task);
     } catch (error) {
