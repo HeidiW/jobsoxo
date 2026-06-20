@@ -128,10 +128,12 @@ export interface IStorage {
   // Inbox Tasks — per-user (each user's own Gmail connection)
   getUsersWithInboxTasks(): Promise<User[]>;
   getInboxTasks(userId: string): Promise<InboxTask[]>;
+  getHiddenInboxTasks(userId: string): Promise<InboxTask[]>;
   upsertInboxTask(task: InsertInboxTask): Promise<InboxTask>;
   markInboxTaskDone(userId: string, emailId: string, isDone: boolean): Promise<InboxTask | undefined>;
   dismissInboxTask(userId: string, emailId: string): Promise<InboxTask | undefined>;
   snoozeInboxTask(userId: string, emailId: string, until: Date): Promise<InboxTask | undefined>;
+  restoreInboxTask(userId: string, emailId: string): Promise<InboxTask | undefined>;
   deleteUserInboxTasks(userId: string): Promise<void>;
   deleteAllInboxTasks(): Promise<void>;
 
@@ -548,6 +550,32 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(inboxTasks)
       .set({ snoozedUntil: until })
+      .where(and(eq(inboxTasks.userId, userId), eq(inboxTasks.emailId, emailId)))
+      .returning();
+    return updated ?? undefined;
+  }
+
+  async getHiddenInboxTasks(userId: string): Promise<InboxTask[]> {
+    const now = new Date();
+    return db
+      .select()
+      .from(inboxTasks)
+      .where(
+        and(
+          eq(inboxTasks.userId, userId),
+          or(
+            eq(inboxTasks.dismissed, true),
+            sql`${inboxTasks.snoozedUntil} IS NOT NULL AND ${inboxTasks.snoozedUntil} > ${now}`
+          )
+        )
+      )
+      .orderBy(desc(inboxTasks.receivedAt));
+  }
+
+  async restoreInboxTask(userId: string, emailId: string): Promise<InboxTask | undefined> {
+    const [updated] = await db
+      .update(inboxTasks)
+      .set({ dismissed: false, snoozedUntil: null })
       .where(and(eq(inboxTasks.userId, userId), eq(inboxTasks.emailId, emailId)))
       .returning();
     return updated ?? undefined;

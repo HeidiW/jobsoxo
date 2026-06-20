@@ -1407,6 +1407,29 @@ export async function registerRoutes(
     }
   });
 
+  // Hidden inbox tasks — dismissed or currently snoozed
+  app.get("/api/inbox/tasks/hidden", async (req, res) => {
+    try {
+      const tasks = await storage.getHiddenInboxTasks(req.session.userId!);
+      res.json(tasks);
+    } catch (error) {
+      console.error("Get hidden inbox tasks error:", error);
+      res.status(500).json({ error: "Failed to get hidden tasks" });
+    }
+  });
+
+  // Restore — clears dismissed=true and/or snoozedUntil for this user's task
+  app.patch("/api/inbox/tasks/:emailId/restore", async (req, res) => {
+    try {
+      const task = await storage.restoreInboxTask(req.session.userId!, req.params.emailId);
+      if (!task) return res.status(404).json({ error: "Task not found" });
+      res.json(task);
+    } catch (error) {
+      console.error("Restore inbox task error:", error);
+      res.status(500).json({ error: "Failed to restore task" });
+    }
+  });
+
   // Settings
   app.get("/api/settings", async (req, res) => {
     try {

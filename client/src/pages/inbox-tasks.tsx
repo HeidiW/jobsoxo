@@ -39,6 +39,9 @@ import {
   MoreHorizontal,
   X,
   BellOff,
+  ChevronDown,
+  ChevronRight,
+  RotateCcw,
 } from "lucide-react";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 import type { InboxTask } from "@shared/schema";
@@ -322,6 +325,72 @@ function TasksSkeleton() {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+// ── Hidden task row ───────────────────────────────────────────────────────────
+
+function HiddenTaskRow({
+  task,
+  onRestore,
+}: {
+  task: InboxTask;
+  onRestore: (emailId: string) => void;
+}) {
+  const initials = senderInitials(task.sender);
+  const color = senderColor(task.senderEmail ?? task.sender);
+  const receivedAt = new Date(task.receivedAt);
+  const isSnoozed = !task.dismissed && task.snoozedUntil != null;
+
+  return (
+    <div
+      className="flex items-center gap-3 p-3 rounded-lg opacity-60 hover:opacity-100 transition-opacity group"
+      data-testid={`row-hidden-${task.emailId}`}
+    >
+      <div
+        className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-semibold ${color}`}
+      >
+        {initials}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <span className="text-sm font-medium truncate">{task.subject}</span>
+          <Badge variant="outline" className="text-xs px-1.5 py-0 shrink-0">
+            {isSnoozed ? "Snoozed" : "Dismissed"}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="truncate max-w-[200px]">{task.sender}</span>
+          {isSnoozed && task.snoozedUntil && (
+            <>
+              <span>·</span>
+              <span>
+                Until {format(new Date(task.snoozedUntil), "MMM d, h:mm a")}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="shrink-0 flex items-center gap-2">
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
+          {isToday(receivedAt)
+            ? format(receivedAt, "h:mm a")
+            : format(receivedAt, "MMM d")}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+          onClick={() => onRestore(task.emailId)}
+          data-testid={`button-restore-${task.emailId}`}
+        >
+          <RotateCcw className="h-3.5 w-3.5 mr-1" />
+          Restore
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
 export default function InboxTasks() {
   const { toast } = useToast();
   const { user } = useAuth();
@@ -329,6 +398,7 @@ export default function InboxTasks() {
 
   const [showDone, setShowDone] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
 
   // Connection status — polling every 30 s
   const { data: status, isLoading: statusLoading } = useQuery<{
@@ -349,6 +419,12 @@ export default function InboxTasks() {
     queryKey: ["/api/inbox/tasks"],
     refetchInterval: 5 * 60 * 1000,
     refetchIntervalInBackground: false,
+  });
+
+  // Hidden (dismissed + snoozed) tasks — fetched on demand when panel is opened
+  const { data: hiddenTasks = [], isLoading: hiddenLoading } = useQuery<InboxTask[]>({
+    queryKey: ["/api/inbox/tasks/hidden"],
+    enabled: showHidden && connected,
   });
 
   // Refresh — fetches live from Gmail and upserts into cache (any user)
@@ -469,7 +545,9 @@ export default function InboxTasks() {
     queryClient.setQueryData(["/api/inbox/tasks"], (old: InboxTask[] = []) =>
       old.filter((t) => t.emailId !== emailId)
     );
-    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/dismiss`).catch(() => {
+    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/dismiss`).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+    }).catch(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
       toast({ title: "Couldn't dismiss task", variant: "destructive" });
     });
@@ -484,7 +562,22 @@ export default function InboxTasks() {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
       toast({ title: "Couldn't snooze task", variant: "destructive" });
     });
+    queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
     toast({ title: "Snoozed until tomorrow" });
+  };
+
+  const handleRestore = (emailId: string) => {
+    queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
+      old.filter((t) => t.emailId !== emailId)
+    );
+    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/restore`).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+    }).catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+      toast({ title: "Couldn't restore task", variant: "destructive" });
+    });
+    toast({ title: "Email restored" });
   };
 
   return (
@@ -705,6 +798,59 @@ export default function InboxTasks() {
           ) : null}
         </CardContent>
       </Card>
+
+      {/* Hidden emails — collapsible section */}
+      {connected && (
+        <div className="mt-4">
+          <button
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full text-left px-1 py-1 rounded"
+            onClick={() => setShowHidden((v) => !v)}
+            data-testid="button-toggle-hidden"
+          >
+            {showHidden ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+            <span className="font-medium">Hidden emails</span>
+            <span className="text-xs opacity-70">(dismissed &amp; snoozed)</span>
+          </button>
+
+          {showHidden && (
+            <Card className="mt-2">
+              <CardContent className="pt-3 pb-2">
+                {hiddenLoading ? (
+                  <div className="space-y-2 py-2">
+                    {[1, 2].map((i) => (
+                      <div key={i} className="flex items-center gap-3 p-3">
+                        <Skeleton className="h-8 w-8 rounded-full shrink-0" />
+                        <div className="flex-1 space-y-1.5">
+                          <Skeleton className="h-4 w-1/2" />
+                          <Skeleton className="h-3 w-3/4" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : hiddenTasks.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    No hidden emails right now.
+                  </p>
+                ) : (
+                  <div className="space-y-0.5">
+                    {hiddenTasks.map((t) => (
+                      <HiddenTaskRow
+                        key={t.id}
+                        task={t}
+                        onRestore={handleRestore}
+                      />
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
 
       {/* Footer hint */}
       {tasks.length > 0 && (
