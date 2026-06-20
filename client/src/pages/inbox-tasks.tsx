@@ -527,11 +527,18 @@ export default function InboxTasks() {
   });
 
   // Cached tasks for this user — re-fetches every 5 min while tab is visible
-  const { data: tasks = [], isLoading: tasksLoading } = useQuery<InboxTask[]>({
+  const { data: tasks = [], isLoading: tasksLoading, dataUpdatedAt } = useQuery<InboxTask[]>({
     queryKey: ["/api/inbox/tasks"],
     refetchInterval: 5 * 60 * 1000,
     refetchIntervalInBackground: false,
   });
+
+  // Tick every 30 s so the "Updated X ago" label stays current
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Hidden (dismissed + snoozed) tasks — fetched on demand when panel is opened
   const connected = status?.connected ?? false;
@@ -831,6 +838,20 @@ export default function InboxTasks() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* Last updated indicator */}
+      {connected && dataUpdatedAt > 0 && (
+        <p
+          className="text-xs text-muted-foreground text-right mb-2 select-none"
+          data-testid="text-list-updated-at"
+          title={new Date(dataUpdatedAt).toLocaleString()}
+        >
+          Updated{" "}
+          {now - dataUpdatedAt < 60_000
+            ? "just now"
+            : formatDistanceToNow(new Date(dataUpdatedAt), { addSuffix: true })}
+        </p>
       )}
 
       {/* Main content */}
