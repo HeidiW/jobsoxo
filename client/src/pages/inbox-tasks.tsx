@@ -540,11 +540,14 @@ export default function InboxTasks() {
     return () => clearInterval(id);
   }, []);
 
-  // Hidden (dismissed + snoozed) tasks — fetched on demand when panel is opened
+  // Hidden (dismissed + snoozed) tasks — always fetched when connected so we
+  // can show a count badge on the toggle even before the panel is opened
   const connected = status?.connected ?? false;
   const { data: hiddenTasks = [], isLoading: hiddenLoading } = useQuery<InboxTask[]>({
     queryKey: ["/api/inbox/tasks/hidden"],
-    enabled: showHidden && connected,
+    enabled: connected,
+    refetchInterval: 5 * 60 * 1000,
+    refetchIntervalInBackground: false,
   });
 
   // Refresh — fetches live from the user's Gmail and upserts into cache
@@ -912,6 +915,15 @@ export default function InboxTasks() {
             )}
             <span className="font-medium">Hidden emails</span>
             <span className="text-xs opacity-70">(dismissed &amp; snoozed)</span>
+            {hiddenTasks.length > 0 && (
+              <Badge
+                variant="secondary"
+                className="text-xs px-1.5 py-0 ml-1"
+                data-testid="badge-hidden-count"
+              >
+                {hiddenTasks.length}
+              </Badge>
+            )}
           </button>
 
           {showHidden && (
