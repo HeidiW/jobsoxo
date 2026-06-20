@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { processOverdueReminders } from "./email";
+import { startInboxScheduler } from "./scheduler";
 
 declare module "express-session" {
   interface SessionData {
@@ -129,4 +130,7 @@ app.use((req, res, next) => {
   };
   runReminders();
   setInterval(runReminders, 24 * 60 * 60 * 1000);
+
+  // Daily Gmail inbox auto-sync (default 08:00, configurable via INBOX_SYNC_HOUR)
+  startInboxScheduler();
 })();

@@ -116,6 +116,7 @@ export interface IStorage {
   // Settings
   getSettings(): Promise<Settings | undefined>;
   updateSettings(settings: Partial<InsertSettings>): Promise<Settings>;
+  setLastInboxSync(date: Date): Promise<void>;
 
   // Invites
   getInvites(): Promise<Invite[]>;
@@ -125,6 +126,7 @@ export interface IStorage {
   deleteInvite(id: string): Promise<void>;
 
   // Inbox Tasks — per-user (each user's own Gmail connection)
+  getUsersWithInboxTasks(): Promise<User[]>;
   getInboxTasks(userId: string): Promise<InboxTask[]>;
   upsertInboxTask(task: InsertInboxTask): Promise<InboxTask>;
   markInboxTaskDone(userId: string, emailId: string, isDone: boolean): Promise<InboxTask | undefined>;
@@ -424,6 +426,15 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async setLastInboxSync(date: Date): Promise<void> {
+    const existing = await this.getSettings();
+    if (existing) {
+      await db.update(settings).set({ lastInboxSync: date }).where(eq(settings.id, existing.id));
+    } else {
+      await db.insert(settings).values({ lastInboxSync: date } as any);
+    }
+  }
+
   // Invites
   async getInvites(): Promise<Invite[]> {
     return db.select().from(invites).orderBy(desc(invites.createdAt));
@@ -462,6 +473,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Inbox Tasks — per-user
+  async getUsersWithInboxTasks(): Promise<User[]> {
+    const rows = await db
+      .selectDistinct({ userId: inboxTasks.userId })
+      .from(inboxTasks);
+    if (rows.length === 0) return [];
+    const ids = rows.map((r) => r.userId);
+    return db.select().from(users).where(sql`${users.id} = ANY(${ids})`);
+  }
+
   async getInboxTasks(userId: string): Promise<InboxTask[]> {
     return db
       .select()

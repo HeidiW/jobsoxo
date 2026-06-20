@@ -373,6 +373,7 @@ export const settings = pgTable("settings", {
   invoiceTerms: text("invoice_terms"),
   reminderIntervals: jsonb("reminder_intervals").default([7, 14, 30]), // days after due date
   emailSettings: jsonb("email_settings"),
+  lastInboxSync: timestamp("last_inbox_sync"),
 });
 
 export const insertSettingsSchema = createInsertSchema(settings)

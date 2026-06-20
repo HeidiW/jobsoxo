@@ -31,7 +31,7 @@ import {
   Unplug,
   ExternalLink,
 } from "lucide-react";
-import { format, isToday, isYesterday } from "date-fns";
+import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 import type { InboxTask } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -282,6 +282,12 @@ export default function InboxTasks() {
     refetchInterval: 30_000,
   });
 
+  // Last auto-sync timestamp — polling every 60 s so badge refreshes after background sync
+  const { data: syncInfo } = useQuery<{ lastSyncedAt: string | null }>({
+    queryKey: ["/api/inbox/last-sync"],
+    refetchInterval: 60_000,
+  });
+
   // Cached tasks for this user
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<InboxTask[]>({
     queryKey: ["/api/inbox/tasks"],
@@ -296,6 +302,7 @@ export default function InboxTasks() {
     onSuccess: (data) => {
       queryClient.setQueryData(["/api/inbox/tasks"], data);
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/last-sync"] });
       toast({
         title: `Refreshed — ${data.length} email${data.length !== 1 ? "s" : ""}`,
       });
@@ -439,6 +446,19 @@ export default function InboxTasks() {
           <p className="text-muted-foreground mt-1">
             Your Gmail inbox as a daily to-do list
           </p>
+          {syncInfo?.lastSyncedAt && (
+            <p
+              className="text-xs text-muted-foreground mt-0.5"
+              data-testid="text-last-synced"
+              title={format(new Date(syncInfo.lastSyncedAt), "PPpp")}
+            >
+              <Clock className="h-3 w-3 inline mr-1" />
+              Auto-synced{" "}
+              {formatDistanceToNow(new Date(syncInfo.lastSyncedAt), {
+                addSuffix: true,
+              })}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Connection indicator */}

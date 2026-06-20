@@ -14,6 +14,7 @@ import { sendInvoiceEmail, processOverdueReminders, sendPasswordResetEmail } fro
 import bcrypt from "bcryptjs";
 import { passport, setupOAuthStrategies, getEnabledProviders, callbackUrl } from "./oauth";
 import { isGmailConnected, fetchGmailInbox, revokeGmailConnection, getGmailOAuthUrl } from "./gmail";
+import { getLastInboxSyncTime } from "./scheduler";
 
 function parseNumeric(value: unknown): number {
   if (typeof value === "number") return value;
@@ -1230,6 +1231,16 @@ export async function registerRoutes(
       res.json({ connected });
     } catch {
       res.json({ connected: false });
+    }
+  });
+
+  // Last auto-sync timestamp — any authenticated user can read this
+  app.get("/api/inbox/last-sync", async (req, res) => {
+    try {
+      const t = await getLastInboxSyncTime();
+      res.json({ lastSyncedAt: t ? t.toISOString() : null });
+    } catch {
+      res.json({ lastSyncedAt: null });
     }
   });
 
