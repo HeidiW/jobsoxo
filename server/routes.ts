@@ -1114,6 +1114,22 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid date range" });
       }
 
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      if (start > today) {
+        return res.status(400).json({ error: "periodStart cannot be in the future" });
+      }
+
+      const existingRecords = await storage.getPayrollRecords();
+      const overlap = existingRecords.find((r) => {
+        const rStart = new Date(r.periodStart);
+        const rEnd = new Date(r.periodEnd);
+        return rStart < end && rEnd > start;
+      });
+      if (overlap) {
+        return res.status(400).json({ error: "This period overlaps with an already-processed payroll period" });
+      }
+
       const parsedDeductionRate = deductionRate === undefined || deductionRate === null ? 0 : Number(deductionRate);
       if (isNaN(parsedDeductionRate) || parsedDeductionRate < 0 || parsedDeductionRate > 100) {
         return res.status(400).json({ error: "deductionRate must be a number between 0 and 100" });

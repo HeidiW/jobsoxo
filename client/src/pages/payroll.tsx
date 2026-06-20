@@ -120,10 +120,18 @@ const timeEntryFormSchema = z.object({
 });
 
 const runPayrollSchema = z.object({
-  periodStart: z.string().min(1, "Start date is required"),
+  periodStart: z.string().min(1, "Start date is required").refine((val) => {
+    if (!val) return true;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return new Date(val) <= today;
+  }, "Start date cannot be in the future"),
   periodEnd: z.string().min(1, "End date is required"),
   deductionRate: z.string().optional(),
-});
+}).refine((data) => {
+  if (!data.periodStart || !data.periodEnd) return true;
+  return new Date(data.periodStart) < new Date(data.periodEnd);
+}, { message: "Start date must be before end date", path: ["periodEnd"] });
 
 type EmployeeFormValues = z.infer<typeof employeeFormSchema>;
 type TimeEntryFormValues = z.infer<typeof timeEntryFormSchema>;

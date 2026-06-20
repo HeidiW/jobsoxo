@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import { buildTestApp, buildAdminTestApp } from "./test-helpers";
+import { storage } from "./storage";
 
 let app: Express;
 
@@ -611,6 +612,67 @@ describe("POST /api/payroll-records/run — deductionRate validation", () => {
       .expect(400);
 
     expect(res.body.error).toBe("deductionRate must be a number between 0 and 100");
+  });
+});
+
+describe("POST /api/payroll-records/run — future date validation", () => {
+  it("returns 400 when periodStart is in the future", async () => {
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + 7);
+    const futureDateStr = futureDate.toISOString().slice(0, 10);
+    const endDateStr = new Date(futureDate.getTime() + 14 * 86400000).toISOString().slice(0, 10);
+
+    const res = await request(app)
+      .post("/api/payroll-records/run")
+      .send({ periodStart: futureDateStr, periodEnd: endDateStr })
+      .expect(400);
+
+    expect(res.body.error).toBe("periodStart cannot be in the future");
+  });
+
+  it("returns 201 when periodStart is today", async () => {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().slice(0, 10);
+    const endDate = new Date(today.getTime() + 14 * 86400000);
+    const endDateStr = endDate.toISOString().slice(0, 10);
+
+    const res = await request(app)
+      .post("/api/payroll-records/run")
+      .send({ periodStart: todayStr, periodEnd: endDateStr })
+      .expect(201);
+
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+});
+
+describe("POST /api/payroll-records/run — overlapping period validation", () => {
+  it("returns 400 when the period overlaps an already-processed payroll period", async () => {
+    const empRes = await request(app)
+      .post("/api/employees")
+      .send({ name: "Overlap Test Employee", hourlyRate: "20", status: "active" })
+      .expect(201);
+
+    const employeeId = empRes.body.id;
+
+    await storage.createPayrollRecord({
+      employeeId,
+      periodStart: new Date("2001-05-01"),
+      periodEnd: new Date("2001-05-31"),
+      totalHours: "80",
+      hourlyRate: "20",
+      grossPay: "1600",
+      deductions: "0",
+      netPay: "1600",
+      status: "pending",
+    });
+
+    const overlapRes = await request(app)
+      .post("/api/payroll-records/run")
+      .send({ periodStart: "2001-05-15", periodEnd: "2001-06-15" })
+      .expect(400);
+
+    expect(overlapRes.body.error).toBe("This period overlaps with an already-processed payroll period");
   });
 });
 
