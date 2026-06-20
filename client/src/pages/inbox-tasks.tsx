@@ -35,7 +35,7 @@ import { format, isToday, isYesterday } from "date-fns";
 import type { InboxTask } from "@shared/schema";
 import { useAuth } from "@/hooks/use-auth";
 
-// ── Helpers ─────────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function senderInitials(sender: string): string {
   const parts = sender.trim().split(/\s+/);
@@ -72,15 +72,13 @@ function groupByDay(tasks: InboxTask[]) {
   return { today, yesterday, earlier };
 }
 
-// ── Not-connected card ─────────────────────────────────────────────────────────
+// ── Not-connected card ────────────────────────────────────────────────────────
 
 function NotConnectedCard({
   onConnect,
-  isAdmin,
   connecting,
 }: {
   onConnect: () => void;
-  isAdmin: boolean;
   connecting: boolean;
 }) {
   return (
@@ -93,29 +91,23 @@ function NotConnectedCard({
         Connect your Gmail account to see your inbox emails as a daily to-do
         list. Only inbox emails are read — nothing is sent or modified.
       </p>
-      {isAdmin ? (
-        <Button
-          className="mt-4"
-          onClick={onConnect}
-          disabled={connecting}
-          data-testid="button-connect-gmail"
-        >
-          <PlugZap className="h-4 w-4 mr-2" />
-          {connecting ? "Opening…" : "Connect Gmail"}
-          <ExternalLink className="h-3 w-3 ml-1 opacity-60" />
-        </Button>
-      ) : (
-        <p className="text-sm text-muted-foreground mt-4 bg-muted rounded-md px-4 py-3">
-          Ask your admin to connect Gmail from the Inbox Tasks page.
-        </p>
-      )}
+      <Button
+        className="mt-4"
+        onClick={onConnect}
+        disabled={connecting}
+        data-testid="button-connect-gmail"
+      >
+        <PlugZap className="h-4 w-4 mr-2" />
+        {connecting ? "Opening…" : "Connect Gmail"}
+        <ExternalLink className="h-3 w-3 ml-1 opacity-60" />
+      </Button>
     </div>
   );
 }
 
-// ── Empty-inbox card (connected, but mailbox is empty) ─────────────────────────
+// ── Empty-inbox card (connected, but inbox is empty) ─────────────────────────
 
-function EmptyInboxCard({ onSync }: { onSync: () => void }) {
+function EmptyInboxCard({ onRefresh, loading }: { onRefresh: () => void; loading: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <CheckCheck className="h-12 w-12 text-green-500 mb-4" />
@@ -123,15 +115,15 @@ function EmptyInboxCard({ onSync }: { onSync: () => void }) {
       <p className="text-muted-foreground mt-1 mb-4">
         No emails in your inbox right now.
       </p>
-      <Button variant="outline" size="sm" onClick={onSync}>
-        <RefreshCw className="h-4 w-4 mr-1.5" />
+      <Button variant="outline" size="sm" onClick={onRefresh} disabled={loading}>
+        <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? "animate-spin" : ""}`} />
         Refresh
       </Button>
     </div>
   );
 }
 
-// ── Task row ───────────────────────────────────────────────────────────────────
+// ── Task row ─────────────────────────────────────────────────────────────────
 
 function TaskRow({
   task,
@@ -201,7 +193,7 @@ function TaskRow({
   );
 }
 
-// ── Section ────────────────────────────────────────────────────────────────────
+// ── Section ───────────────────────────────────────────────────────────────────
 
 function Section({
   label,
@@ -235,7 +227,7 @@ function Section({
   );
 }
 
-// ── Loading skeleton ───────────────────────────────────────────────────────────
+// ── Loading skeleton ──────────────────────────────────────────────────────────
 
 function TasksSkeleton() {
   return (
@@ -255,7 +247,7 @@ function TasksSkeleton() {
   );
 }
 
-// ── Main page ──────────────────────────────────────────────────────────────────
+// ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function InboxTasks() {
   const { toast } = useToast();
@@ -265,7 +257,7 @@ export default function InboxTasks() {
   const [showDone, setShowDone] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
 
-  // Connection status (polls every 30 s)
+  // Connection status — polling every 30 s
   const { data: status, isLoading: statusLoading } = useQuery<{
     connected: boolean;
   }>({
@@ -273,13 +265,12 @@ export default function InboxTasks() {
     refetchInterval: 30_000,
   });
 
-  // Cached tasks
+  // Cached tasks for this user
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<InboxTask[]>({
     queryKey: ["/api/inbox/tasks"],
   });
 
-  // Refresh — any authenticated user can call GET /api/inbox/messages
-  // which fetches live from Gmail (50 msgs) and updates the shared cache.
+  // Refresh — fetches live from Gmail and upserts into cache (any user)
   const refreshMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("GET", "/api/inbox/messages");
@@ -288,6 +279,9 @@ export default function InboxTasks() {
     onSuccess: (data) => {
       queryClient.setQueryData(["/api/inbox/tasks"], data);
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/status"] });
+      toast({
+        title: `Refreshed — ${data.length} email${data.length !== 1 ? "s" : ""}`,
+      });
     },
     onError: () => {
       toast({ title: "Refresh failed", variant: "destructive" });
@@ -296,13 +290,19 @@ export default function InboxTasks() {
 
   // Auto-fetch on page load when connected but cache is empty
   useEffect(() => {
-    if (status?.connected && !tasksLoading && tasks.length === 0 && !refreshMutation.isPending) {
+    if (
+      status?.connected &&
+      !tasksLoading &&
+      tasks.length === 0 &&
+      !refreshMutation.isPending
+    ) {
       refreshMutation.mutate();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Only trigger when connection/loading state changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status?.connected, tasksLoading]);
 
-  // Connect — opens Gmail OAuth in a new tab
+  // Connect — opens Gmail OAuth in a new tab (any user can connect their own account)
   const connectMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("GET", "/api/inbox/connect");
@@ -314,14 +314,13 @@ export default function InboxTasks() {
         toast({
           title: "Gmail OAuth opened",
           description:
-            "Complete the authorisation in the new tab, then click Sync inbox here.",
+            "Complete the authorisation in the new tab, then click Refresh here.",
         });
       } else if (data.code === "NO_CONNECTOR_HOST") {
-        // Dev environment — guide admin to the integrations panel
         toast({
           title: "Use the Integrations panel",
           description:
-            "Click the puzzle-piece icon in the Replit sidebar to connect Gmail, then sync here.",
+            "Click the puzzle-piece icon in the Replit sidebar to connect Gmail, then refresh.",
         });
       } else {
         toast({
@@ -341,7 +340,7 @@ export default function InboxTasks() {
     },
   });
 
-  // Disconnect — clears all cached tasks
+  // Disconnect — revokes OAuth and clears this user's cached tasks
   const disconnectMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("POST", "/api/inbox/disconnect");
@@ -357,55 +356,6 @@ export default function InboxTasks() {
     },
   });
 
-  // Sync
-  const syncMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/inbox/sync");
-      return res.json();
-    },
-    onSuccess: (data: InboxTask[]) => {
-      queryClient.setQueryData(["/api/inbox/tasks"], data);
-      queryClient.invalidateQueries({ queryKey: ["/api/inbox/status"] });
-      toast({ title: `Synced ${data.length} email${data.length !== 1 ? "s" : ""}` });
-    },
-    onError: (err: Error) => {
-      if (
-        err.message?.includes("NOT_CONNECTED") ||
-        err.message?.includes("not connected")
-      ) {
-        toast({
-          title: "Gmail not connected",
-          description: "Click Connect Gmail to authorise access first.",
-          variant: "destructive",
-        });
-      } else {
-        toast({ title: "Sync failed", description: err.message, variant: "destructive" });
-      }
-    },
-  });
-
-  // Toggle done
-  const toggleMutation = useMutation({
-    mutationFn: async ({ emailId, isDone }: { emailId: string; isDone: boolean }) => {
-      const res = await apiRequest("PATCH", `/api/inbox/tasks/${emailId}/done`, {
-        isDone,
-      });
-      return res.json() as Promise<InboxTask>;
-    },
-    onSuccess: (updated) => {
-      queryClient.setQueryData(["/api/inbox/tasks"], (old: InboxTask[] = []) =>
-        old.map((t) => (t.emailId === updated.emailId ? updated : t))
-      );
-    },
-    onError: () => {
-      toast({ title: "Couldn't update task", variant: "destructive" });
-    },
-  });
-
-  const handleToggle = (emailId: string, isDone: boolean) => {
-    toggleMutation.mutate({ emailId, isDone });
-  };
-
   const connected = status?.connected ?? false;
 
   const visibleTasks = showDone ? tasks : tasks.filter((t) => !t.isDone);
@@ -418,11 +368,22 @@ export default function InboxTasks() {
   const todayUndone = todayTotal - todayDone;
   const unreadCount = tasks.filter((t) => !t.isRead && !t.isDone).length;
 
-  // Determine what the main content area should show
   const isLoading = statusLoading || tasksLoading;
   const showNotConnected = !isLoading && !connected;
   const showEmptyConnected = !isLoading && connected && visibleTasks.length === 0;
   const showList = !isLoading && connected && visibleTasks.length > 0;
+
+  const handleToggle = (emailId: string, isDone: boolean) => {
+    // Optimistic update
+    queryClient.setQueryData(["/api/inbox/tasks"], (old: InboxTask[] = []) =>
+      old.map((t) => (t.emailId === emailId ? { ...t, isDone } : t))
+    );
+    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/done`, { isDone }).catch(() => {
+      // Rollback on failure
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
+      toast({ title: "Couldn't update task", variant: "destructive" });
+    });
+  };
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
@@ -435,8 +396,8 @@ export default function InboxTasks() {
           <AlertDialogHeader>
             <AlertDialogTitle>Disconnect Gmail?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove all cached inbox tasks. You can reconnect at any
-              time. The Gmail authorisation in your Replit account is not affected.
+              This will revoke Gmail access and remove your cached inbox tasks.
+              You can reconnect at any time.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -480,8 +441,8 @@ export default function InboxTasks() {
             {connected ? "Gmail connected" : "Not connected"}
           </div>
 
-          {/* Connect / Disconnect (admin only) */}
-          {isAdmin && !connected && (
+          {/* Connect (when not connected) */}
+          {!connected && (
             <Button
               variant="outline"
               size="sm"
@@ -494,7 +455,9 @@ export default function InboxTasks() {
               <ExternalLink className="h-3 w-3 ml-1 opacity-60" />
             </Button>
           )}
-          {isAdmin && connected && (
+
+          {/* Disconnect (when connected, admin only for safety) */}
+          {connected && isAdmin && (
             <Button
               variant="outline"
               size="sm"
@@ -520,12 +483,12 @@ export default function InboxTasks() {
             </Button>
           )}
 
-          {/* Refresh — available to all authenticated users when connected */}
+          {/* Refresh — available to all users when connected */}
           {connected && (
             <Button
               size="sm"
               onClick={() => refreshMutation.mutate()}
-              disabled={refreshMutation.isPending || syncMutation.isPending}
+              disabled={refreshMutation.isPending}
               data-testid="button-refresh"
             >
               <RefreshCw
@@ -534,24 +497,6 @@ export default function InboxTasks() {
                 }`}
               />
               {refreshMutation.isPending ? "Refreshing…" : "Refresh"}
-            </Button>
-          )}
-
-          {/* Sync inbox (admin) — full replace via POST */}
-          {connected && isAdmin && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending || refreshMutation.isPending}
-              data-testid="button-sync"
-            >
-              <RefreshCw
-                className={`h-4 w-4 mr-1.5 ${
-                  syncMutation.isPending ? "animate-spin" : ""
-                }`}
-              />
-              {syncMutation.isPending ? "Syncing…" : "Sync inbox"}
             </Button>
           )}
         </div>
@@ -607,17 +552,16 @@ export default function InboxTasks() {
           {isLoading ? (
             <TasksSkeleton />
           ) : showNotConnected ? (
-            // Not connected — prompt to connect
             <NotConnectedCard
               onConnect={() => connectMutation.mutate()}
-              isAdmin={isAdmin}
               connecting={connectMutation.isPending}
             />
           ) : showEmptyConnected ? (
-            // Connected but inbox is genuinely empty (or all done and hidden)
-            <EmptyInboxCard onSync={() => refreshMutation.mutate()} />
+            <EmptyInboxCard
+              onRefresh={() => refreshMutation.mutate()}
+              loading={refreshMutation.isPending}
+            />
           ) : showList ? (
-            // Normal checklist
             <>
               <Section label="Today" tasks={groups.today} onToggle={handleToggle} />
               <Section
@@ -631,12 +575,11 @@ export default function InboxTasks() {
         </CardContent>
       </Card>
 
-      {/* Footer */}
+      {/* Footer hint */}
       {tasks.length > 0 && (
         <p className="text-xs text-muted-foreground text-center mt-4">
           <Clock className="h-3 w-3 inline mr-1" />
-          Click an email row or its checkbox to mark it done ·{" "}
-          {syncMutation.isSuccess ? "Just synced" : "Use Sync to refresh"}
+          Click an email row or its checkbox to mark it done · Use Refresh to sync latest inbox
         </p>
       )}
     </div>

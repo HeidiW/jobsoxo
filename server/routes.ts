@@ -1234,7 +1234,7 @@ export async function registerRoutes(
   // to open in a new tab. This is the runtime equivalent of proposeIntegration:
   // the Replit connector proxy handles the Google OAuth handshake and stores
   // the resulting tokens, after which isGmailConnected() returns true.
-  app.get("/api/inbox/connect", requireAdmin, async (req, res) => {
+  app.get("/api/inbox/connect", async (req, res) => {
     const authUrl = getGmailOAuthUrl();
     if (!authUrl) {
       return res.status(503).json({
@@ -1248,10 +1248,10 @@ export async function registerRoutes(
 
   // Disconnect — revokes the OAuth token via the Replit connector proxy AND
   // clears all cached inbox tasks. After this, isGmailConnected() returns false.
-  app.post("/api/inbox/disconnect", requireAdmin, async (req, res) => {
+  app.post("/api/inbox/disconnect", async (req, res) => {
     try {
       const revoked = await revokeGmailConnection();
-      await storage.deleteAllInboxTasks();
+      await storage.deleteUserInboxTasks(req.session.userId!);
       res.json({ disconnected: true, revoked });
     } catch (error) {
       console.error("Inbox disconnect error:", error);
@@ -1259,10 +1259,10 @@ export async function registerRoutes(
     }
   });
 
-  // Return cached inbox tasks — shared mailbox, all authenticated users
+  // Return cached inbox tasks for the requesting user
   app.get("/api/inbox/tasks", async (req, res) => {
     try {
-      const tasks = await storage.getInboxTasks();
+      const tasks = await storage.getInboxTasks(req.session.userId!);
       res.json(tasks);
     } catch (error) {
       console.error("Get inbox tasks error:", error);
@@ -1270,18 +1270,17 @@ export async function registerRoutes(
     }
   });
 
-  // GET /api/inbox/messages — fetches the live last-50 inbox emails from Gmail,
-  // replaces the cache with exactly that set (preserving isDone/doneBy for
-  // emails still in inbox), and returns the resulting list.
-  // Falls back to cache-only if Gmail is unreachable. Any authenticated user.
+  // GET /api/inbox/messages — fetches the live last-50 inbox emails from the
+  // requesting user's connected Gmail, upserts into cache (preserving isDone),
+  // then returns that user's task list. Falls back to cache if not connected.
   app.get("/api/inbox/messages", async (req, res) => {
+    const userId = req.session.userId!;
     try {
       const messages = await fetchGmailInbox(50);
-      // Replace cache: clear then insert the current inbox set
-      await storage.deleteAllInboxTasks();
       await Promise.all(
         messages.map((m) =>
           storage.upsertInboxTask({
+            userId,
             emailId: m.id,
             subject: m.subject,
             sender: m.sender,
@@ -1290,18 +1289,16 @@ export async function registerRoutes(
             receivedAt: m.receivedAt,
             isRead: m.isRead,
             isDone: false,
-            doneBy: null,
           })
         )
       );
-      const tasks = await storage.getInboxTasks();
+      const tasks = await storage.getInboxTasks(userId);
       res.json(tasks);
     } catch (error: any) {
-      // Gmail not connected / token expired → return cached tasks silently
       const msg = error?.message ?? "";
       if (msg.includes("not connected") || msg.includes("expired")) {
         try {
-          const cached = await storage.getInboxTasks();
+          const cached = await storage.getInboxTasks(userId);
           return res.json(cached);
         } catch {
           return res.status(503).json({ error: "Gmail not connected", code: "NOT_CONNECTED" });
@@ -1312,14 +1309,15 @@ export async function registerRoutes(
     }
   });
 
-  // POST /api/inbox/sync — admin-only manual sync (same replace logic)
-  app.post("/api/inbox/sync", requireAdmin, async (req, res) => {
+  // POST /api/inbox/sync — syncs the requesting user's Gmail inbox (upsert, no delete)
+  app.post("/api/inbox/sync", async (req, res) => {
+    const userId = req.session.userId!;
     try {
       const messages = await fetchGmailInbox(50);
-      await storage.deleteAllInboxTasks();
       await Promise.all(
         messages.map((m) =>
           storage.upsertInboxTask({
+            userId,
             emailId: m.id,
             subject: m.subject,
             sender: m.sender,
@@ -1328,11 +1326,10 @@ export async function registerRoutes(
             receivedAt: m.receivedAt,
             isRead: m.isRead,
             isDone: false,
-            doneBy: null,
           })
         )
       );
-      const tasks = await storage.getInboxTasks();
+      const tasks = await storage.getInboxTasks(userId);
       res.json(tasks);
     } catch (error: any) {
       const msg = error?.message ?? "Failed to sync Gmail";
@@ -1347,14 +1344,14 @@ export async function registerRoutes(
     }
   });
 
-  // Toggle done — shared mailbox; any authenticated user can mark any task
+  // Toggle done — scoped to requesting user's own tasks
   app.patch("/api/inbox/messages/:emailId/done", async (req, res) => {
     try {
       const { isDone } = req.body;
       if (typeof isDone !== "boolean") {
         return res.status(400).json({ error: "isDone (boolean) is required" });
       }
-      const task = await storage.markInboxTaskDone(req.params.emailId, isDone, req.session.userId!);
+      const task = await storage.markInboxTaskDone(req.session.userId!, req.params.emailId, isDone);
       if (!task) return res.status(404).json({ error: "Task not found" });
       res.json(task);
     } catch (error) {
@@ -1368,7 +1365,7 @@ export async function registerRoutes(
       if (typeof isDone !== "boolean") {
         return res.status(400).json({ error: "isDone (boolean) is required" });
       }
-      const task = await storage.markInboxTaskDone(req.params.emailId, isDone, req.session.userId!);
+      const task = await storage.markInboxTaskDone(req.session.userId!, req.params.emailId, isDone);
       if (!task) return res.status(404).json({ error: "Task not found" });
       res.json(task);
     } catch (error) {
