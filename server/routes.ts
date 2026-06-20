@@ -1345,21 +1345,7 @@ export async function registerRoutes(
     }
   });
 
-  // Toggle done — scoped to requesting user's own tasks
-  app.patch("/api/inbox/messages/:emailId/done", async (req, res) => {
-    try {
-      const { isDone } = req.body;
-      if (typeof isDone !== "boolean") {
-        return res.status(400).json({ error: "isDone (boolean) is required" });
-      }
-      const task = await storage.markInboxTaskDone(req.session.userId!, req.params.emailId, isDone);
-      if (!task) return res.status(404).json({ error: "Task not found" });
-      res.json(task);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to update task" });
-    }
-  });
-
+  // Toggle done — scoped to requesting user's own tasks (any authenticated user)
   app.patch("/api/inbox/tasks/:emailId/done", async (req, res) => {
     try {
       const { isDone } = req.body;
