@@ -344,9 +344,11 @@ export default function InboxTasks() {
     refetchInterval: 60_000,
   });
 
-  // Cached tasks for this user
+  // Cached tasks for this user — re-fetches every 5 min while tab is visible
   const { data: tasks = [], isLoading: tasksLoading } = useQuery<InboxTask[]>({
     queryKey: ["/api/inbox/tasks"],
+    refetchInterval: 5 * 60 * 1000,
+    refetchIntervalInBackground: false,
   });
 
   // Refresh — fetches live from Gmail and upserts into cache (any user)
