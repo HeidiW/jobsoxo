@@ -356,6 +356,166 @@ describe("PATCH /api/payroll-records/:id — blank numeric fields", () => {
   });
 });
 
+describe("POST /api/line-items — non-numeric strings", () => {
+  it("returns 400 when quantity is a non-numeric string", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "abc", unit: "hours", rate: "50", amount: "100" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("quantity");
+  });
+
+  it("returns 400 when rate is a non-numeric string", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "2", unit: "hours", rate: "abc", amount: "100" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("rate");
+  });
+
+  it("returns 400 when amount is a non-numeric string", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "2", unit: "hours", rate: "50", amount: "abc" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("amount");
+  });
+});
+
+describe("POST /api/line-items — negative numeric values", () => {
+  it("returns 400 when quantity is negative", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "-1", unit: "hours", rate: "50", amount: "100" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("quantity");
+  });
+
+  it("returns 400 when rate is negative", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "2", unit: "hours", rate: "-10", amount: "100" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("rate");
+  });
+
+  it("returns 400 when amount is negative", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "2", unit: "hours", rate: "50", amount: "-100" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("amount");
+  });
+});
+
+describe("POST /api/invoices/:id/payments — negative and non-numeric amount", () => {
+  it("returns 400 when amount is negative", async () => {
+    const res = await request(app)
+      .post("/api/invoices/nonexistent-id/payments")
+      .send({ amount: "-500", paymentMethod: "cash", paymentDate: "2025-01-15" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("amount");
+  });
+
+  it("returns 400 when amount is a non-numeric string", async () => {
+    const res = await request(app)
+      .post("/api/invoices/nonexistent-id/payments")
+      .send({ amount: "abc", paymentMethod: "cash", paymentDate: "2025-01-15" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("amount");
+  });
+});
+
+describe("POST /api/employees — non-numeric and negative hourlyRate", () => {
+  it("returns 400 when hourlyRate is a non-numeric string", async () => {
+    const res = await request(app)
+      .post("/api/employees")
+      .send({ name: "Jane Doe", hourlyRate: "abc" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("hourlyRate");
+  });
+
+  it("returns 400 when hourlyRate is negative", async () => {
+    const res = await request(app)
+      .post("/api/employees")
+      .send({ name: "Jane Doe", hourlyRate: "-25" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("hourlyRate");
+  });
+});
+
+describe("PATCH /api/payroll-records/:id — non-numeric and negative numeric fields", () => {
+  it("returns 400 when totalHours is a non-numeric string", async () => {
+    const res = await request(app)
+      .patch("/api/payroll-records/nonexistent-id")
+      .send({ totalHours: "abc" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("totalHours");
+  });
+
+  it("returns 400 when hourlyRate is a non-numeric string", async () => {
+    const res = await request(app)
+      .patch("/api/payroll-records/nonexistent-id")
+      .send({ hourlyRate: "abc" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("hourlyRate");
+  });
+
+  it("returns 400 when grossPay is negative", async () => {
+    const res = await request(app)
+      .patch("/api/payroll-records/nonexistent-id")
+      .send({ grossPay: "-100" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("grossPay");
+  });
+
+  it("returns 400 when netPay is negative", async () => {
+    const res = await request(app)
+      .patch("/api/payroll-records/nonexistent-id")
+      .send({ netPay: "-50" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("netPay");
+  });
+
+  it("returns 400 when hourlyRate is negative", async () => {
+    const res = await request(app)
+      .patch("/api/payroll-records/nonexistent-id")
+      .send({ hourlyRate: "-15" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("hourlyRate");
+  });
+});
+
 describe("POST /api/time-entries — validation", () => {
   it("returns 400 when employeeId is missing", async () => {
     const res = await request(app)

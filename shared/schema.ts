@@ -3,6 +3,30 @@ import { pgTable, text, varchar, integer, decimal, timestamp, boolean, jsonb } f
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+function numericString(label: string) {
+  return z
+    .string()
+    .min(1, `${label} is required`)
+    .refine(
+      (val) => !isNaN(parseFloat(val)) && isFinite(Number(val)),
+      `${label} must be a valid number`
+    );
+}
+
+function positiveNumericString(label: string) {
+  return numericString(label).refine(
+    (val) => parseFloat(val) > 0,
+    `${label} must be greater than zero`
+  );
+}
+
+function nonNegativeNumericString(label: string) {
+  return numericString(label).refine(
+    (val) => parseFloat(val) >= 0,
+    `${label} must not be negative`
+  );
+}
+
 // Users table for authentication
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -135,9 +159,9 @@ export const lineItemsRelations = relations(lineItems, ({ one }) => ({
 export const insertLineItemSchema = createInsertSchema(lineItems)
   .omit({ id: true })
   .extend({
-    quantity: z.string().min(1, "Quantity is required"),
-    rate: z.string().min(1, "Rate is required"),
-    amount: z.string().min(1, "Amount is required"),
+    quantity: positiveNumericString("Quantity"),
+    rate: nonNegativeNumericString("Rate"),
+    amount: nonNegativeNumericString("Amount"),
   });
 export type InsertLineItem = z.infer<typeof insertLineItemSchema>;
 export type LineItem = typeof lineItems.$inferSelect;
@@ -183,12 +207,12 @@ export const insertInvoiceSchema = createInsertSchema(invoices)
     issueDate: z.coerce.date().optional(),
     dueDate: z.coerce.date(),
     lastReminderSent: z.coerce.date().optional().nullable(),
-    subtotal: z.string().min(1, "Subtotal is required"),
+    subtotal: nonNegativeNumericString("Subtotal"),
     taxRate: z.coerce.string().optional(),
     taxAmount: z.coerce.string().optional(),
-    total: z.string().min(1, "Total is required"),
+    total: nonNegativeNumericString("Total"),
     amountPaid: z.coerce.string().optional(),
-    balance: z.string().min(1, "Balance is required"),
+    balance: nonNegativeNumericString("Balance"),
   });
 export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
 export type Invoice = typeof invoices.$inferSelect;
@@ -247,7 +271,7 @@ export const insertEmployeeSchema = createInsertSchema(employees)
   .omit({ id: true, createdAt: true })
   .extend({
     hireDate: z.coerce.date().optional().nullable(),
-    hourlyRate: z.string().min(1),
+    hourlyRate: positiveNumericString("Hourly rate"),
   });
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 export type Employee = typeof employees.$inferSelect;
@@ -301,7 +325,7 @@ export const insertTimeEntrySchema = createInsertSchema(timeEntries)
   .omit({ id: true, createdAt: true })
   .extend({
     date: z.coerce.date(),
-    hoursWorked: z.string().min(1),
+    hoursWorked: positiveNumericString("Hours worked"),
   });
 export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
 export type TimeEntry = typeof timeEntries.$inferSelect;
@@ -332,11 +356,11 @@ export const payrollRecordsRelations = relations(payrollRecords, ({ one }) => ({
 export const insertPayrollRecordSchema = createInsertSchema(payrollRecords)
   .omit({ id: true, createdAt: true })
   .extend({
-    totalHours: z.string().min(1, "Total hours is required"),
-    hourlyRate: z.string().min(1, "Hourly rate is required"),
-    grossPay: z.string().min(1, "Gross pay is required"),
+    totalHours: nonNegativeNumericString("Total hours"),
+    hourlyRate: positiveNumericString("Hourly rate"),
+    grossPay: nonNegativeNumericString("Gross pay"),
     deductions: z.coerce.string().optional(),
-    netPay: z.string().min(1, "Net pay is required"),
+    netPay: nonNegativeNumericString("Net pay"),
   });
 export type InsertPayrollRecord = z.infer<typeof insertPayrollRecordSchema>;
 export type PayrollRecord = typeof payrollRecords.$inferSelect;
