@@ -63,9 +63,17 @@ import type { Job, Client, LineItem } from "@shared/schema";
 const lineItemFormSchema = z.object({
   category: z.enum(["materials", "labor", "square_footage", "other"]),
   description: z.string().min(1, "Description is required"),
-  quantity: z.string().min(1, "Quantity is required"),
+  quantity: z
+    .string()
+    .min(1, "Quantity is required")
+    .refine((val) => !isNaN(parseFloat(val)) && isFinite(Number(val)), "Quantity must be a valid number")
+    .refine((val) => parseFloat(val) > 0, "Quantity must be greater than zero"),
   unit: z.string().min(1, "Unit is required"),
-  rate: z.string().min(1, "Rate is required"),
+  rate: z
+    .string()
+    .min(1, "Rate is required")
+    .refine((val) => !isNaN(parseFloat(val)) && isFinite(Number(val)), "Rate must be a valid number")
+    .refine((val) => parseFloat(val) >= 0, "Rate must not be negative"),
   isChangeOrder: z.boolean().default(false),
   changeOrderReason: z.string().optional(),
 });

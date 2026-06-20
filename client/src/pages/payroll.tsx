@@ -98,7 +98,11 @@ const employeeFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   email: z.string().email("Invalid email").optional().or(z.literal("")),
   phone: z.string().optional(),
-  hourlyRate: z.string().min(1, "Hourly rate is required"),
+  hourlyRate: z
+    .string()
+    .min(1, "Hourly rate is required")
+    .refine((val) => !isNaN(parseFloat(val)) && isFinite(Number(val)), "Hourly rate must be a valid number")
+    .refine((val) => parseFloat(val) > 0, "Hourly rate must be greater than zero"),
   position: z.string().optional(),
   status: z.enum(["active", "inactive"]),
 });
@@ -107,7 +111,11 @@ const timeEntryFormSchema = z.object({
   employeeId: z.string().min(1, "Employee is required"),
   jobId: z.string().optional(),
   date: z.string().min(1, "Date is required"),
-  hoursWorked: z.string().min(1, "Hours are required"),
+  hoursWorked: z
+    .string()
+    .min(1, "Hours are required")
+    .refine((val) => !isNaN(parseFloat(val)) && isFinite(Number(val)), "Hours must be a valid number")
+    .refine((val) => parseFloat(val) > 0, "Hours must be greater than zero"),
   description: z.string().optional(),
 });
 
