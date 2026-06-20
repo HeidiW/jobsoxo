@@ -16,7 +16,7 @@ import { passport, setupOAuthStrategies, getEnabledProviders, callbackUrl } from
 import {
   isGmailConnected, fetchGmailInbox, revokeGmailConnection, getGmailOAuthUrl,
   buildGmailAuthUrl, exchangeGmailCode,
-  isUserGmailConnected, getUserGmailEmail, fetchUserGmailInbox,
+  isUserGmailConnected, getUserGmailEmail, fetchUserGmailInbox, revokeUserGmailToken,
 } from "./gmail";
 import { getLastInboxSyncTime } from "./scheduler";
 
@@ -1316,10 +1316,10 @@ export async function registerRoutes(
     }
   });
 
-  // Disconnect — removes the user's Google token and their inbox task cache
+  // Disconnect — revokes the Google OAuth grant and clears the user's inbox cache
   app.delete("/api/gmail/disconnect", requireAuth, async (req, res) => {
     try {
-      await storage.deleteGoogleToken(req.session.userId!);
+      await revokeUserGmailToken(req.session.userId!);
       await storage.deleteUserInboxTasks(req.session.userId!);
       res.json({ disconnected: true });
     } catch (err) {

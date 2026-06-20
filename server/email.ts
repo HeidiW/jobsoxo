@@ -82,7 +82,7 @@ export async function sendPaymentReminder(
     }
 
     const settings = await storage.getSettings();
-    const subject = getReminderSubject(invoice.invoiceNumber, reminderNumber, settings?.companyName);
+    const subject = getReminderSubject(invoice.invoiceNumber, reminderNumber, settings?.companyName ?? undefined);
     const body = generateReminderEmailBody(invoice, client, reminderNumber, settings);
 
     if (config.apiKey && config.provider === "resend") {
@@ -110,7 +110,7 @@ export async function sendPaymentReminder(
     }
 
     await storage.updateInvoice(invoiceId, {
-      lastReminderSent: new Date().toISOString(),
+      lastReminderSent: new Date(),
       reminderCount: reminderNumber,
     });
 

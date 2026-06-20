@@ -22,7 +22,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AlertTriangle, Search, FileText, Briefcase } from "lucide-react";
-import { format } from "date-fns";
 import type { LineItem, Invoice, Job, Client } from "@shared/schema";
 
 interface ChangeOrder extends LineItem {
@@ -48,7 +47,6 @@ function SkeletonRows() {
           <TableCell><Skeleton className="h-4 w-24" /></TableCell>
           <TableCell className="hidden md:table-cell"><Skeleton className="h-4 w-32" /></TableCell>
           <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-20" /></TableCell>
-          <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-16" /></TableCell>
           <TableCell className="text-right"><Skeleton className="h-4 w-16 ml-auto" /></TableCell>
         </TableRow>
       ))}
@@ -74,7 +72,7 @@ export default function ChangeOrders() {
   };
 
   const categories = changeOrders
-    ? [...new Set(changeOrders.map((co) => co.category))]
+    ? Array.from(new Set(changeOrders.map((co) => co.category)))
     : [];
 
   const filtered = changeOrders?.filter((co) => {
@@ -194,7 +192,6 @@ export default function ChangeOrders() {
                     <TableHead className="hidden md:table-cell">Client / Job</TableHead>
                     <TableHead className="hidden md:table-cell">Invoice</TableHead>
                     <TableHead className="hidden lg:table-cell">Category</TableHead>
-                    <TableHead className="hidden lg:table-cell">Date Added</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -229,7 +226,7 @@ export default function ChangeOrders() {
                               <span className="text-sm font-medium">{co.client.name}</span>
                             )}
                             {co.job && (
-                              <Button variant="link" size="sm" className="h-auto p-0 text-xs text-muted-foreground justify-start" asChild>
+                              <Button variant="ghost" size="sm" className="h-auto p-0 text-xs text-muted-foreground justify-start hover:text-foreground" asChild>
                                 <Link href={`/jobs/${co.job.id}`} data-testid={`link-job-${co.id}`}>
                                   <Briefcase className="h-3 w-3 mr-1" />
                                   {co.job.title}
@@ -240,7 +237,7 @@ export default function ChangeOrders() {
                         </TableCell>
                         <TableCell className="hidden md:table-cell">
                           {co.invoice ? (
-                            <Button variant="link" size="sm" className="h-auto p-0 font-mono text-xs justify-start" asChild>
+                            <Button variant="ghost" size="sm" className="h-auto p-0 font-mono text-xs justify-start hover:text-foreground" asChild>
                               <Link href={`/invoices/${co.invoice.id}`} data-testid={`link-invoice-${co.id}`}>
                                 <FileText className="h-3 w-3 mr-1" />
                                 {co.invoice.invoiceNumber}
@@ -252,9 +249,6 @@ export default function ChangeOrders() {
                         </TableCell>
                         <TableCell className="hidden lg:table-cell">
                           <CategoryBadge category={co.category} />
-                        </TableCell>
-                        <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                          {format(new Date(co.createdAt), "MMM d, yyyy")}
                         </TableCell>
                         <TableCell className="text-right">
                           <span className="font-mono font-semibold text-amber-700 dark:text-amber-400 text-sm">

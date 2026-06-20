@@ -393,7 +393,7 @@ export default function Login() {
                         data-testid={`button-oauth-setup-${provider.key}`}
                         className="flex items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
                       >
-                        <Icon className="h-4 w-4 shrink-0" style={{ color: provider.iconColor }} />
+                        <Icon className="h-4 w-4 shrink-0" />
                         {provider.label}
                       </a>
                     );
@@ -537,10 +537,7 @@ export default function Login() {
                           data-testid={`button-oauth-${provider.key}`}
                           className="flex items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
                         >
-                          <Icon
-                            className="h-4 w-4 shrink-0"
-                            style={{ color: provider.iconColor }}
-                          />
+                          <Icon className="h-4 w-4 shrink-0" />
                           {provider.label}
                         </a>
                       );

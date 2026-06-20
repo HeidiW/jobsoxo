@@ -263,6 +263,27 @@ export async function getUserGmailEmail(userId: string): Promise<string | null> 
 }
 
 /**
+ * Revoke a user's Google OAuth grant at the provider level, then remove
+ * the token from the database. Best-effort on the revoke call — the local
+ * token is always deleted regardless.
+ */
+export async function revokeUserGmailToken(userId: string): Promise<void> {
+  const token = await storage.getGoogleToken(userId);
+  if (!token) return;
+
+  const tokenToRevoke = token.refreshToken ?? token.accessToken;
+  try {
+    await fetch(
+      `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(tokenToRevoke)}`,
+      { method: "POST" }
+    );
+  } catch {
+    // Best-effort — always delete locally even if revoke call fails
+  }
+  await storage.deleteGoogleToken(userId);
+}
+
+/**
  * Fetch inbox messages for a specific user using their stored token.
  */
 export async function fetchUserGmailInbox(userId: string, maxResults = 50): Promise<GmailMessage[]> {

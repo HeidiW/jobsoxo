@@ -277,7 +277,7 @@ export default function JobDetail() {
             {job.employees.length === 0 ? (
               <div className="text-center py-6 text-muted-foreground text-sm">
                 No employees assigned to this job yet.
-                <Button variant="link" className="pl-1 h-auto" onClick={() => setEditOpen(true)}>
+                <Button variant="ghost" className="pl-1 h-auto text-primary underline-offset-4 hover:underline" onClick={() => setEditOpen(true)}>
                   Assign employees →
                 </Button>
               </div>
@@ -442,7 +442,7 @@ export default function JobDetail() {
                             </div>
                           </TableCell>
                           <TableCell className="hidden md:table-cell">
-                            <Button variant="link" size="sm" className="h-auto p-0 font-mono text-xs" asChild>
+                            <Button variant="ghost" size="sm" className="h-auto p-0 font-mono text-xs hover:text-foreground" asChild>
                               <Link href={`/invoices/${co.invoice.id}`}>
                                 {co.invoice.invoiceNumber}
                               </Link>
