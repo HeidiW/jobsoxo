@@ -5,7 +5,8 @@ import { db } from "./db";
 import { 
   clients, jobs, invoices, lineItems, payments, employees, timeEntries, users,
   insertClientSchema, insertJobSchema, insertLineItemSchema, insertInvoiceSchema,
-  insertPaymentSchema, insertEmployeeSchema, insertTimeEntrySchema, insertSettingsSchema
+  insertPaymentSchema, insertEmployeeSchema, insertTimeEntrySchema, insertSettingsSchema,
+  insertPayrollRecordSchema
 } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -1148,6 +1149,8 @@ export async function registerRoutes(
 
   app.patch("/api/payroll-records/:id", async (req, res) => {
     try {
+      const parsed = insertPayrollRecordSchema.partial().safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
       const updates: Record<string, unknown> = {};
       if (req.body.status) updates.status = req.body.status;
       if (req.body.status === "paid") updates.paidDate = new Date();

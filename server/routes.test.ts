@@ -220,6 +220,142 @@ describe("POST /api/invoices/:id/payments — validation", () => {
   });
 });
 
+describe("POST /api/line-items — blank numeric fields", () => {
+  it("returns 400 when quantity is blank", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "", unit: "hours", rate: "50", amount: "100" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("quantity");
+  });
+
+  it("returns 400 when quantity is missing", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", unit: "hours", rate: "50", amount: "100" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("quantity");
+  });
+
+  it("returns 400 when rate is blank", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "2", unit: "hours", rate: "", amount: "100" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("rate");
+  });
+
+  it("returns 400 when rate is missing", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "2", unit: "hours", amount: "100" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("rate");
+  });
+
+  it("returns 400 when amount is blank", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "2", unit: "hours", rate: "50", amount: "" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("amount");
+  });
+
+  it("returns 400 when amount is missing", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "2", unit: "hours", rate: "50" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("amount");
+  });
+});
+
+describe("PATCH /api/invoices/:id — blank numeric fields", () => {
+  it("returns 400 when subtotal is blank", async () => {
+    const res = await request(app)
+      .patch("/api/invoices/nonexistent-id")
+      .send({ subtotal: "" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("subtotal");
+  });
+
+  it("returns 400 when total is blank", async () => {
+    const res = await request(app)
+      .patch("/api/invoices/nonexistent-id")
+      .send({ total: "" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("total");
+  });
+
+  it("returns 400 when balance is blank", async () => {
+    const res = await request(app)
+      .patch("/api/invoices/nonexistent-id")
+      .send({ balance: "" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("balance");
+  });
+});
+
+describe("PATCH /api/payroll-records/:id — blank numeric fields", () => {
+  it("returns 400 when totalHours is blank", async () => {
+    const res = await request(app)
+      .patch("/api/payroll-records/nonexistent-id")
+      .send({ totalHours: "" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("totalHours");
+  });
+
+  it("returns 400 when hourlyRate is blank", async () => {
+    const res = await request(app)
+      .patch("/api/payroll-records/nonexistent-id")
+      .send({ hourlyRate: "" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("hourlyRate");
+  });
+
+  it("returns 400 when grossPay is blank", async () => {
+    const res = await request(app)
+      .patch("/api/payroll-records/nonexistent-id")
+      .send({ grossPay: "" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("grossPay");
+  });
+
+  it("returns 400 when netPay is blank", async () => {
+    const res = await request(app)
+      .patch("/api/payroll-records/nonexistent-id")
+      .send({ netPay: "" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("netPay");
+  });
+});
+
 describe("POST /api/time-entries — validation", () => {
   it("returns 400 when employeeId is missing", async () => {
     const res = await request(app)
