@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -488,10 +489,17 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
 
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={mutation.isPending || overlappingPeriods.length > 0} data-testid="button-run-payroll-submit">
-            <Play className="h-4 w-4 mr-2" />
-            {mutation.isPending ? "Running…" : "Run Payroll"}
-          </Button>
+          <Tooltip open={overlappingPeriods.length > 0 && !mutation.isPending ? undefined : false}>
+            <TooltipTrigger asChild>
+              <span tabIndex={overlappingPeriods.length > 0 && !mutation.isPending ? 0 : undefined}>
+                <Button type="submit" disabled={mutation.isPending || overlappingPeriods.length > 0} data-testid="button-run-payroll-submit">
+                  <Play className="h-4 w-4 mr-2" />
+                  {mutation.isPending ? "Running…" : "Run Payroll"}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Date overlap detected — adjust the dates above</TooltipContent>
+          </Tooltip>
         </div>
       </form>
     </Form>
