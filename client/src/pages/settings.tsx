@@ -250,7 +250,14 @@ export default function SettingsPage() {
       const res = await apiRequest("PATCH", "/api/settings", payload);
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      const hour = variables.inboxSyncHour ?? 8;
+      const nextInboxSync = computeNextSyncTime(hour).toISOString();
+      queryClient.setQueryData(["/api/settings"], (old: (Settings & { nextInboxSync?: string }) | undefined) => ({
+        ...old,
+        ...data,
+        nextInboxSync,
+      }));
       queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
       toast({
         title: "Settings saved",
@@ -286,6 +293,16 @@ export default function SettingsPage() {
       });
     },
   });
+
+  function computeNextSyncTime(hour: number): Date {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(hour, 0, 0, 0);
+    if (next <= now) {
+      next.setDate(next.getDate() + 1);
+    }
+    return next;
+  }
 
   const onSubmit = (data: SettingsFormValues) => {
     updateSettingsMutation.mutate(data);
