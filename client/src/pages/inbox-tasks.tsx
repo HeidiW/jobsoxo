@@ -1321,15 +1321,59 @@ export default function InboxTasks() {
                     No hidden emails right now.
                   </p>
                 ) : (
-                  <div className="space-y-0.5">
-                    {hiddenTasks.map((t) => (
-                      <HiddenTaskRow
-                        key={t.id}
-                        task={t}
-                        onRestore={handleRestore}
-                        onDelete={handleDelete}
-                      />
-                    ))}
+                  <div className="space-y-3">
+                    {(() => {
+                      const snoozedGroup = hiddenTasks.filter(
+                        (t) => !t.dismissed && t.snoozedUntil != null
+                      );
+                      const dismissedGroup = hiddenTasks.filter(
+                        (t) => t.dismissed
+                      );
+                      return (
+                        <>
+                          {snoozedGroup.length > 0 && (
+                            <div>
+                              <p
+                                className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1 pb-1"
+                                data-testid="label-hidden-section-snoozed"
+                              >
+                                Snoozed
+                              </p>
+                              <div className="space-y-0.5">
+                                {snoozedGroup.map((t) => (
+                                  <HiddenTaskRow
+                                    key={t.id}
+                                    task={t}
+                                    onRestore={handleRestore}
+                                    onDelete={handleDelete}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {dismissedGroup.length > 0 && (
+                            <div>
+                              <p
+                                className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1 pb-1"
+                                data-testid="label-hidden-section-dismissed"
+                              >
+                                Dismissed
+                              </p>
+                              <div className="space-y-0.5">
+                                {dismissedGroup.map((t) => (
+                                  <HiddenTaskRow
+                                    key={t.id}
+                                    task={t}
+                                    onRestore={handleRestore}
+                                    onDelete={handleDelete}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </CardContent>
