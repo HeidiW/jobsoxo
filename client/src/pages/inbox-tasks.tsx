@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   Mail,
@@ -444,30 +445,8 @@ function HiddenTaskRow({
     isSnoozed &&
     task.snoozedUntil != null &&
     new Date(task.snoozedUntil) < new Date();
-  const [confirmOpen, setConfirmOpen] = useState(false);
 
   return (
-    <>
-    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Permanently delete this email?</AlertDialogTitle>
-          <AlertDialogDescription>
-            This will permanently remove this email. This action cannot be undone.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel data-testid="button-delete-cancel">Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            data-testid="button-delete-confirm"
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            onClick={() => onDelete(task.emailId)}
-          >
-            Delete
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
     <div
       className="flex items-center gap-3 p-3 rounded-lg opacity-60 hover:opacity-100 transition-opacity group"
       data-testid={`row-hidden-${task.emailId}`}
@@ -526,7 +505,7 @@ function HiddenTaskRow({
           variant="ghost"
           size="sm"
           className="h-7 px-2 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-          onClick={() => setConfirmOpen(true)}
+          onClick={() => onDelete(task.emailId)}
           data-testid={`button-delete-${task.emailId}`}
         >
           <Trash2 className="h-3.5 w-3.5 mr-1" />
@@ -534,7 +513,6 @@ function HiddenTaskRow({
         </Button>
       </div>
     </div>
-    </>
   );
 }
 
@@ -807,15 +785,87 @@ export default function InboxTasks() {
     toast({ title: "Email restored" });
   };
 
+  const pendingDeletes = useRef<
+    Map<string, { task: InboxTask; timerId: ReturnType<typeof setTimeout>; intervalId: ReturnType<typeof setInterval> }>
+  >(new Map());
+
+  useEffect(() => {
+    return () => {
+      pendingDeletes.current.forEach(({ timerId, intervalId }) => {
+        clearTimeout(timerId);
+        clearInterval(intervalId);
+      });
+    };
+  }, []);
+
+  const undoDelete = (emailId: string) => {
+    const pending = pendingDeletes.current.get(emailId);
+    if (!pending) return;
+    clearTimeout(pending.timerId);
+    clearInterval(pending.intervalId);
+    pendingDeletes.current.delete(emailId);
+    queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) => {
+      if (old.some((t) => t.emailId === emailId)) return old;
+      return [pending.task, ...old];
+    });
+  };
+
   const handleDelete = (emailId: string) => {
+    const task = hiddenTasks.find((t) => t.emailId === emailId);
+    if (!task) return;
+
     queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
       old.filter((t) => t.emailId !== emailId)
     );
-    apiRequest("DELETE", `/api/inbox/tasks/${emailId}`).catch(() => {
-      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
-      toast({ title: "Couldn't delete email", variant: "destructive" });
+
+    let secondsLeft = 5;
+
+    const makeAction = (eid: string, dismissFn: () => void) => (
+      <ToastAction altText="Undo" onClick={() => { undoDelete(eid); dismissFn(); }} data-testid={`button-undo-delete-${eid}`}>
+        Undo
+      </ToastAction>
+    );
+
+    const { id: toastId, dismiss, update } = toast({
+      title: "Email deleted",
+      description: `Deleting in ${secondsLeft}s`,
+      action: makeAction(emailId, () => {}),
+      duration: 5500,
     });
-    toast({ title: "Email permanently deleted" });
+
+    // Re-create dismiss with the real toast id so inline closures reference it correctly
+    const dismissToast = () => dismiss();
+
+    // Replace the action now that we have the real dismiss closure
+    update({
+      id: toastId,
+      title: "Email deleted",
+      description: `Deleting in ${secondsLeft}s`,
+      action: makeAction(emailId, dismissToast),
+    });
+
+    const intervalId = setInterval(() => {
+      secondsLeft--;
+      if (secondsLeft > 0) {
+        update({
+          id: toastId,
+          title: "Email deleted",
+          description: `Deleting in ${secondsLeft}s`,
+          action: makeAction(emailId, dismissToast),
+        });
+      }
+    }, 1000);
+
+    const timerId = setTimeout(() => {
+      clearInterval(intervalId);
+      pendingDeletes.current.delete(emailId);
+      apiRequest("DELETE", `/api/inbox/tasks/${emailId}`).catch(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+        toast({ title: "Couldn't delete email", variant: "destructive" });
+      });
+    }, 5000);
+
+    pendingDeletes.current.set(emailId, { task, timerId, intervalId });
   };
 
   const handleClearAllDismissed = () => {
