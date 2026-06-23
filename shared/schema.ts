@@ -162,6 +162,21 @@ export const insertLineItemSchema = createInsertSchema(lineItems)
     quantity: positiveNumericString("Quantity"),
     rate: positiveNumericString("Rate"),
     amount: positiveNumericString("Amount"),
+  })
+  .superRefine((data, ctx) => {
+    const qty = parseFloat(data.quantity);
+    const rate = parseFloat(data.rate);
+    const amount = parseFloat(data.amount);
+    if (!isNaN(qty) && !isNaN(rate) && !isNaN(amount)) {
+      const expected = qty * rate;
+      if (Math.abs(amount - expected) > 0.001) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Amount must equal quantity × rate (expected ${expected.toFixed(2)}, got ${amount.toFixed(2)})`,
+          path: ["amount"],
+        });
+      }
+    }
   });
 export type InsertLineItem = z.infer<typeof insertLineItemSchema>;
 export type LineItem = typeof lineItems.$inferSelect;

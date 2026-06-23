@@ -421,6 +421,44 @@ describe("POST /api/line-items — negative numeric values", () => {
   });
 });
 
+describe("POST /api/line-items — amount vs quantity×rate mismatch", () => {
+  it("returns 400 when amount does not equal quantity × rate", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "2", unit: "hours", rate: "50", amount: "999" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("amount");
+  });
+
+  it("returns 400 when amount is slightly off from quantity × rate", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "3", unit: "hours", rate: "25", amount: "74.99" })
+      .expect(400);
+
+    expect(res.body.error).toBe("Invalid request data");
+    expect(res.body.details).toHaveProperty("amount");
+  });
+
+  it("passes when amount exactly equals quantity × rate", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "labor", description: "Painting", quantity: "2", unit: "hours", rate: "50", amount: "100" });
+
+    expect(res.status).not.toBe(400);
+  });
+
+  it("passes when amount equals quantity × rate with floating-point values", async () => {
+    const res = await request(app)
+      .post("/api/line-items")
+      .send({ category: "materials", description: "Paint", quantity: "1.5", unit: "gallon", rate: "20", amount: "30" });
+
+    expect(res.status).not.toBe(400);
+  });
+});
+
 describe("POST /api/line-items — zero numeric values", () => {
   it("returns 400 when quantity is zero", async () => {
     const res = await request(app)
