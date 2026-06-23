@@ -461,7 +461,7 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
                   </li>
                 ))}
               </ul>
-              <p className="mt-1">Submitting will be rejected by the server. Adjust the dates to avoid the overlap.</p>
+              <p className="mt-1">Fix the dates above to enable submission.</p>
             </div>
           </div>
         )}
@@ -486,7 +486,7 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
 
         <div className="flex justify-end gap-2 pt-2">
           <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={mutation.isPending} data-testid="button-run-payroll-submit">
+          <Button type="submit" disabled={mutation.isPending || overlappingPeriods.length > 0} data-testid="button-run-payroll-submit">
             <Play className="h-4 w-4 mr-2" />
             {mutation.isPending ? "Running…" : "Run Payroll"}
           </Button>
