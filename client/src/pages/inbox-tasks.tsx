@@ -180,11 +180,13 @@ function TaskRow({
   onToggle,
   onDismiss,
   onSnooze,
+  now: _now, // received only to trigger a re-render on each tick so formatDistanceToNow stays live
 }: {
   task: InboxTask;
   onToggle: (emailId: string, isDone: boolean) => void;
   onDismiss: (emailId: string) => void;
   onSnooze: (emailId: string, until: Date) => void;
+  now: number;
 }) {
   const initials = senderInitials(task.sender);
   const color = senderColor(task.senderEmail ?? task.sender);
@@ -364,12 +366,14 @@ function Section({
   onToggle,
   onDismiss,
   onSnooze,
+  now,
 }: {
   label: string;
   tasks: InboxTask[];
   onToggle: (emailId: string, isDone: boolean) => void;
   onDismiss: (emailId: string) => void;
   onSnooze: (emailId: string, until: Date) => void;
+  now: number;
 }) {
   if (!tasks.length) return null;
   const undoneCount = tasks.filter((t) => !t.isDone).length;
@@ -393,6 +397,7 @@ function Section({
             onToggle={onToggle}
             onDismiss={onDismiss}
             onSnooze={onSnooze}
+            now={now}
           />
         ))}
       </div>
@@ -1202,6 +1207,7 @@ export default function InboxTasks() {
                 onToggle={handleToggle}
                 onDismiss={handleDismiss}
                 onSnooze={handleSnooze}
+                now={now}
               />
               <Section
                 label="Yesterday"
@@ -1209,6 +1215,7 @@ export default function InboxTasks() {
                 onToggle={handleToggle}
                 onDismiss={handleDismiss}
                 onSnooze={handleSnooze}
+                now={now}
               />
               <Section
                 label="Earlier"
@@ -1216,6 +1223,7 @@ export default function InboxTasks() {
                 onToggle={handleToggle}
                 onDismiss={handleDismiss}
                 onSnooze={handleSnooze}
+                now={now}
               />
             </>
           ) : null}
