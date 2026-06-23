@@ -683,27 +683,50 @@ export default function InboxTasks() {
   };
 
   const handleDismiss = (emailId: string) => {
+    const dismissed = tasks.find((t) => t.emailId === emailId);
     queryClient.setQueryData(["/api/inbox/tasks"], (old: InboxTask[] = []) =>
       old.filter((t) => t.emailId !== emailId)
     );
+    if (dismissed) {
+      queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) => {
+        const exists = old.some((t) => t.emailId === emailId);
+        const updated = old.map((t) =>
+          t.emailId === emailId ? { ...t, dismissed: true, snoozedUntil: null } : t
+        );
+        return exists ? updated : [{ ...dismissed, dismissed: true, snoozedUntil: null }, ...old];
+      });
+    }
     apiRequest("PATCH", `/api/inbox/tasks/${emailId}/dismiss`).then(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
     }).catch(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
       toast({ title: "Couldn't dismiss task", variant: "destructive" });
     });
     toast({ title: "Email dismissed" });
   };
 
   const handleSnooze = (emailId: string, until: Date) => {
+    const snoozed = tasks.find((t) => t.emailId === emailId);
     queryClient.setQueryData(["/api/inbox/tasks"], (old: InboxTask[] = []) =>
       old.filter((t) => t.emailId !== emailId)
     );
-    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/snooze`, { until: until.toISOString() }).catch(() => {
+    if (snoozed) {
+      queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) => {
+        const exists = old.some((t) => t.emailId === emailId);
+        const updated = old.map((t) =>
+          t.emailId === emailId ? { ...t, snoozedUntil: until.toISOString(), dismissed: false } : t
+        );
+        return exists ? updated : [{ ...snoozed, snoozedUntil: until.toISOString(), dismissed: false }, ...old];
+      });
+    }
+    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/snooze`, { until: until.toISOString() }).then(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+    }).catch(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
       toast({ title: "Couldn't snooze task", variant: "destructive" });
     });
-    queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
     toast({ title: `Snoozed until ${format(until, "EEE, MMM d")}` });
   };
 
