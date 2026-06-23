@@ -340,7 +340,10 @@ export const insertTimeEntrySchema = createInsertSchema(timeEntries)
   .omit({ id: true, createdAt: true })
   .extend({
     date: z.coerce.date(),
-    hoursWorked: positiveNumericString("Hours worked"),
+    hoursWorked: positiveNumericString("Hours worked").refine(
+      (val) => parseFloat(val) <= 24,
+      "Hours cannot exceed 24 in a single entry"
+    ),
   });
 export type InsertTimeEntry = z.infer<typeof insertTimeEntrySchema>;
 export type TimeEntry = typeof timeEntries.$inferSelect;

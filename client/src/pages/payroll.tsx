@@ -116,7 +116,8 @@ const timeEntryFormSchema = z.object({
     .string()
     .min(1, "Hours are required")
     .refine((val) => !isNaN(parseFloat(val)) && isFinite(Number(val)), "Hours must be a valid number")
-    .refine((val) => parseFloat(val) > 0, "Hours must be greater than zero"),
+    .refine((val) => parseFloat(val) > 0, "Hours must be greater than zero")
+    .refine((val) => parseFloat(val) <= 24, "Hours cannot exceed 24 in a single entry"),
   description: z.string().optional(),
 });
 
