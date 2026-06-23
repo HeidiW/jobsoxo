@@ -433,8 +433,30 @@ function HiddenTaskRow({
   const color = senderColor(task.senderEmail ?? task.sender);
   const receivedAt = new Date(task.receivedAt);
   const isSnoozed = !task.dismissed && task.snoozedUntil != null;
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   return (
+    <>
+    <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Permanently delete this email?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently remove this email. This action cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="button-delete-cancel">Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            data-testid="button-delete-confirm"
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={() => onDelete(task.emailId)}
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <div
       className="flex items-center gap-3 p-3 rounded-lg opacity-60 hover:opacity-100 transition-opacity group"
       data-testid={`row-hidden-${task.emailId}`}
@@ -483,7 +505,7 @@ function HiddenTaskRow({
           variant="ghost"
           size="sm"
           className="h-7 px-2 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-          onClick={() => onDelete(task.emailId)}
+          onClick={() => setConfirmOpen(true)}
           data-testid={`button-delete-${task.emailId}`}
         >
           <Trash2 className="h-3.5 w-3.5 mr-1" />
@@ -491,6 +513,7 @@ function HiddenTaskRow({
         </Button>
       </div>
     </div>
+    </>
   );
 }
 
