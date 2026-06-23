@@ -17,6 +17,7 @@ import {
   isGmailConnected, fetchGmailInbox, revokeGmailConnection, getGmailOAuthUrl,
   buildGmailAuthUrl, exchangeGmailCode,
   isUserGmailConnected, getUserGmailEmail, fetchUserGmailInbox, revokeUserGmailToken,
+  fetchGmailLabelsForUser,
 } from "./gmail";
 import { getLastInboxSyncTime, getNextInboxSyncTime, syncInboxForConnectedUsers } from "./scheduler";
 
@@ -1313,6 +1314,42 @@ export async function registerRoutes(
       res.json({ connected, email });
     } catch {
       res.json({ connected: false, email: null });
+    }
+  });
+
+  // Available Gmail labels for the connected user
+  app.get("/api/gmail/labels", requireAuth, async (req, res) => {
+    try {
+      const labels = await fetchGmailLabelsForUser(req.session.userId!);
+      res.json(labels);
+    } catch (err) {
+      console.error("Gmail labels error:", err);
+      res.status(500).json({ error: "Failed to fetch Gmail labels" });
+    }
+  });
+
+  // Get the user's current label filter selection
+  app.get("/api/gmail/sync-labels", requireAuth, async (req, res) => {
+    try {
+      const labels = await storage.getSyncLabels(req.session.userId!);
+      res.json({ labels });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to read sync labels" });
+    }
+  });
+
+  // Save the user's label filter selection
+  app.patch("/api/gmail/sync-labels", requireAuth, async (req, res) => {
+    const { labels } = req.body as { labels?: unknown };
+    if (!Array.isArray(labels) || labels.length === 0 || labels.some((l) => typeof l !== "string")) {
+      return res.status(400).json({ error: "labels must be a non-empty array of strings" });
+    }
+    try {
+      await storage.saveSyncLabels(req.session.userId!, labels as string[]);
+      res.json({ labels });
+    } catch (err) {
+      console.error("Save sync labels error:", err);
+      res.status(500).json({ error: "Failed to save sync labels" });
     }
   });
 

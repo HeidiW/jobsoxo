@@ -391,6 +391,7 @@ export const googleTokens = pgTable("google_tokens", {
   refreshToken: text("refresh_token"),
   expiresAt: timestamp("expires_at"),
   gmailEmail: text("gmail_email"),
+  syncLabels: text("sync_labels").array().notNull().default(sql`ARRAY['INBOX']`),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

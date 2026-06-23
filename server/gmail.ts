@@ -24,9 +24,17 @@ export interface GmailMessage {
 
 // ── Shared Gmail fetch helper ──────────────────────────────────────────────────
 
-async function fetchGmailInboxWithToken(token: string, maxResults = 50): Promise<GmailMessage[]> {
+async function fetchGmailInboxWithToken(
+  token: string,
+  maxResults = 50,
+  labels: string[] = ["INBOX"]
+): Promise<GmailMessage[]> {
+  const effectiveLabels = labels.length > 0 ? labels : ["INBOX"];
+  const labelParams = effectiveLabels
+    .map((l) => `labelIds=${encodeURIComponent(l)}`)
+    .join("&");
   const listRes = await fetch(
-    `https://gmail.googleapis.com/gmail/v1/users/me/messages?labelIds=INBOX&maxResults=${maxResults}`,
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?${labelParams}&maxResults=${maxResults}`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
 
@@ -284,12 +292,38 @@ export async function revokeUserGmailToken(userId: string): Promise<void> {
 }
 
 /**
- * Fetch inbox messages for a specific user using their stored token.
+ * Fetch all Gmail labels available to the connected user.
+ * Returns system labels (INBOX, SENT, etc.) and user-created labels.
+ */
+export async function fetchGmailLabelsForUser(userId: string): Promise<
+  Array<{ id: string; name: string; type: string }>
+> {
+  const accessToken = await getUserAccessToken(userId);
+  if (!accessToken) throw new Error("Gmail not connected");
+  const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/labels", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`Failed to fetch labels: ${res.status}`);
+  const data = (await res.json()) as {
+    labels?: Array<{ id: string; name: string; type: string }>;
+  };
+  const labels = data.labels ?? [];
+  // Sort: user labels first (custom ones the user wants to pick), then system
+  return labels.sort((a, b) => {
+    if (a.type !== b.type) return a.type === "user" ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/**
+ * Fetch inbox messages for a specific user using their stored token,
+ * respecting their configured label filter.
  */
 export async function fetchUserGmailInbox(userId: string, maxResults = 50): Promise<GmailMessage[]> {
   const accessToken = await getUserAccessToken(userId);
   if (!accessToken) throw new Error("Gmail not connected");
-  return fetchGmailInboxWithToken(accessToken, maxResults);
+  const labels = await storage.getSyncLabels(userId);
+  return fetchGmailInboxWithToken(accessToken, maxResults, labels.length > 0 ? labels : ["INBOX"]);
 }
 
 // ── Replit connector (legacy shared mailbox) ────────────────────────────────

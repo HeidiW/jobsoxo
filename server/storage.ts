@@ -132,6 +132,8 @@ export interface IStorage {
   saveGoogleToken(userId: string, data: { accessToken: string; refreshToken?: string | null; expiresAt?: Date | null; gmailEmail?: string | null }): Promise<GoogleToken>;
   deleteGoogleToken(userId: string): Promise<void>;
   getUsersWithGmailTokens(): Promise<User[]>;
+  getSyncLabels(userId: string): Promise<string[]>;
+  saveSyncLabels(userId: string, labels: string[]): Promise<void>;
 
   // Inbox Tasks — per-user (each user's own Gmail connection)
   getUsersWithInboxTasks(): Promise<User[]>;
@@ -661,6 +663,19 @@ export class DatabaseStorage implements IStorage {
       .from(googleTokens)
       .innerJoin(users, eq(googleTokens.userId, users.id));
     return rows.map((r) => r.user);
+  }
+
+  async getSyncLabels(userId: string): Promise<string[]> {
+    const token = await this.getGoogleToken(userId);
+    const labels = token?.syncLabels;
+    return Array.isArray(labels) && labels.length > 0 ? labels : ["INBOX"];
+  }
+
+  async saveSyncLabels(userId: string, labels: string[]): Promise<void> {
+    await db
+      .update(googleTokens)
+      .set({ syncLabels: labels })
+      .where(eq(googleTokens.userId, userId));
   }
 
   // Dashboard

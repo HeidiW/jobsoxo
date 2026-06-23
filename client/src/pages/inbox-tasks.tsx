@@ -47,6 +47,8 @@ import {
   ChevronRight,
   RotateCcw,
   Trash2,
+  Tag,
+  Check,
 } from "lucide-react";
 import { format, isToday, isYesterday, formatDistanceToNow } from "date-fns";
 import type { InboxTask } from "@shared/schema";
@@ -596,6 +598,49 @@ export default function InboxTasks() {
   // Hidden (dismissed + snoozed) tasks — always fetched when connected so we
   // can show a count badge on the toggle even before the panel is opened
   const connected = status?.connected ?? false;
+
+  // Label filter — current selection
+  const { data: syncLabelsData, isLoading: syncLabelsLoading } = useQuery<{ labels: string[] }>({
+    queryKey: ["/api/gmail/sync-labels"],
+    enabled: connected,
+  });
+  const syncLabels = syncLabelsData?.labels ?? ["INBOX"];
+
+  // Available Gmail labels — fetched on-demand (enabled by state)
+  const [labelPickerOpen, setLabelPickerOpen] = useState(false);
+  const { data: availableLabels = [], isLoading: labelsLoading } = useQuery<
+    Array<{ id: string; name: string; type: string }>
+  >({
+    queryKey: ["/api/gmail/labels"],
+    enabled: connected && labelPickerOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Pending label selection state (local until saved)
+  const [pendingLabels, setPendingLabels] = useState<string[] | null>(null);
+  const displayLabels = pendingLabels ?? syncLabels;
+
+  const saveLabelsMutation = useMutation({
+    mutationFn: async (labels: string[]) => {
+      await apiRequest("PATCH", "/api/gmail/sync-labels", { labels });
+    },
+    onSuccess: (_data, labels) => {
+      queryClient.setQueryData(["/api/gmail/sync-labels"], { labels });
+      setPendingLabels(null);
+      toast({ title: "Label filter saved — refresh to apply" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save label filter", variant: "destructive" });
+    },
+  });
+
+  const toggleLabel = (id: string) => {
+    const current = pendingLabels ?? syncLabels;
+    const next = current.includes(id) ? current.filter((l) => l !== id) : [...current, id];
+    if (next.length === 0) return; // always keep at least one
+    setPendingLabels(next);
+  };
+
   const { data: hiddenTasks = [], isLoading: hiddenLoading } = useQuery<InboxTask[]>({
     queryKey: ["/api/inbox/tasks/hidden"],
     enabled: connected,
@@ -904,6 +949,101 @@ export default function InboxTasks() {
               <CheckCheck className="h-4 w-4 mr-1.5" />
               {showDone ? "Hide done" : "Show done"}
             </Button>
+          )}
+
+          {/* Label filter */}
+          {connected && (
+            <Popover
+              open={labelPickerOpen}
+              onOpenChange={(open) => {
+                setLabelPickerOpen(open);
+                if (!open) setPendingLabels(null);
+              }}
+            >
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="button-label-filter"
+                  className={labelPickerOpen ? "border-primary" : ""}
+                >
+                  <Tag className="h-4 w-4 mr-1.5" />
+                  Labels
+                  {syncLabels.length > 0 && !(syncLabels.length === 1 && syncLabels[0] === "INBOX") && (
+                    <span className="ml-1.5 bg-primary text-primary-foreground text-[10px] font-bold rounded-full h-4 w-4 flex items-center justify-center">
+                      {syncLabels.length}
+                    </span>
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-72 p-0">
+                <div className="px-3 py-2.5 border-b">
+                  <p className="text-sm font-medium">Filter by Gmail label</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Only emails with <em>all</em> selected labels will sync.
+                  </p>
+                </div>
+                <div className="py-1 max-h-64 overflow-y-auto">
+                  {labelsLoading || syncLabelsLoading ? (
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                      Loading labels…
+                    </div>
+                  ) : availableLabels.length === 0 ? (
+                    <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                      No labels found
+                    </div>
+                  ) : (
+                    availableLabels.map((label) => {
+                      const checked = displayLabels.includes(label.id);
+                      return (
+                        <button
+                          key={label.id}
+                          onClick={() => toggleLabel(label.id)}
+                          data-testid={`label-option-${label.id}`}
+                          className="flex items-center gap-2.5 w-full px-3 py-1.5 text-sm hover:bg-muted transition-colors text-left"
+                        >
+                          <span
+                            className={`h-4 w-4 rounded border flex-shrink-0 flex items-center justify-center ${
+                              checked
+                                ? "bg-primary border-primary"
+                                : "border-border"
+                            }`}
+                          >
+                            {checked && <Check className="h-3 w-3 text-primary-foreground" />}
+                          </span>
+                          <span className="truncate">{label.name}</span>
+                          {label.type === "user" && (
+                            <span className="ml-auto text-[10px] text-muted-foreground flex-shrink-0">
+                              custom
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+                {pendingLabels !== null && (
+                  <div className="px-3 py-2 border-t flex gap-2">
+                    <Button
+                      size="sm"
+                      className="flex-1"
+                      disabled={saveLabelsMutation.isPending}
+                      onClick={() => saveLabelsMutation.mutate(displayLabels)}
+                      data-testid="button-save-labels"
+                    >
+                      {saveLabelsMutation.isPending ? "Saving…" : "Save filter"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setPendingLabels(null)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+              </PopoverContent>
+            </Popover>
           )}
 
           {/* Refresh (live Gmail fetch) */}
