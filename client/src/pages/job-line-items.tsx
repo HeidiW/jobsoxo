@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -95,11 +95,13 @@ function LineItemForm({
   lineItem,
   onSuccess,
   onClose,
+  onAmountChange,
 }: {
   jobId: string;
   lineItem?: LineItem;
   onSuccess: () => void;
   onClose: () => void;
+  onAmountChange?: (delta: number) => void;
 }) {
   const { toast } = useToast();
   const isEdit = !!lineItem;
@@ -128,6 +130,20 @@ function LineItemForm({
     if (q <= 0 || r < 0) return 0;
     return q * r;
   })();
+
+  const savedAmount = isEdit ? Number(lineItem.amount) : 0;
+
+  useEffect(() => {
+    if (onAmountChange) {
+      onAmountChange(computedAmount - savedAmount);
+    }
+  }, [computedAmount, savedAmount, onAmountChange]);
+
+  useEffect(() => {
+    return () => {
+      if (onAmountChange) onAmountChange(0);
+    };
+  }, [onAmountChange]);
 
   const formatAmount = (val: number) =>
     new Intl.NumberFormat("en-US", {
@@ -376,6 +392,7 @@ export default function JobLineItems() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<LineItem | null>(null);
+  const [previewDelta, setPreviewDelta] = useState(0);
 
   const { data: job, isLoading: jobLoading } = useQuery<JobWithClient>({
     queryKey: ["/api/jobs", id],
@@ -483,7 +500,10 @@ export default function JobLineItems() {
           </Button>
           <Dialog open={isDialogOpen} onOpenChange={(open) => {
             setIsDialogOpen(open);
-            if (!open) setEditingItem(null);
+            if (!open) {
+              setEditingItem(null);
+              setPreviewDelta(0);
+            }
           }}>
             <DialogTrigger asChild>
               <Button data-testid="button-add-line-item">
@@ -502,7 +522,9 @@ export default function JobLineItems() {
                 onClose={() => {
                   setIsDialogOpen(false);
                   setEditingItem(null);
+                  setPreviewDelta(0);
                 }}
+                onAmountChange={(delta) => setPreviewDelta(delta)}
               />
             </DialogContent>
           </Dialog>
@@ -631,11 +653,31 @@ export default function JobLineItems() {
                     <span className="font-mono">{formatCurrency(changeOrderTotal)}</span>
                   </div>
                 )}
+                {previewDelta !== 0 && (
+                  <div className="flex justify-between text-sm" data-testid="text-preview-delta">
+                    <span className="text-muted-foreground italic">
+                      {previewDelta > 0 ? "+ In progress" : "± In progress"}
+                    </span>
+                    <span className="font-mono text-primary">
+                      {previewDelta > 0 ? "+" : ""}{formatCurrency(previewDelta)}
+                    </span>
+                  </div>
+                )}
                 <div className="border-t pt-3">
                   <div className="flex justify-between font-medium">
                     <span>Total</span>
-                    <span className="text-xl font-mono">{formatCurrency(total)}</span>
+                    <span
+                      className={`text-xl font-mono transition-colors ${previewDelta !== 0 ? "text-primary" : ""}`}
+                      data-testid="text-job-total"
+                    >
+                      {formatCurrency(total + previewDelta)}
+                    </span>
                   </div>
+                  {previewDelta !== 0 && (
+                    <p className="text-xs text-muted-foreground mt-1 italic" data-testid="text-preview-hint">
+                      Preview — save to confirm
+                    </p>
+                  )}
                 </div>
               </div>
 
