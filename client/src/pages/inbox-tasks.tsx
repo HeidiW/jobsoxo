@@ -763,9 +763,7 @@ export default function InboxTasks() {
         return exists ? updated : [{ ...dismissed, dismissed: true, snoozedUntil: null }, ...old];
       });
     }
-    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/dismiss`).then(() => {
-      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
-    }).catch(() => {
+    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/dismiss`).catch(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
       toast({ title: "Couldn't dismiss task", variant: "destructive" });
@@ -787,9 +785,7 @@ export default function InboxTasks() {
         return exists ? updated : [{ ...snoozed, snoozedUntil: until.toISOString(), dismissed: false }, ...old];
       });
     }
-    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/snooze`, { until: until.toISOString() }).then(() => {
-      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
-    }).catch(() => {
+    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/snooze`, { until: until.toISOString() }).catch(() => {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
       toast({ title: "Couldn't snooze task", variant: "destructive" });
