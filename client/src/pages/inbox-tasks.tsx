@@ -1022,17 +1022,23 @@ export default function InboxTasks() {
           <p className="text-muted-foreground mt-1">
             Your Gmail inbox as a daily to-do list
           </p>
-          {syncInfo?.lastSyncedAt && (
+          {syncInfo !== undefined && (
             <p
               className="text-xs text-muted-foreground mt-0.5"
               data-testid="text-last-synced"
-              title={format(new Date(syncInfo.lastSyncedAt), "PPpp")}
+              title={syncInfo.lastSyncedAt ? format(new Date(syncInfo.lastSyncedAt), "PPpp") : undefined}
             >
               <Clock className="h-3 w-3 inline mr-1" />
-              Auto-synced{" "}
-              {formatDistanceToNow(new Date(syncInfo.lastSyncedAt), {
-                addSuffix: true,
-              })}
+              {syncInfo.lastSyncedAt ? (
+                <>
+                  Auto-synced{" "}
+                  {formatDistanceToNow(new Date(syncInfo.lastSyncedAt), {
+                    addSuffix: true,
+                  })}
+                </>
+              ) : (
+                "Never synced"
+              )}
             </p>
           )}
         </div>
