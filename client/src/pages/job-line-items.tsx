@@ -51,6 +51,8 @@ import {
   MoreHorizontal,
   Ruler,
   FileText,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -119,6 +121,7 @@ function LineItemForm({
   onClose,
   onPreviewChange,
   savedTotal,
+  sidebarOpen,
 }: {
   jobId: string;
   lineItem?: LineItem;
@@ -126,6 +129,7 @@ function LineItemForm({
   onClose: () => void;
   onPreviewChange?: (info: PreviewInfo | null) => void;
   savedTotal?: number;
+  sidebarOpen?: boolean;
 }) {
   const { toast } = useToast();
   const isEdit = !!lineItem;
@@ -385,7 +389,7 @@ function LineItemForm({
 
         {savedTotal !== undefined && (
           <div
-            className="lg:hidden flex items-center justify-between rounded-lg border bg-muted/50 px-4 py-2.5 mt-4 shrink-0"
+            className={`${sidebarOpen ? "lg:hidden" : ""} flex items-center justify-between rounded-lg border bg-muted/50 px-4 py-2.5 mt-4 shrink-0`}
             data-testid="banner-running-total"
           >
             <span className="text-sm text-muted-foreground">Running total</span>
@@ -422,6 +426,7 @@ export default function JobLineItems() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<LineItem | null>(null);
   const [previewInfo, setPreviewInfo] = useState<PreviewInfo | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const { data: job, isLoading: jobLoading } = useQuery<JobWithClient>({
     queryKey: ["/api/jobs", id],
@@ -577,6 +582,7 @@ export default function JobLineItems() {
                 }}
                 onPreviewChange={(info) => setPreviewInfo(info)}
                 savedTotal={(lineItems ?? []).reduce((sum, item) => sum + Number(item.amount), 0)}
+                sidebarOpen={sidebarOpen}
               />
             </DialogContent>
           </Dialog>
@@ -688,12 +694,26 @@ export default function JobLineItems() {
           </Card>
         </div>
 
-        <div>
+        <div className="hidden lg:block">
           <Card className="sticky top-6">
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
               <CardTitle>Job Summary</CardTitle>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen((prev) => !prev)}
+                data-testid="button-toggle-sidebar"
+                title={sidebarOpen ? "Collapse summary" : "Expand summary"}
+                className="h-8 w-8 -mr-1"
+              >
+                {sidebarOpen ? (
+                  <PanelRightClose className="h-4 w-4" />
+                ) : (
+                  <PanelRightOpen className="h-4 w-4" />
+                )}
+              </Button>
             </CardHeader>
-            <CardContent>
+            {sidebarOpen && <CardContent>
               <div className="space-y-2">
                 {CATEGORIES.map(({ key, label }) => {
                   const saved = savedByCategory[key] || 0;
@@ -780,7 +800,7 @@ export default function JobLineItems() {
                   )}
                 </div>
               )}
-            </CardContent>
+            </CardContent>}
           </Card>
         </div>
       </div>
