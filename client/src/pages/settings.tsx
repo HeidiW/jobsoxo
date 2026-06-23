@@ -584,9 +584,9 @@ export default function SettingsPage() {
                     </span>
                   </p>
                 )}
-                {settings?.lastInboxSync && (
-                  <p className="text-sm text-muted-foreground" data-testid="text-last-inbox-sync">
-                    Last synced:{" "}
+                <p className="text-sm text-muted-foreground" data-testid="text-last-inbox-sync">
+                  Last synced:{" "}
+                  {settings?.lastInboxSync ? (
                     <span className="font-medium text-foreground">
                       {(() => {
                         const last = new Date(settings.lastInboxSync!);
@@ -604,8 +604,10 @@ export default function SettingsPage() {
                         return isToday ? `today at ${timeStr}` : last.toLocaleDateString([], { month: "short", day: "numeric" }) + ` at ${timeStr}`;
                       })()}
                     </span>
-                  </p>
-                )}
+                  ) : (
+                    <span className="font-medium text-muted-foreground">Never</span>
+                  )}
+                </p>
                 <div>
                   <Button
                     type="button"
