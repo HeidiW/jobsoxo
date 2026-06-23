@@ -35,7 +35,7 @@ import {
   Check,
   RefreshCw,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import type { Settings, Invite } from "@shared/schema";
 
@@ -221,6 +221,12 @@ function InvitePanel() {
 export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const { data: settings, isLoading } = useQuery<Settings & { nextInboxSync?: string; lastInboxSync?: string | null }>({
     queryKey: ["/api/settings"],
@@ -584,7 +590,6 @@ export default function SettingsPage() {
                     <span className="font-medium text-foreground">
                       {(() => {
                         const last = new Date(settings.lastInboxSync!);
-                        const now = new Date();
                         const diffMs = now.getTime() - last.getTime();
                         const diffMins = Math.floor(diffMs / 60000);
                         const diffHours = Math.floor(diffMins / 60);
