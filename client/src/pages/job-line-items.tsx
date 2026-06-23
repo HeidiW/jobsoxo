@@ -106,18 +106,24 @@ interface JobWithClient extends Job {
   client: Client;
 }
 
+interface PreviewInfo {
+  delta: number;
+  category: string;
+  isChangeOrder: boolean;
+}
+
 function LineItemForm({
   jobId,
   lineItem,
   onSuccess,
   onClose,
-  onAmountChange,
+  onPreviewChange,
 }: {
   jobId: string;
   lineItem?: LineItem;
   onSuccess: () => void;
   onClose: () => void;
-  onAmountChange?: (delta: number) => void;
+  onPreviewChange?: (info: PreviewInfo | null) => void;
 }) {
   const { toast } = useToast();
   const isEdit = !!lineItem;
@@ -139,6 +145,7 @@ function LineItemForm({
   const isChangeOrder = form.watch("isChangeOrder");
   const watchedQuantity = form.watch("quantity");
   const watchedRate = form.watch("rate");
+  const watchedCategory = form.watch("category");
 
   const computedAmount = (() => {
     const q = parseFloat(watchedQuantity);
@@ -157,16 +164,20 @@ function LineItemForm({
   const savedAmount = isEdit ? Number(lineItem.amount) : 0;
 
   useEffect(() => {
-    if (onAmountChange) {
-      onAmountChange(computedAmount - savedAmount);
+    if (onPreviewChange) {
+      onPreviewChange({
+        delta: computedAmount - savedAmount,
+        category: watchedCategory,
+        isChangeOrder,
+      });
     }
-  }, [computedAmount, savedAmount, onAmountChange]);
+  }, [computedAmount, savedAmount, watchedCategory, isChangeOrder, onPreviewChange]);
 
   useEffect(() => {
     return () => {
-      if (onAmountChange) onAmountChange(0);
+      if (onPreviewChange) onPreviewChange(null);
     };
-  }, [onAmountChange]);
+  }, [onPreviewChange]);
 
   const mutation = useMutation({
     mutationFn: async (data: LineItemFormValues) => {
@@ -384,7 +395,7 @@ export default function JobLineItems() {
   const { toast } = useToast();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<LineItem | null>(null);
-  const [previewDelta, setPreviewDelta] = useState(0);
+  const [previewInfo, setPreviewInfo] = useState<PreviewInfo | null>(null);
 
   const { data: job, isLoading: jobLoading } = useQuery<JobWithClient>({
     queryKey: ["/api/jobs", id],
@@ -426,9 +437,31 @@ export default function JobLineItems() {
     }).format(Number(amount));
   };
 
-  const total = lineItems?.reduce((sum, item) => sum + Number(item.amount), 0) || 0;
-  const regularTotal = lineItems?.filter((item) => !item.isChangeOrder).reduce((sum, item) => sum + Number(item.amount), 0) || 0;
-  const changeOrderTotal = lineItems?.filter((item) => item.isChangeOrder).reduce((sum, item) => sum + Number(item.amount), 0) || 0;
+  const CATEGORIES = [
+    { key: "materials", label: "Materials" },
+    { key: "labor", label: "Labor" },
+    { key: "square_footage", label: "Square Footage" },
+    { key: "other", label: "Other" },
+  ] as const;
+
+  const savedByCategory = (lineItems ?? []).reduce<Record<string, number>>(
+    (acc, item) => {
+      if (!item.isChangeOrder) {
+        const key = item.category as string;
+        acc[key] = (acc[key] || 0) + Number(item.amount);
+      }
+      return acc;
+    },
+    {}
+  );
+
+  const changeOrderTotal =
+    (lineItems ?? [])
+      .filter((item) => item.isChangeOrder)
+      .reduce((sum, item) => sum + Number(item.amount), 0);
+
+  const previewDelta = previewInfo?.delta ?? 0;
+  const total = (lineItems?.reduce((sum, item) => sum + Number(item.amount), 0) || 0) + previewDelta;
 
   const isLoading = jobLoading || itemsLoading;
 
@@ -494,7 +527,7 @@ export default function JobLineItems() {
             setIsDialogOpen(open);
             if (!open) {
               setEditingItem(null);
-              setPreviewDelta(0);
+              setPreviewInfo(null);
             }
           }}>
             <DialogTrigger asChild>
@@ -514,9 +547,9 @@ export default function JobLineItems() {
                 onClose={() => {
                   setIsDialogOpen(false);
                   setEditingItem(null);
-                  setPreviewDelta(0);
+                  setPreviewInfo(null);
                 }}
-                onAmountChange={(delta) => setPreviewDelta(delta)}
+                onPreviewChange={(info) => setPreviewInfo(info)}
               />
             </DialogContent>
           </Dialog>
@@ -634,35 +667,71 @@ export default function JobLineItems() {
               <CardTitle>Job Summary</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Base Total</span>
-                  <span className="font-mono">{formatCurrency(regularTotal)}</span>
-                </div>
-                {changeOrderTotal > 0 && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Change Orders</span>
-                    <span className="font-mono">{formatCurrency(changeOrderTotal)}</span>
-                  </div>
-                )}
-                {previewDelta !== 0 && (
-                  <div className="flex justify-between text-sm" data-testid="text-preview-delta">
-                    <span className="text-muted-foreground italic">
-                      {previewDelta > 0 ? "+ In progress" : "± In progress"}
-                    </span>
-                    <span className="font-mono text-primary">
-                      {previewDelta > 0 ? "+" : ""}{formatCurrency(previewDelta)}
-                    </span>
-                  </div>
-                )}
-                <div className="border-t pt-3">
+              <div className="space-y-2">
+                {CATEGORIES.map(({ key, label }) => {
+                  const saved = savedByCategory[key] || 0;
+                  const isActiveCategory =
+                    previewInfo &&
+                    !previewInfo.isChangeOrder &&
+                    previewInfo.category === key;
+                  const preview = isActiveCategory ? previewInfo!.delta : 0;
+                  const displayAmount = saved + preview;
+                  if (displayAmount === 0 && !isActiveCategory) return null;
+                  return (
+                    <div
+                      key={key}
+                      className={`flex justify-between text-sm rounded px-1 -mx-1 transition-colors ${
+                        isActiveCategory && previewInfo!.delta !== 0
+                          ? "bg-primary/8"
+                          : ""
+                      }`}
+                      data-testid={`row-category-${key}`}
+                    >
+                      <span className={`text-muted-foreground ${isActiveCategory && previewInfo!.delta !== 0 ? "text-primary" : ""}`}>
+                        {label}
+                        {isActiveCategory && previewInfo!.delta !== 0 && (
+                          <span className="text-xs italic ml-1">(in progress)</span>
+                        )}
+                      </span>
+                      <span className={`font-mono ${isActiveCategory && previewInfo!.delta !== 0 ? "text-primary" : ""}`}>
+                        {formatCurrency(displayAmount)}
+                      </span>
+                    </div>
+                  );
+                })}
+
+                {(() => {
+                  const isChangeOrderPreview = previewInfo?.isChangeOrder && previewInfo.delta !== 0;
+                  const displayChangeOrder = changeOrderTotal + (isChangeOrderPreview ? previewInfo!.delta : 0);
+                  if (displayChangeOrder === 0 && !isChangeOrderPreview) return null;
+                  return (
+                    <div
+                      className={`flex justify-between text-sm rounded px-1 -mx-1 transition-colors ${
+                        isChangeOrderPreview ? "bg-primary/8" : ""
+                      }`}
+                      data-testid="row-category-change-orders"
+                    >
+                      <span className={`text-muted-foreground ${isChangeOrderPreview ? "text-primary" : ""}`}>
+                        Change Orders
+                        {isChangeOrderPreview && (
+                          <span className="text-xs italic ml-1">(in progress)</span>
+                        )}
+                      </span>
+                      <span className={`font-mono ${isChangeOrderPreview ? "text-primary" : ""}`}>
+                        {formatCurrency(displayChangeOrder)}
+                      </span>
+                    </div>
+                  );
+                })()}
+
+                <div className="border-t pt-3 mt-1">
                   <div className="flex justify-between font-medium">
                     <span>Total</span>
                     <span
                       className={`text-xl font-mono transition-colors ${previewDelta !== 0 ? "text-primary" : ""}`}
                       data-testid="text-job-total"
                     >
-                      {formatCurrency(total + previewDelta)}
+                      {formatCurrency(total)}
                     </span>
                   </div>
                   {previewDelta !== 0 && (
