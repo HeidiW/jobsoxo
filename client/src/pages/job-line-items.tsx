@@ -59,7 +59,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { Job, Client, LineItem } from "@shared/schema";
-import { insertLineItemSchema } from "@shared/schema";
 
 // Mirror server-side positiveNumericString validation inline so errors surface
 // without a network round-trip. The exact rules (> 0) come from insertLineItemSchema.
@@ -74,15 +73,32 @@ function positiveNumericField(label: string) {
     .refine((val) => parseFloat(val) > 0, `${label} must be greater than zero`);
 }
 
-const lineItemFormSchema = z.object({
-  category: z.enum(["materials", "labor", "square_footage", "other"]),
-  description: z.string().min(1, "Description is required"),
-  quantity: positiveNumericField("Quantity"),
-  unit: z.string().min(1, "Unit is required"),
-  rate: positiveNumericField("Rate"),
-  isChangeOrder: z.boolean().default(false),
-  changeOrderReason: z.string().optional(),
-});
+const lineItemFormSchema = z
+  .object({
+    category: z.enum(["materials", "labor", "square_footage", "other"]),
+    description: z.string().min(1, "Description is required"),
+    quantity: positiveNumericField("Quantity"),
+    unit: z.string().min(1, "Unit is required"),
+    rate: positiveNumericField("Rate"),
+    amount: positiveNumericField("Amount"),
+    isChangeOrder: z.boolean().default(false),
+    changeOrderReason: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const qty = parseFloat(data.quantity);
+    const rate = parseFloat(data.rate);
+    const amount = parseFloat(data.amount);
+    if (!isNaN(qty) && !isNaN(rate) && !isNaN(amount)) {
+      const expected = qty * rate;
+      if (Math.abs(amount - expected) > 0.001) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Amount must equal quantity × rate (expected ${expected.toFixed(2)}, got ${amount.toFixed(2)})`,
+          path: ["amount"],
+        });
+      }
+    }
+  });
 
 type LineItemFormValues = z.infer<typeof lineItemFormSchema>;
 
@@ -114,6 +130,7 @@ function LineItemForm({
       quantity: lineItem?.quantity?.toString() || "",
       unit: lineItem?.unit || "hours",
       rate: lineItem?.rate?.toString() || "",
+      amount: lineItem?.amount?.toString() || "",
       isChangeOrder: lineItem?.isChangeOrder || false,
       changeOrderReason: lineItem?.changeOrderReason || "",
     },
@@ -131,6 +148,12 @@ function LineItemForm({
     return q * r;
   })();
 
+  useEffect(() => {
+    if (computedAmount > 0) {
+      form.setValue("amount", computedAmount.toFixed(2), { shouldValidate: true });
+    }
+  }, [computedAmount, form]);
+
   const savedAmount = isEdit ? Number(lineItem.amount) : 0;
 
   useEffect(() => {
@@ -145,27 +168,16 @@ function LineItemForm({
     };
   }, [onAmountChange]);
 
-  const formatAmount = (val: number) =>
-    new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-    }).format(val);
-
   const mutation = useMutation({
     mutationFn: async (data: LineItemFormValues) => {
-      const quantity = parseFloat(data.quantity);
-      const rate = parseFloat(data.rate);
-      const amount = quantity * rate;
-      
       const payload = {
         ...data,
         jobId,
-        quantity,
-        rate,
-        amount,
+        quantity: parseFloat(data.quantity),
+        rate: parseFloat(data.rate),
+        amount: parseFloat(data.amount),
       };
-      
+
       const url = isEdit ? `/api/line-items/${lineItem.id}` : "/api/line-items";
       const method = isEdit ? "PATCH" : "POST";
       const res = await apiRequest(method, url, payload);
@@ -204,36 +216,6 @@ function LineItemForm({
   });
 
   const onSubmit = (data: LineItemFormValues) => {
-    const quantity = parseFloat(data.quantity);
-    const rate = parseFloat(data.rate);
-    const amount = quantity * rate;
-
-    // Validate the full server payload against insertLineItemSchema (including
-    // computed amount) so any cross-field issues surface inline without a network round-trip.
-    const serverPayload = {
-      ...data,
-      jobId,
-      amount: amount.toFixed(2),
-    };
-    const parseResult = insertLineItemSchema.safeParse(serverPayload);
-    if (!parseResult.success) {
-      parseResult.error.issues.forEach((issue) => {
-        const fieldName = issue.path[0] as string;
-        if (fieldName === "amount") {
-          form.setError("rate", {
-            type: "manual",
-            message: issue.message,
-          });
-        } else if (fieldName in data) {
-          form.setError(fieldName as keyof LineItemFormValues, {
-            type: "manual",
-            message: issue.message,
-          });
-        }
-      });
-      return;
-    }
-
     mutation.mutate(data);
   };
 
@@ -331,15 +313,25 @@ function LineItemForm({
             )}
           />
         </div>
-        <div className="flex items-center justify-between rounded-md border bg-muted/40 px-4 py-3">
-          <span className="text-sm font-medium text-muted-foreground">Amount</span>
-          <span
-            className="font-mono text-base font-semibold"
-            data-testid="text-computed-amount"
-          >
-            {formatAmount(computedAmount)}
-          </span>
-        </div>
+        <FormField
+          control={form.control}
+          name="amount"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Amount ($)</FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  {...field}
+                  data-testid="input-line-amount"
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
         <FormField
           control={form.control}
           name="isChangeOrder"
