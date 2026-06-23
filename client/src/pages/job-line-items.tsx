@@ -118,12 +118,14 @@ function LineItemForm({
   onSuccess,
   onClose,
   onPreviewChange,
+  savedTotal,
 }: {
   jobId: string;
   lineItem?: LineItem;
   onSuccess: () => void;
   onClose: () => void;
   onPreviewChange?: (info: PreviewInfo | null) => void;
+  savedTotal?: number;
 }) {
   const { toast } = useToast();
   const isEdit = !!lineItem;
@@ -162,6 +164,8 @@ function LineItemForm({
   }, [computedAmount, form]);
 
   const savedAmount = isEdit ? Number(lineItem.amount) : 0;
+
+  const runningTotal = (savedTotal ?? 0) + (isEdit ? computedAmount - savedAmount : computedAmount);
 
   useEffect(() => {
     if (onPreviewChange) {
@@ -232,151 +236,173 @@ function LineItemForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col flex-1 min-h-0">
+        <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pr-1">
+          <div className="grid grid-cols-2 gap-4">
+            <FormField
+              control={form.control}
+              name="category"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Category</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-line-category">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="materials">Materials</SelectItem>
+                      <SelectItem value="labor">Labor</SelectItem>
+                      <SelectItem value="square_footage">Square Footage</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="unit"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Unit</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-line-unit">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="hours">Hours</SelectItem>
+                      <SelectItem value="each">Each</SelectItem>
+                      <SelectItem value="sqft">Sq Ft</SelectItem>
+                      <SelectItem value="gallon">Gallon</SelectItem>
+                      <SelectItem value="linear_ft">Linear Ft</SelectItem>
+                      <SelectItem value="flat">Flat Rate</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
           <FormField
             control={form.control}
-            name="category"
+            name="description"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Category</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
+                <FormLabel>Description</FormLabel>
+                <FormControl>
+                  <Input placeholder="Interior wall painting" {...field} data-testid="input-line-description" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <FormField
+              control={form.control}
+              name="quantity"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Quantity</FormLabel>
                   <FormControl>
-                    <SelectTrigger data-testid="select-line-category">
-                      <SelectValue />
-                    </SelectTrigger>
+                    <Input type="number" step="0.01" placeholder="10" {...field} data-testid="input-line-quantity" />
                   </FormControl>
-                  <SelectContent>
-                    <SelectItem value="materials">Materials</SelectItem>
-                    <SelectItem value="labor">Labor</SelectItem>
-                    <SelectItem value="square_footage">Square Footage</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="unit"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Unit</FormLabel>
-                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="rate"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Rate ($)</FormLabel>
                   <FormControl>
-                    <SelectTrigger data-testid="select-line-unit">
-                      <SelectValue />
-                    </SelectTrigger>
+                    <Input type="number" step="0.01" placeholder="45.00" {...field} data-testid="input-line-rate" />
                   </FormControl>
-                  <SelectContent>
-                    <SelectItem value="hours">Hours</SelectItem>
-                    <SelectItem value="each">Each</SelectItem>
-                    <SelectItem value="sqft">Sq Ft</SelectItem>
-                    <SelectItem value="gallon">Gallon</SelectItem>
-                    <SelectItem value="linear_ft">Linear Ft</SelectItem>
-                    <SelectItem value="flat">Flat Rate</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
+          <FormField
+            control={form.control}
+            name="amount"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Amount ($)</FormLabel>
+                <FormControl>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    {...field}
+                    data-testid="input-line-amount"
+                  />
+                </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
+          <FormField
+            control={form.control}
+            name="isChangeOrder"
+            render={({ field }) => (
+              <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    data-testid="checkbox-change-order"
+                  />
+                </FormControl>
+                <div className="space-y-1 leading-none">
+                  <FormLabel>This is a change order</FormLabel>
+                </div>
+              </FormItem>
+            )}
+          />
+          {isChangeOrder && (
+            <FormField
+              control={form.control}
+              name="changeOrderReason"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Change Order Reason</FormLabel>
+                  <FormControl>
+                    <Textarea placeholder="Reason for the change order" {...field} data-testid="input-change-order-reason" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
         </div>
-        <FormField
-          control={form.control}
-          name="description"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Description</FormLabel>
-              <FormControl>
-                <Input placeholder="Interior wall painting" {...field} data-testid="input-line-description" />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <div className="grid grid-cols-2 gap-4">
-          <FormField
-            control={form.control}
-            name="quantity"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Quantity</FormLabel>
-                <FormControl>
-                  <Input type="number" step="0.01" placeholder="10" {...field} data-testid="input-line-quantity" />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="rate"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Rate ($)</FormLabel>
-                <FormControl>
-                  <Input type="number" step="0.01" placeholder="45.00" {...field} data-testid="input-line-rate" />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
-        <FormField
-          control={form.control}
-          name="amount"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Amount ($)</FormLabel>
-              <FormControl>
-                <Input
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  {...field}
-                  data-testid="input-line-amount"
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="isChangeOrder"
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-              <FormControl>
-                <Checkbox
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                  data-testid="checkbox-change-order"
-                />
-              </FormControl>
-              <div className="space-y-1 leading-none">
-                <FormLabel>This is a change order</FormLabel>
-              </div>
-            </FormItem>
-          )}
-        />
-        {isChangeOrder && (
-          <FormField
-            control={form.control}
-            name="changeOrderReason"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Change Order Reason</FormLabel>
-                <FormControl>
-                  <Textarea placeholder="Reason for the change order" {...field} data-testid="input-change-order-reason" />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+
+        {savedTotal !== undefined && (
+          <div
+            className="lg:hidden flex items-center justify-between rounded-lg border bg-muted/50 px-4 py-2.5 mt-4 shrink-0"
+            data-testid="banner-running-total"
+          >
+            <span className="text-sm text-muted-foreground">Running total</span>
+            <span
+              className={`text-base font-mono font-semibold transition-colors ${computedAmount > 0 ? "text-primary" : ""}`}
+              data-testid="text-running-total"
+            >
+              {new Intl.NumberFormat("en-US", {
+                style: "currency",
+                currency: "USD",
+                minimumFractionDigits: 2,
+              }).format(runningTotal)}
+            </span>
+          </div>
         )}
-        <div className="flex justify-end gap-2 pt-4">
+
+        <div className="flex justify-end gap-2 pt-4 shrink-0">
           <Button type="button" variant="outline" onClick={onClose} data-testid="button-cancel-line-item">
             Cancel
           </Button>
@@ -536,8 +562,8 @@ export default function JobLineItems() {
                 Add Item
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
+            <DialogContent className="max-w-md flex flex-col max-h-[90dvh] overflow-hidden">
+              <DialogHeader className="shrink-0">
                 <DialogTitle>{editingItem ? "Edit Line Item" : "Add Line Item"}</DialogTitle>
               </DialogHeader>
               <LineItemForm
@@ -550,6 +576,7 @@ export default function JobLineItems() {
                   setPreviewInfo(null);
                 }}
                 onPreviewChange={(info) => setPreviewInfo(info)}
+                savedTotal={(lineItems ?? []).reduce((sum, item) => sum + Number(item.amount), 0)}
               />
             </DialogContent>
           </Dialog>
