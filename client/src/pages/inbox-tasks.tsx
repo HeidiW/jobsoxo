@@ -435,6 +435,10 @@ function HiddenTaskRow({
   const color = senderColor(task.senderEmail ?? task.sender);
   const receivedAt = new Date(task.receivedAt);
   const isSnoozed = !task.dismissed && task.snoozedUntil != null;
+  const isOverdue =
+    isSnoozed &&
+    task.snoozedUntil != null &&
+    new Date(task.snoozedUntil) < new Date();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   return (
@@ -471,9 +475,19 @@ function HiddenTaskRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-0.5">
           <span className="text-sm font-medium truncate">{task.subject}</span>
-          <Badge variant="outline" className="text-xs px-1.5 py-0 shrink-0">
-            {isSnoozed ? "Snoozed" : "Dismissed"}
-          </Badge>
+          {isOverdue ? (
+            <Badge
+              className="text-xs px-1.5 py-0 shrink-0 bg-amber-500 hover:bg-amber-500 text-white border-0"
+              data-testid={`badge-overdue-${task.emailId}`}
+            >
+              <Clock className="h-3 w-3 mr-1" />
+              Due now
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-xs px-1.5 py-0 shrink-0">
+              {isSnoozed ? "Snoozed" : "Dismissed"}
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="truncate max-w-[200px]">{task.sender}</span>
@@ -1225,6 +1239,10 @@ export default function InboxTasks() {
               <span className="font-medium">Hidden emails</span>
               <span className="text-xs opacity-70">(dismissed &amp; snoozed)</span>
               {hiddenTasks.length > 0 && (() => {
+                const now = new Date();
+                const overdueCount = hiddenTasks.filter(
+                  (t) => !t.dismissed && t.snoozedUntil != null && new Date(t.snoozedUntil) < now
+                ).length;
                 const snoozedCount = hiddenTasks.filter(
                   (t) => !t.dismissed && t.snoozedUntil != null
                 ).length;
@@ -1234,14 +1252,23 @@ export default function InboxTasks() {
                     className="ml-1 flex items-center gap-1 text-xs text-muted-foreground"
                     data-testid="badge-hidden-count"
                   >
-                    {snoozedCount > 0 && (
+                    {overdueCount > 0 && (
+                      <Badge
+                        className="text-xs px-1.5 py-0 gap-1 bg-amber-500 hover:bg-amber-500 text-white border-0"
+                        data-testid="badge-hidden-overdue-count"
+                      >
+                        <Clock className="h-3 w-3" />
+                        {overdueCount} due now
+                      </Badge>
+                    )}
+                    {snoozedCount > overdueCount && (
                       <Badge
                         variant="secondary"
                         className="text-xs px-1.5 py-0 gap-1"
                         data-testid="badge-hidden-snoozed-count"
                       >
                         <Clock className="h-3 w-3" />
-                        {snoozedCount} snoozed
+                        {snoozedCount - overdueCount} snoozed
                       </Badge>
                     )}
                     {snoozedCount > 0 && dismissedCount > 0 && (
