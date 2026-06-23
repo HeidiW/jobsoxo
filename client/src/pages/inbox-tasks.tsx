@@ -801,6 +801,8 @@ export default function InboxTasks() {
   };
 
   const handleClearAllDismissed = () => {
+    const hidden: InboxTask[] = queryClient.getQueryData(["/api/inbox/tasks/hidden"]) ?? [];
+    const dismissedCount = hidden.filter((t) => t.dismissed).length;
     queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
       old.filter((t) => !t.dismissed)
     );
@@ -808,7 +810,7 @@ export default function InboxTasks() {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
       toast({ title: "Couldn't clear dismissed emails", variant: "destructive" });
     });
-    toast({ title: "All dismissed emails cleared" });
+    toast({ title: `${dismissedCount} email${dismissedCount !== 1 ? "s" : ""} permanently deleted` });
   };
 
   return (
