@@ -1503,12 +1503,35 @@ export default function InboxTasks() {
                           )}
                           {dismissedGroup.length > 0 && (
                             <div>
-                              <p
-                                className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1 pb-1"
-                                data-testid="label-hidden-section-dismissed"
-                              >
-                                Dismissed
-                              </p>
+                              <div className="flex items-center justify-between px-1 pb-1">
+                                <span
+                                  className="text-xs font-semibold text-muted-foreground uppercase tracking-wide"
+                                  data-testid="label-hidden-section-dismissed"
+                                >
+                                  Dismissed
+                                </span>
+                                <label className="flex items-center gap-1.5 cursor-pointer select-none" data-testid="label-select-all-dismissed">
+                                  <Checkbox
+                                    data-testid="checkbox-select-all-dismissed"
+                                    checked={
+                                      selectedDismissedIds.size === dismissedGroup.length
+                                        ? true
+                                        : selectedDismissedIds.size > 0
+                                        ? "indeterminate"
+                                        : false
+                                    }
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        setSelectedDismissedIds(new Set(dismissedGroup.map((t) => t.emailId)));
+                                      } else {
+                                        setSelectedDismissedIds(new Set());
+                                      }
+                                    }}
+                                    className="h-3.5 w-3.5"
+                                  />
+                                  <span className="text-xs text-muted-foreground">Select all</span>
+                                </label>
+                              </div>
                               <div className="space-y-0.5">
                                 {dismissedGroup.map((t) => (
                                   <HiddenTaskRow
