@@ -59,21 +59,27 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { Job, Client, LineItem } from "@shared/schema";
+import { insertLineItemSchema } from "@shared/schema";
+
+// Mirror server-side positiveNumericString validation inline so errors surface
+// without a network round-trip. The exact rules (> 0) come from insertLineItemSchema.
+function positiveNumericField(label: string) {
+  return z
+    .string()
+    .min(1, `${label} is required`)
+    .refine(
+      (val) => !isNaN(parseFloat(val)) && isFinite(Number(val)),
+      `${label} must be a valid number`
+    )
+    .refine((val) => parseFloat(val) > 0, `${label} must be greater than zero`);
+}
 
 const lineItemFormSchema = z.object({
   category: z.enum(["materials", "labor", "square_footage", "other"]),
   description: z.string().min(1, "Description is required"),
-  quantity: z
-    .string()
-    .min(1, "Quantity is required")
-    .refine((val) => !isNaN(parseFloat(val)) && isFinite(Number(val)), "Quantity must be a valid number")
-    .refine((val) => parseFloat(val) > 0, "Quantity must be greater than zero"),
+  quantity: positiveNumericField("Quantity"),
   unit: z.string().min(1, "Unit is required"),
-  rate: z
-    .string()
-    .min(1, "Rate is required")
-    .refine((val) => !isNaN(parseFloat(val)) && isFinite(Number(val)), "Rate must be a valid number")
-    .refine((val) => parseFloat(val) >= 0, "Rate must not be negative"),
+  rate: positiveNumericField("Rate"),
   isChangeOrder: z.boolean().default(false),
   changeOrderReason: z.string().optional(),
 });
@@ -182,6 +188,36 @@ function LineItemForm({
   });
 
   const onSubmit = (data: LineItemFormValues) => {
+    const quantity = parseFloat(data.quantity);
+    const rate = parseFloat(data.rate);
+    const amount = quantity * rate;
+
+    // Validate the full server payload against insertLineItemSchema (including
+    // computed amount) so any cross-field issues surface inline without a network round-trip.
+    const serverPayload = {
+      ...data,
+      jobId,
+      amount: amount.toFixed(2),
+    };
+    const parseResult = insertLineItemSchema.safeParse(serverPayload);
+    if (!parseResult.success) {
+      parseResult.error.issues.forEach((issue) => {
+        const fieldName = issue.path[0] as string;
+        if (fieldName === "amount") {
+          form.setError("rate", {
+            type: "manual",
+            message: issue.message,
+          });
+        } else if (fieldName in data) {
+          form.setError(fieldName as keyof LineItemFormValues, {
+            type: "manual",
+            message: issue.message,
+          });
+        }
+      });
+      return;
+    }
+
     mutation.mutate(data);
   };
 
