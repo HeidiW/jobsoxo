@@ -754,6 +754,24 @@ describe("POST /api/time-entries — validation", () => {
     expect(res.body.error).toBe("Invalid request data");
     expect(res.body.details).toHaveProperty("date");
   });
+
+  it("returns 400 when adding an entry would push the daily total past 24 hours", async () => {
+    const empRes = await request(app)
+      .post("/api/employees")
+      .send({ name: "Daily Limit Test Employee", hourlyRate: "15", status: "active" })
+      .expect(201);
+    const employeeId = empRes.body.id;
+
+    await storage.createTimeEntry({ employeeId, date: new Date("2030-03-10T12:00:00Z"), hoursWorked: "20", description: "first shift" });
+
+    const res = await request(app)
+      .post("/api/time-entries")
+      .send({ employeeId, date: "2030-03-10", hoursWorked: "8" })
+      .expect(400);
+
+    expect(res.body.error).toMatch(/daily total/i);
+    expect(res.body.error).toMatch(/24/);
+  });
 });
 
 describe("PATCH /api/settings — access control", () => {

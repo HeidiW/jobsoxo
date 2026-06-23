@@ -280,7 +280,9 @@ function TimeEntryForm({ onClose }: { onClose: () => void }) {
       onClose();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      const message = error.message.replace(/^\d+:\s*/, "");
+      form.setError("hoursWorked", { message });
+      toast({ title: "Error", description: message, variant: "destructive" });
     },
   });
 

@@ -1071,6 +1071,29 @@ export async function registerRoutes(
     try {
       const parsed = insertTimeEntrySchema.safeParse(req.body);
       if (!parsed.success) return badRequest(res, parsed.error);
+
+      const { employeeId, date, hoursWorked } = parsed.data;
+      const dayStart = new Date(date);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(date);
+      dayEnd.setHours(23, 59, 59, 999);
+
+      const employeeEntries = await storage.getTimeEntriesByEmployee(employeeId);
+      const sameDayEntries = employeeEntries.filter((e) => {
+        const entryDate = new Date(e.date);
+        return entryDate >= dayStart && entryDate <= dayEnd;
+      });
+
+      const existingTotal = sameDayEntries.reduce((sum, e) => sum + parseFloat(e.hoursWorked), 0);
+      const newHours = parseFloat(String(hoursWorked));
+      const newTotal = existingTotal + newHours;
+
+      if (newTotal > 24) {
+        return res.status(400).json({
+          error: `This entry would bring the daily total to ${newTotal.toFixed(2)} hours for this employee, exceeding the 24-hour limit. They already have ${existingTotal.toFixed(2)} hours logged on this date.`,
+        });
+      }
+
       const entry = await storage.createTimeEntry(parsed.data);
       res.status(201).json(entry);
     } catch (error) {
