@@ -245,6 +245,16 @@ function TaskRow({
           {!task.isRead && !task.isDone && (
             <CircleDot className="h-2.5 w-2.5 text-blue-500 shrink-0" />
           )}
+          {task.snoozedUntil && !task.dismissed && (
+            <span
+              className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded px-1.5 py-0 shrink-0"
+              data-testid={`badge-snoozed-${task.emailId}`}
+              title={`This email was snoozed until ${format(new Date(task.snoozedUntil), "PPP")}`}
+            >
+              <Clock className="h-3 w-3" />
+              Snoozed until {format(new Date(task.snoozedUntil), "MMM d")}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="truncate max-w-[200px]">{task.sender}</span>
