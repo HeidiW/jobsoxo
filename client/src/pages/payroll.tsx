@@ -65,6 +65,7 @@ import {
   Trash2,
   FileText,
   ChevronDown,
+  AlertTriangle,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -343,6 +344,7 @@ function TimeEntryForm({ onClose }: { onClose: () => void }) {
 function RunPayrollForm({ onClose }: { onClose: () => void }) {
   const { toast } = useToast();
   const { data: employees } = useQuery<EmployeeWithStats[]>({ queryKey: ["/api/employees"] });
+  const { data: payrollRecords } = useQuery<PayrollRecordWithEmployee[]>({ queryKey: ["/api/payroll-records"] });
   const activeCount = employees?.filter((e) => e.status === "active").length ?? 0;
   const presets = periodPresets();
 
@@ -380,6 +382,21 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
   const watchStart = form.watch("periodStart");
   const watchEnd = form.watch("periodEnd");
   const watchDeduction = form.watch("deductionRate");
+
+  const overlappingPeriods = (payrollRecords && watchStart && watchEnd)
+    ? payrollRecords.filter((r) => {
+        const selStart = new Date(watchStart);
+        const selEnd = new Date(watchEnd);
+        const rStart = new Date(r.periodStart);
+        const rEnd = new Date(r.periodEnd);
+        return rStart < selEnd && rEnd > selStart;
+      }).reduce<{ periodStart: string; periodEnd: string }[]>((acc, r) => {
+        if (!acc.some((x) => x.periodStart === r.periodStart && x.periodEnd === r.periodEnd)) {
+          acc.push({ periodStart: r.periodStart, periodEnd: r.periodEnd });
+        }
+        return acc;
+      }, [])
+    : [];
 
   return (
     <Form {...form}>
@@ -426,6 +443,27 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
             <FormMessage />
           </FormItem>
         )} />
+
+        {/* Overlap warning */}
+        {overlappingPeriods.length > 0 && (
+          <div
+            className="flex gap-3 rounded-md border border-yellow-300 bg-yellow-50 dark:border-yellow-700 dark:bg-yellow-950/40 p-3 text-sm"
+            data-testid="warning-payroll-overlap"
+          >
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-yellow-600 dark:text-yellow-400" />
+            <div className="text-yellow-800 dark:text-yellow-300">
+              <p className="font-medium">This period overlaps an existing payroll run</p>
+              <ul className="mt-1 list-disc list-inside space-y-0.5 text-yellow-700 dark:text-yellow-400">
+                {overlappingPeriods.map((p) => (
+                  <li key={`${p.periodStart}-${p.periodEnd}`}>
+                    {p.periodStart} → {p.periodEnd}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1">Submitting will be rejected by the server. Adjust the dates to avoid the overlap.</p>
+            </div>
+          </div>
+        )}
 
         {/* Preview */}
         {watchStart && watchEnd && (
