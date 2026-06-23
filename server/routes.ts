@@ -1323,6 +1323,10 @@ export async function registerRoutes(
       const labels = await fetchGmailLabelsForUser(req.session.userId!);
       res.json(labels);
     } catch (err) {
+      const msg = String(err);
+      if (msg.includes("not connected") || msg.includes("expired")) {
+        return res.status(401).json({ error: "Gmail not connected", code: "NOT_CONNECTED" });
+      }
       console.error("Gmail labels error:", err);
       res.status(500).json({ error: "Failed to fetch Gmail labels" });
     }

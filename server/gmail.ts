@@ -38,7 +38,9 @@ async function fetchGmailInboxWithToken(
     { headers: { Authorization: `Bearer ${token}` } }
   );
 
-  if (listRes.status === 401) throw new Error("Gmail token expired — please reconnect");
+  if (listRes.status === 401 || listRes.status === 403) {
+    throw new Error("Gmail token expired — please reconnect");
+  }
   if (!listRes.ok) throw new Error(`Gmail list failed: ${listRes.status}`);
 
   const listData = (await listRes.json()) as { messages?: Array<{ id: string }> };
@@ -209,7 +211,17 @@ async function refreshUserToken(token: GoogleToken): Promise<string | null> {
       }).toString(),
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}) as Record<string, unknown>);
+      const errCode = (errBody as { error?: string }).error;
+      if (errCode === "invalid_grant" || errCode === "token_revoked") {
+        console.warn(`[gmail] Refresh token revoked for user ${token.userId} — clearing stored token`);
+        await storage.deleteGoogleToken(token.userId).catch(() => {});
+      } else {
+        console.warn(`[gmail] Token refresh failed for user ${token.userId}: ${errCode ?? res.status}`);
+      }
+      return null;
+    }
 
     const data = (await res.json()) as {
       access_token: string;
@@ -239,19 +251,22 @@ export async function getUserAccessToken(userId: string): Promise<string | null>
   const token = await storage.getGoogleToken(userId);
   if (!token) return null;
 
-  // If not expired (with 60-second buffer), return as-is
-  if (token.expiresAt && token.expiresAt.getTime() - Date.now() > 60_000) {
-    return token.accessToken;
-  }
+  // Token has no expiry recorded — assume it's still valid
+  if (!token.expiresAt) return token.accessToken;
 
-  // Try to refresh
+  // Still fresh (60-second buffer)
+  if (token.expiresAt.getTime() - Date.now() > 60_000) return token.accessToken;
+
+  // Expired — try to refresh
   if (token.refreshToken) {
     const refreshed = await refreshUserToken(token);
-    if (refreshed) return refreshed;
+    // If refresh failed (returned null), refreshUserToken may have already deleted
+    // the token for invalid_grant. Either way, don't send a stale token to Gmail.
+    return refreshed;
   }
 
-  // Return potentially-expired token as last resort (the API call will fail if expired)
-  return token.accessToken;
+  // Expired with no refresh token — can't recover
+  return null;
 }
 
 /**
@@ -303,7 +318,12 @@ export async function fetchGmailLabelsForUser(userId: string): Promise<
   const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/labels", {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) throw new Error(`Failed to fetch labels: ${res.status}`);
+  if (!res.ok) {
+    if (res.status === 401 || res.status === 403) {
+      throw new Error("Gmail token expired — please reconnect");
+    }
+    throw new Error(`Failed to fetch labels: ${res.status}`);
+  }
   const data = (await res.json()) as {
     labels?: Array<{ id: string; name: string; type: string }>;
   };

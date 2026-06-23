@@ -608,12 +608,15 @@ export default function InboxTasks() {
 
   // Available Gmail labels — fetched on-demand (enabled by state)
   const [labelPickerOpen, setLabelPickerOpen] = useState(false);
-  const { data: availableLabels = [], isLoading: labelsLoading } = useQuery<
-    Array<{ id: string; name: string; type: string }>
-  >({
+  const {
+    data: availableLabels = [],
+    isLoading: labelsLoading,
+    isError: labelsError,
+  } = useQuery<Array<{ id: string; name: string; type: string }>>({
     queryKey: ["/api/gmail/labels"],
     enabled: connected && labelPickerOpen,
     staleTime: 5 * 60 * 1000,
+    retry: 0,
   });
 
   // Pending label selection state (local until saved)
@@ -989,6 +992,23 @@ export default function InboxTasks() {
                   {labelsLoading || syncLabelsLoading ? (
                     <div className="px-3 py-4 text-sm text-muted-foreground text-center">
                       Loading labels…
+                    </div>
+                  ) : labelsError ? (
+                    <div className="px-3 py-4 text-center">
+                      <p className="text-sm text-destructive font-medium mb-1">
+                        Gmail connection lost
+                      </p>
+                      <p className="text-xs text-muted-foreground mb-3">
+                        Your Gmail token has expired. Reconnect to load labels.
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => { setLabelPickerOpen(false); handleConnect(); }}
+                      >
+                        <PlugZap className="h-3.5 w-3.5 mr-1.5" />
+                        Reconnect Gmail
+                      </Button>
                     </div>
                   ) : availableLabels.length === 0 ? (
                     <div className="px-3 py-4 text-sm text-muted-foreground text-center">
