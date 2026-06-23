@@ -304,6 +304,16 @@ export default function SettingsPage() {
     return next;
   }
 
+  const watchedSyncHour = form.watch("inboxSyncHour");
+
+  const liveNextSync = (() => {
+    if (watchedSyncHour === "" || watchedSyncHour === null || watchedSyncHour === undefined) return null;
+    const parsed = Number(watchedSyncHour);
+    const hour = Number.isInteger(parsed) && parsed >= 0 && parsed <= 23 ? parsed : null;
+    if (hour === null) return null;
+    return computeNextSyncTime(hour);
+  })();
+
   const onSubmit = (data: SettingsFormValues) => {
     updateSettingsMutation.mutate(data);
   };
@@ -551,12 +561,12 @@ export default function SettingsPage() {
                     </FormItem>
                   )}
                 />
-                {settings?.nextInboxSync && (
+                {liveNextSync && (
                   <p className="text-sm text-muted-foreground" data-testid="text-next-inbox-sync">
                     Next sync:{" "}
                     <span className="font-medium text-foreground">
                       {(() => {
-                        const next = new Date(settings.nextInboxSync!);
+                        const next = liveNextSync;
                         const now = new Date();
                         const isToday =
                           next.getFullYear() === now.getFullYear() &&
