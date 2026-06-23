@@ -252,7 +252,7 @@ function TaskRow({
               title={`This email was snoozed until ${format(new Date(task.snoozedUntil), "PPP")}`}
             >
               <Clock className="h-3 w-3" />
-              Snoozed until {format(new Date(task.snoozedUntil), "MMM d")}
+              Snoozed until {format(new Date(task.snoozedUntil), "MMM d")} · {formatDistanceToNow(new Date(task.snoozedUntil), { addSuffix: true })}
             </span>
           )}
         </div>
