@@ -112,6 +112,23 @@ function LineItemForm({
   });
 
   const isChangeOrder = form.watch("isChangeOrder");
+  const watchedQuantity = form.watch("quantity");
+  const watchedRate = form.watch("rate");
+
+  const computedAmount = (() => {
+    const q = parseFloat(watchedQuantity);
+    const r = parseFloat(watchedRate);
+    if (isNaN(q) || isNaN(r) || !isFinite(q) || !isFinite(r)) return 0;
+    if (q <= 0 || r < 0) return 0;
+    return q * r;
+  })();
+
+  const formatAmount = (val: number) =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+    }).format(val);
 
   const mutation = useMutation({
     mutationFn: async (data: LineItemFormValues) => {
@@ -261,6 +278,15 @@ function LineItemForm({
               </FormItem>
             )}
           />
+        </div>
+        <div className="flex items-center justify-between rounded-md border bg-muted/40 px-4 py-3">
+          <span className="text-sm font-medium text-muted-foreground">Amount</span>
+          <span
+            className="font-mono text-base font-semibold"
+            data-testid="text-computed-amount"
+          >
+            {formatAmount(computedAmount)}
+          </span>
         </div>
         <FormField
           control={form.control}
