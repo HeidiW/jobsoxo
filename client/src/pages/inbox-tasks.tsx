@@ -432,15 +432,20 @@ function HiddenTaskRow({
   task,
   onRestore,
   onDelete,
+  isSelected,
+  onToggleSelect,
 }: {
   task: InboxTask;
   onRestore: (emailId: string) => void;
   onDelete: (emailId: string) => void;
+  isSelected?: boolean;
+  onToggleSelect?: (emailId: string, checked: boolean) => void;
 }) {
   const initials = senderInitials(task.sender);
   const color = senderColor(task.senderEmail ?? task.sender);
   const receivedAt = new Date(task.receivedAt);
   const isSnoozed = !task.dismissed && task.snoozedUntil != null;
+  const isDismissed = task.dismissed;
   const isOverdue =
     isSnoozed &&
     task.snoozedUntil != null &&
@@ -451,6 +456,16 @@ function HiddenTaskRow({
       className="flex items-center gap-3 p-3 rounded-lg opacity-60 hover:opacity-100 transition-opacity group"
       data-testid={`row-hidden-${task.emailId}`}
     >
+      {isDismissed && onToggleSelect && (
+        <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+          <Checkbox
+            checked={isSelected ?? false}
+            onCheckedChange={(checked) => onToggleSelect(task.emailId, !!checked)}
+            data-testid={`checkbox-dismissed-${task.emailId}`}
+            className="h-4 w-4"
+          />
+        </div>
+      )}
       <div
         className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 text-white text-xs font-semibold ${color}`}
       >
@@ -524,8 +539,10 @@ export default function InboxTasks() {
   const [showDone, setShowDone] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
   const [showClearDismissedDialog, setShowClearDismissedDialog] = useState(false);
+  const [showDeleteSelectedDialog, setShowDeleteSelectedDialog] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [selectedDismissedIds, setSelectedDismissedIds] = useState<Set<string>>(new Set());
 
   // Handle OAuth redirect result on page load
   useEffect(() => {
@@ -811,6 +828,12 @@ export default function InboxTasks() {
   };
 
   const handleDelete = (emailId: string) => {
+    setSelectedDismissedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(emailId);
+      return next;
+    });
+
     const task = hiddenTasks.find((t) => t.emailId === emailId);
     if (!task) return;
 
@@ -871,6 +894,7 @@ export default function InboxTasks() {
   const handleClearAllDismissed = () => {
     const hidden: InboxTask[] = queryClient.getQueryData(["/api/inbox/tasks/hidden"]) ?? [];
     const dismissedCount = hidden.filter((t) => t.dismissed).length;
+    setSelectedDismissedIds(new Set());
     queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
       old.filter((t) => !t.dismissed)
     );
@@ -881,8 +905,60 @@ export default function InboxTasks() {
     toast({ title: `${dismissedCount} email${dismissedCount !== 1 ? "s" : ""} permanently deleted` });
   };
 
+  const handleToggleSelectDismissed = (emailId: string, checked: boolean) => {
+    setSelectedDismissedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(emailId);
+      else next.delete(emailId);
+      return next;
+    });
+  };
+
+  const handleDeleteSelected = () => {
+    const ids = Array.from(selectedDismissedIds);
+    setSelectedDismissedIds(new Set());
+    queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
+      old.filter((t) => !ids.includes(t.emailId))
+    );
+    apiRequest("DELETE", "/api/inbox/tasks/bulk", { emailIds: ids }).catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+      toast({ title: "Couldn't delete selected emails", variant: "destructive" });
+    });
+    toast({ title: `${ids.length} email${ids.length !== 1 ? "s" : ""} permanently deleted` });
+  };
+
   return (
     <div className="p-6 max-w-3xl mx-auto">
+      {/* Delete selected dismissed confirmation */}
+      <AlertDialog
+        open={showDeleteSelectedDialog}
+        onOpenChange={setShowDeleteSelectedDialog}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selectedDismissedIds.size} selected email{selectedDismissedIds.size !== 1 ? "s" : ""}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the selected dismissed emails. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-delete-selected-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-delete-selected-confirm"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                setShowDeleteSelectedDialog(false);
+                handleDeleteSelected();
+              }}
+            >
+              Delete {selectedDismissedIds.size} email{selectedDismissedIds.size !== 1 ? "s" : ""}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Clear all dismissed confirmation */}
       <AlertDialog
         open={showClearDismissedDialog}
@@ -1342,17 +1418,31 @@ export default function InboxTasks() {
                 );
               })()}
             </button>
-            {hiddenTasks.some((t) => t.dismissed) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs text-muted-foreground hover:text-destructive h-7 px-2"
-                onClick={() => setShowClearDismissedDialog(true)}
-                data-testid="button-clear-all-dismissed"
-              >
-                Clear all dismissed
-              </Button>
-            )}
+            <div className="flex items-center gap-1 shrink-0">
+              {selectedDismissedIds.size > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-destructive hover:text-destructive h-7 px-2"
+                  onClick={() => setShowDeleteSelectedDialog(true)}
+                  data-testid="button-delete-selected"
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                  Delete selected ({selectedDismissedIds.size})
+                </Button>
+              )}
+              {hiddenTasks.some((t) => t.dismissed) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-muted-foreground hover:text-destructive h-7 px-2"
+                  onClick={() => setShowClearDismissedDialog(true)}
+                  data-testid="button-clear-all-dismissed"
+                >
+                  Clear all dismissed
+                </Button>
+              )}
+            </div>
           </div>
 
           {showHidden && (
@@ -1420,6 +1510,8 @@ export default function InboxTasks() {
                                     task={t}
                                     onRestore={handleRestore}
                                     onDelete={handleDelete}
+                                    isSelected={selectedDismissedIds.has(t.emailId)}
+                                    onToggleSelect={handleToggleSelectDismissed}
                                   />
                                 ))}
                               </div>

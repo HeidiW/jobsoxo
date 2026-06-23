@@ -1617,6 +1617,18 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/inbox/tasks/bulk", requireAuth, async (req, res) => {
+    try {
+      const parsed = z.object({ emailIds: z.array(z.string()).min(1) }).safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      await storage.deleteManyInboxTasks(req.session.userId!, parsed.data.emailIds);
+      res.status(204).end();
+    } catch (error) {
+      console.error("Bulk delete inbox tasks error:", error);
+      res.status(500).json({ error: "Failed to delete tasks" });
+    }
+  });
+
   app.delete("/api/inbox/tasks/dismissed", requireAuth, async (req, res) => {
     try {
       await storage.deleteAllDismissedInboxTasks(req.session.userId!);

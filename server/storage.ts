@@ -41,7 +41,7 @@ import {
   googleTokens,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, lte, sql, isNull, or } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sql, isNull, or, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -146,6 +146,7 @@ export interface IStorage {
   restoreInboxTask(userId: string, emailId: string): Promise<InboxTask | undefined>;
   deleteInboxTask(userId: string, emailId: string): Promise<void>;
   deleteAllDismissedInboxTasks(userId: string): Promise<void>;
+  deleteManyInboxTasks(userId: string, emailIds: string[]): Promise<void>;
   deleteUserInboxTasks(userId: string): Promise<void>;
   deleteAllInboxTasks(): Promise<void>;
 
@@ -609,6 +610,14 @@ export class DatabaseStorage implements IStorage {
       .update(inboxTasks)
       .set({ permanentlyDeleted: true })
       .where(and(eq(inboxTasks.userId, userId), eq(inboxTasks.dismissed, true)));
+  }
+
+  async deleteManyInboxTasks(userId: string, emailIds: string[]): Promise<void> {
+    if (emailIds.length === 0) return;
+    await db
+      .update(inboxTasks)
+      .set({ permanentlyDeleted: true })
+      .where(and(eq(inboxTasks.userId, userId), inArray(inboxTasks.emailId, emailIds)));
   }
 
   async deleteUserInboxTasks(userId: string): Promise<void> {
