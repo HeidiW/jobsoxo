@@ -222,7 +222,7 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const { data: settings, isLoading } = useQuery<Settings & { nextInboxSync?: string }>({
+  const { data: settings, isLoading } = useQuery<Settings & { nextInboxSync?: string; lastInboxSync?: string | null }>({
     queryKey: ["/api/settings"],
   });
 
@@ -564,6 +564,29 @@ export default function SettingsPage() {
                           next.getDate() === now.getDate();
                         const timeStr = next.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
                         return isToday ? `today at ${timeStr}` : `tomorrow at ${timeStr}`;
+                      })()}
+                    </span>
+                  </p>
+                )}
+                {settings?.lastInboxSync && (
+                  <p className="text-sm text-muted-foreground" data-testid="text-last-inbox-sync">
+                    Last synced:{" "}
+                    <span className="font-medium text-foreground">
+                      {(() => {
+                        const last = new Date(settings.lastInboxSync!);
+                        const now = new Date();
+                        const diffMs = now.getTime() - last.getTime();
+                        const diffMins = Math.floor(diffMs / 60000);
+                        const diffHours = Math.floor(diffMins / 60);
+                        if (diffMins < 1) return "just now";
+                        if (diffMins < 60) return `${diffMins} minute${diffMins === 1 ? "" : "s"} ago`;
+                        if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+                        const timeStr = last.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+                        const isToday =
+                          last.getFullYear() === now.getFullYear() &&
+                          last.getMonth() === now.getMonth() &&
+                          last.getDate() === now.getDate();
+                        return isToday ? `today at ${timeStr}` : last.toLocaleDateString([], { month: "short", day: "numeric" }) + ` at ${timeStr}`;
                       })()}
                     </span>
                   </p>

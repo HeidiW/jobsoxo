@@ -1576,7 +1576,8 @@ export async function registerRoutes(
         });
       }
       const nextInboxSync = await getNextInboxSyncTime();
-      res.json({ ...settings, nextInboxSync });
+      const lastInboxSync = await getLastInboxSyncTime();
+      res.json({ ...settings, nextInboxSync, lastInboxSync });
     } catch (error) {
       console.error("Get settings error:", error);
       res.status(500).json({ error: "Failed to get settings" });
