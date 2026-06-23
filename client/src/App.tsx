@@ -26,6 +26,8 @@ import InboxTasks from "@/pages/inbox-tasks";
 import Settings from "@/pages/settings";
 import Login from "@/pages/login";
 import ResetPassword from "@/pages/reset-password";
+import Privacy from "@/pages/privacy";
+import Terms from "@/pages/terms";
 
 function Router() {
   return (
@@ -76,9 +78,15 @@ function AuthenticatedApp() {
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
 
-  // Allow reset-password page without authentication
+  // Public pages — accessible without authentication
   if (window.location.pathname === "/reset-password") {
     return <ResetPassword />;
+  }
+  if (window.location.pathname === "/privacy") {
+    return <Privacy />;
+  }
+  if (window.location.pathname === "/terms") {
+    return <Terms />;
   }
 
   if (isLoading) {
