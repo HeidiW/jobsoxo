@@ -524,6 +524,7 @@ export default function InboxTasks() {
 
   const [showDone, setShowDone] = useState(false);
   const [showDisconnectDialog, setShowDisconnectDialog] = useState(false);
+  const [showClearDismissedDialog, setShowClearDismissedDialog] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
@@ -731,8 +732,47 @@ export default function InboxTasks() {
     toast({ title: "Email permanently deleted" });
   };
 
+  const handleClearAllDismissed = () => {
+    queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
+      old.filter((t) => !t.dismissed)
+    );
+    apiRequest("DELETE", "/api/inbox/tasks/dismissed").catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+      toast({ title: "Couldn't clear dismissed emails", variant: "destructive" });
+    });
+    toast({ title: "All dismissed emails cleared" });
+  };
+
   return (
     <div className="p-6 max-w-3xl mx-auto">
+      {/* Clear all dismissed confirmation */}
+      <AlertDialog
+        open={showClearDismissedDialog}
+        onOpenChange={setShowClearDismissedDialog}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear all dismissed emails?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete all dismissed emails. Snoozed emails will not be affected. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-clear-dismissed-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-clear-dismissed-confirm"
+              onClick={() => {
+                setShowClearDismissedDialog(false);
+                handleClearAllDismissed();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Clear all dismissed
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Disconnect confirmation */}
       <AlertDialog
         open={showDisconnectDialog}
@@ -977,55 +1017,68 @@ export default function InboxTasks() {
       {/* Hidden emails — collapsible section */}
       {connected && (
         <div className="mt-4">
-          <button
-            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors w-full text-left px-1 py-1 rounded"
-            onClick={() => setShowHidden((v) => !v)}
-            data-testid="button-toggle-hidden"
-          >
-            {showHidden ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronRight className="h-4 w-4" />
+          <div className="flex items-center justify-between">
+            <button
+              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors flex-1 text-left px-1 py-1 rounded"
+              onClick={() => setShowHidden((v) => !v)}
+              data-testid="button-toggle-hidden"
+            >
+              {showHidden ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+              <span className="font-medium">Hidden emails</span>
+              <span className="text-xs opacity-70">(dismissed &amp; snoozed)</span>
+              {hiddenTasks.length > 0 && (() => {
+                const snoozedCount = hiddenTasks.filter(
+                  (t) => !t.dismissed && t.snoozedUntil != null
+                ).length;
+                const dismissedCount = hiddenTasks.filter((t) => t.dismissed).length;
+                return (
+                  <span
+                    className="ml-1 flex items-center gap-1 text-xs text-muted-foreground"
+                    data-testid="badge-hidden-count"
+                  >
+                    {snoozedCount > 0 && (
+                      <Badge
+                        variant="secondary"
+                        className="text-xs px-1.5 py-0 gap-1"
+                        data-testid="badge-hidden-snoozed-count"
+                      >
+                        <Clock className="h-3 w-3" />
+                        {snoozedCount} snoozed
+                      </Badge>
+                    )}
+                    {snoozedCount > 0 && dismissedCount > 0 && (
+                      <span className="opacity-50">·</span>
+                    )}
+                    {dismissedCount > 0 && (
+                      <Badge
+                        variant="secondary"
+                        className="text-xs px-1.5 py-0 gap-1"
+                        data-testid="badge-hidden-dismissed-count"
+                      >
+                        <X className="h-3 w-3" />
+                        {dismissedCount} dismissed
+                      </Badge>
+                    )}
+                  </span>
+                );
+              })()}
+            </button>
+            {hiddenTasks.some((t) => t.dismissed) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-muted-foreground hover:text-destructive h-7 px-2"
+                onClick={() => setShowClearDismissedDialog(true)}
+                data-testid="button-clear-all-dismissed"
+              >
+                Clear all dismissed
+              </Button>
             )}
-            <span className="font-medium">Hidden emails</span>
-            <span className="text-xs opacity-70">(dismissed &amp; snoozed)</span>
-            {hiddenTasks.length > 0 && (() => {
-              const snoozedCount = hiddenTasks.filter(
-                (t) => !t.dismissed && t.snoozedUntil != null
-              ).length;
-              const dismissedCount = hiddenTasks.filter((t) => t.dismissed).length;
-              return (
-                <span
-                  className="ml-1 flex items-center gap-1 text-xs text-muted-foreground"
-                  data-testid="badge-hidden-count"
-                >
-                  {snoozedCount > 0 && (
-                    <Badge
-                      variant="secondary"
-                      className="text-xs px-1.5 py-0 gap-1"
-                      data-testid="badge-hidden-snoozed-count"
-                    >
-                      <Clock className="h-3 w-3" />
-                      {snoozedCount} snoozed
-                    </Badge>
-                  )}
-                  {snoozedCount > 0 && dismissedCount > 0 && (
-                    <span className="opacity-50">·</span>
-                  )}
-                  {dismissedCount > 0 && (
-                    <Badge
-                      variant="secondary"
-                      className="text-xs px-1.5 py-0 gap-1"
-                      data-testid="badge-hidden-dismissed-count"
-                    >
-                      <X className="h-3 w-3" />
-                      {dismissedCount} dismissed
-                    </Badge>
-                  )}
-                </span>
-              );
-            })()}
-          </button>
+          </div>
 
           {showHidden && (
             <Card className="mt-2">

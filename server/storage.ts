@@ -143,6 +143,7 @@ export interface IStorage {
   snoozeInboxTask(userId: string, emailId: string, until: Date): Promise<InboxTask | undefined>;
   restoreInboxTask(userId: string, emailId: string): Promise<InboxTask | undefined>;
   deleteInboxTask(userId: string, emailId: string): Promise<void>;
+  deleteAllDismissedInboxTasks(userId: string): Promise<void>;
   deleteUserInboxTasks(userId: string): Promise<void>;
   deleteAllInboxTasks(): Promise<void>;
 
@@ -599,6 +600,13 @@ export class DatabaseStorage implements IStorage {
       .update(inboxTasks)
       .set({ permanentlyDeleted: true })
       .where(and(eq(inboxTasks.userId, userId), eq(inboxTasks.emailId, emailId)));
+  }
+
+  async deleteAllDismissedInboxTasks(userId: string): Promise<void> {
+    await db
+      .update(inboxTasks)
+      .set({ permanentlyDeleted: true })
+      .where(and(eq(inboxTasks.userId, userId), eq(inboxTasks.dismissed, true)));
   }
 
   async deleteUserInboxTasks(userId: string): Promise<void> {

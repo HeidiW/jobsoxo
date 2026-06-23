@@ -1553,6 +1553,16 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/inbox/tasks/dismissed", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteAllDismissedInboxTasks(req.session.userId!);
+      res.status(204).end();
+    } catch (error) {
+      console.error("Delete all dismissed inbox tasks error:", error);
+      res.status(500).json({ error: "Failed to delete dismissed tasks" });
+    }
+  });
+
   app.delete("/api/inbox/tasks/:emailId", requireAuth, async (req, res) => {
     try {
       await storage.deleteInboxTask(req.session.userId!, req.params.emailId);
