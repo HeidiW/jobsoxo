@@ -966,15 +966,42 @@ export default function InboxTasks() {
             )}
             <span className="font-medium">Hidden emails</span>
             <span className="text-xs opacity-70">(dismissed &amp; snoozed)</span>
-            {hiddenTasks.length > 0 && (
-              <Badge
-                variant="secondary"
-                className="text-xs px-1.5 py-0 ml-1"
-                data-testid="badge-hidden-count"
-              >
-                {hiddenTasks.length}
-              </Badge>
-            )}
+            {hiddenTasks.length > 0 && (() => {
+              const snoozedCount = hiddenTasks.filter(
+                (t) => !t.dismissed && t.snoozedUntil != null
+              ).length;
+              const dismissedCount = hiddenTasks.filter((t) => t.dismissed).length;
+              return (
+                <span
+                  className="ml-1 flex items-center gap-1 text-xs text-muted-foreground"
+                  data-testid="badge-hidden-count"
+                >
+                  {snoozedCount > 0 && (
+                    <Badge
+                      variant="secondary"
+                      className="text-xs px-1.5 py-0 gap-1"
+                      data-testid="badge-hidden-snoozed-count"
+                    >
+                      <Clock className="h-3 w-3" />
+                      {snoozedCount} snoozed
+                    </Badge>
+                  )}
+                  {snoozedCount > 0 && dismissedCount > 0 && (
+                    <span className="opacity-50">·</span>
+                  )}
+                  {dismissedCount > 0 && (
+                    <Badge
+                      variant="secondary"
+                      className="text-xs px-1.5 py-0 gap-1"
+                      data-testid="badge-hidden-dismissed-count"
+                    >
+                      <X className="h-3 w-3" />
+                      {dismissedCount} dismissed
+                    </Badge>
+                  )}
+                </span>
+              );
+            })()}
           </button>
 
           {showHidden && (
