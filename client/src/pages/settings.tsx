@@ -573,7 +573,6 @@ export default function SettingsPage() {
                     <span className="font-medium text-foreground">
                       {(() => {
                         const next = liveNextSync;
-                        const now = new Date();
                         const isToday =
                           next.getFullYear() === now.getFullYear() &&
                           next.getMonth() === now.getMonth() &&
