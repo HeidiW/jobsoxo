@@ -968,7 +968,7 @@ export default function InboxTasks() {
           <AlertDialogHeader>
             <AlertDialogTitle>Clear all dismissed emails?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete all dismissed emails. Snoozed emails will not be affected. This action cannot be undone.
+              This will permanently delete {hiddenTasks.filter((t) => t.dismissed).length} dismissed email{hiddenTasks.filter((t) => t.dismissed).length !== 1 ? "s" : ""}. Snoozed emails will not be affected. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
