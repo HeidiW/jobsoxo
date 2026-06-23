@@ -1157,7 +1157,16 @@ export default function InboxTasks() {
       )}
 
       {/* Main content */}
-      <Card>
+      <Card className="relative overflow-hidden">
+        {/* Thin progress bar shown during manual refresh (not initial load) */}
+        {tasksFetching && !isLoading && (
+          <div
+            className="absolute top-0 left-0 right-0 h-0.5 bg-primary/20 z-10"
+            data-testid="indicator-list-refreshing"
+          >
+            <div className="h-full bg-primary animate-progress" />
+          </div>
+        )}
         <CardContent className="pt-4">
           {isLoading ? (
             <TasksSkeleton />
