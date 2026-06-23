@@ -38,13 +38,41 @@ import { Plus, Trash2, ArrowLeft, Save, Send } from "lucide-react";
 import { format, addDays } from "date-fns";
 import type { Client, Job, LineItem } from "@shared/schema";
 
-const lineItemSchema = z.object({
-  category: z.enum(["materials", "labor", "square_footage", "other"]),
-  description: z.string().min(1, "Description is required"),
-  quantity: z.string().min(1, "Quantity is required"),
-  unit: z.string().min(1, "Unit is required"),
-  rate: z.string().min(1, "Rate is required"),
-});
+function positiveNumericField(label: string) {
+  return z
+    .string()
+    .min(1, `${label} is required`)
+    .refine(
+      (val) => !isNaN(parseFloat(val)) && isFinite(Number(val)),
+      `${label} must be a valid number`
+    )
+    .refine((val) => parseFloat(val) > 0, `${label} must be greater than zero`);
+}
+
+const lineItemSchema = z
+  .object({
+    category: z.enum(["materials", "labor", "square_footage", "other"]),
+    description: z.string().min(1, "Description is required"),
+    quantity: positiveNumericField("Quantity"),
+    unit: z.string().min(1, "Unit is required"),
+    rate: positiveNumericField("Rate"),
+    amount: positiveNumericField("Amount"),
+  })
+  .superRefine((data, ctx) => {
+    const qty = parseFloat(data.quantity);
+    const rate = parseFloat(data.rate);
+    const amount = parseFloat(data.amount);
+    if (!isNaN(qty) && !isNaN(rate) && !isNaN(amount)) {
+      const expected = qty * rate;
+      if (Math.abs(amount - expected) > 0.001) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Amount must equal quantity × rate (expected ${expected.toFixed(2)}, got ${amount.toFixed(2)})`,
+          path: ["amount"],
+        });
+      }
+    }
+  });
 
 const invoiceFormSchema = z.object({
   clientId: z.string().min(1, "Client is required"),
@@ -58,7 +86,7 @@ const invoiceFormSchema = z.object({
 type InvoiceFormValues = z.infer<typeof invoiceFormSchema>;
 type LineItemFormValues = z.infer<typeof lineItemSchema>;
 
-interface NewLineItem extends Omit<LineItemFormValues, "quantity" | "rate"> {
+interface NewLineItem extends Omit<LineItemFormValues, "quantity" | "rate" | "amount"> {
   id: string;
   quantity: number;
   rate: number;
@@ -193,13 +221,15 @@ export default function InvoiceNew() {
   const addLineItem = (data: LineItemFormValues) => {
     const quantity = parseFloat(data.quantity);
     const rate = parseFloat(data.rate);
-    const amount = quantity * rate;
+    const amount = parseFloat(data.amount);
 
     setLineItems([
       ...lineItems,
       {
         id: crypto.randomUUID(),
-        ...data,
+        category: data.category,
+        description: data.description,
+        unit: data.unit,
         quantity,
         rate,
         amount,
@@ -500,16 +530,34 @@ function LineItemForm({
 }) {
   const form = useForm<LineItemFormValues>({
     resolver: zodResolver(lineItemSchema),
+    mode: "onChange",
     defaultValues: {
       category: "labor",
       description: "",
       quantity: "",
       unit: "hours",
       rate: "",
+      amount: "",
     },
   });
 
   const category = form.watch("category");
+  const watchedQuantity = form.watch("quantity");
+  const watchedRate = form.watch("rate");
+
+  const computedAmount = (() => {
+    const q = parseFloat(watchedQuantity);
+    const r = parseFloat(watchedRate);
+    if (isNaN(q) || isNaN(r) || !isFinite(q) || !isFinite(r)) return 0;
+    if (q <= 0 || r <= 0) return 0;
+    return q * r;
+  })();
+
+  useEffect(() => {
+    if (computedAmount > 0) {
+      form.setValue("amount", computedAmount.toFixed(2), { shouldValidate: true });
+    }
+  }, [computedAmount, form]);
 
   useEffect(() => {
     if (category === "labor") {
@@ -617,6 +665,19 @@ function LineItemForm({
                 )}
               />
             </div>
+            <FormField
+              control={form.control}
+              name="amount"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Amount ($)</FormLabel>
+                  <FormControl>
+                    <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-line-item-amount" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={onCancel} data-testid="button-cancel-line-item">
                 Cancel
