@@ -550,7 +550,13 @@ export default function InboxTasks() {
   });
 
   // Cached tasks for this user — re-fetches every 5 min while tab is visible
-  const { data: tasks = [], isLoading: tasksLoading, dataUpdatedAt } = useQuery<InboxTask[]>({
+  const {
+    data: tasks = [],
+    isLoading: tasksLoading,
+    isFetching: tasksFetching,
+    dataUpdatedAt,
+    refetch: refetchTasks,
+  } = useQuery<InboxTask[]>({
     queryKey: ["/api/inbox/tasks"],
     refetchInterval: 5 * 60 * 1000,
     refetchIntervalInBackground: false,
@@ -877,18 +883,29 @@ export default function InboxTasks() {
         </div>
       )}
 
-      {/* Last updated indicator */}
+      {/* Last updated indicator + lightweight refresh */}
       {connected && dataUpdatedAt > 0 && (
-        <p
-          className="text-xs text-muted-foreground text-right mb-2 select-none"
-          data-testid="text-list-updated-at"
-          title={new Date(dataUpdatedAt).toLocaleString()}
-        >
-          Updated{" "}
-          {now - dataUpdatedAt < 60_000
-            ? "just now"
-            : formatDistanceToNow(new Date(dataUpdatedAt), { addSuffix: true })}
-        </p>
+        <div className="flex items-center justify-end gap-2 mb-2">
+          <p
+            className="text-xs text-muted-foreground select-none"
+            data-testid="text-list-updated-at"
+            title={new Date(dataUpdatedAt).toLocaleString()}
+          >
+            Updated{" "}
+            {now - dataUpdatedAt < 60_000
+              ? "just now"
+              : formatDistanceToNow(new Date(dataUpdatedAt), { addSuffix: true })}
+          </p>
+          <button
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+            onClick={() => refetchTasks()}
+            disabled={tasksFetching}
+            data-testid="button-refresh-list"
+          >
+            <RefreshCw className={`h-3 w-3 ${tasksFetching ? "animate-spin" : ""}`} />
+            Refresh list
+          </button>
+        </div>
       )}
 
       {/* Main content */}
