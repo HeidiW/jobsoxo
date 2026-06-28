@@ -67,6 +67,7 @@ import {
   FileText,
   ChevronDown,
   AlertTriangle,
+  PhoneOff,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -781,7 +782,20 @@ export default function Payroll() {
                           <TableCell className="text-right hidden lg:table-cell font-mono text-sm">{(emp.hoursThisPeriod || 0).toFixed(1)} hrs</TableCell>
                           <TableCell className="text-right hidden lg:table-cell font-mono font-medium">{fmt(emp.totalPay || 0)}</TableCell>
                           <TableCell>
-                            <Badge variant={emp.status === "active" ? "default" : "secondary"}>{emp.status}</Badge>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <Badge variant={emp.status === "active" ? "default" : "secondary"}>{emp.status}</Badge>
+                              {!emp.phone && emp.status === "active" && (
+                                <Badge
+                                  variant="outline"
+                                  className="gap-1 border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400"
+                                  title="No phone number — employee cannot log hours by text message"
+                                  data-testid={`badge-no-phone-${emp.id}`}
+                                >
+                                  <PhoneOff className="h-3 w-3" />
+                                  No phone
+                                </Badge>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right">
                             <DropdownMenu>

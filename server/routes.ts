@@ -20,6 +20,8 @@ import {
   fetchGmailLabelsForUser,
 } from "./gmail";
 import { getLastInboxSyncTime, getNextInboxSyncTime, syncInboxForConnectedUsers } from "./scheduler";
+import { handleInboundSms, twimlReply } from "./sms";
+import twilio from "twilio";
 
 function parseNumeric(value: unknown): number {
   if (typeof value === "number") return value;
@@ -324,6 +326,35 @@ export async function registerRoutes(
       if (err || !user) return oauthFail(res);
       oauthSuccess(req, res, user);
     })(req, res, next);
+  });
+
+  // ── SMS inbound webhook (public — Twilio posts here) ─────────────────────
+  app.post("/api/sms/inbound", async (req, res) => {
+    try {
+      const authToken = process.env.TWILIO_AUTH_TOKEN;
+      if (authToken) {
+        const sig = (req.headers["x-twilio-signature"] as string) || "";
+        const proto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0].trim() ?? req.protocol;
+        const host = (req.headers["x-forwarded-host"] as string | undefined)?.split(",")[0].trim() ?? req.headers.host ?? "localhost:5000";
+        const url = `${proto}://${host}${req.originalUrl}`;
+        const isValid = twilio.validateRequest(authToken, sig, url, req.body as Record<string, string>);
+        if (!isValid) {
+          res.type("text/xml").send(twimlReply("Forbidden"));
+          return;
+        }
+      }
+      const from: string = req.body?.From ?? "";
+      const body: string = req.body?.Body ?? "";
+      if (!from) {
+        res.type("text/xml").send(twimlReply("Missing sender"));
+        return;
+      }
+      const reply = await handleInboundSms(from, body);
+      res.type("text/xml").send(reply);
+    } catch (error) {
+      console.error("SMS inbound error:", error);
+      res.type("text/xml").send(twimlReply("An error occurred. Please try again."));
+    }
   });
 
   // All routes below require authentication
@@ -1647,6 +1678,11 @@ export async function registerRoutes(
       console.error("Delete inbox task error:", error);
       res.status(500).json({ error: "Failed to delete task" });
     }
+  });
+
+  // ── SMS config (authenticated — returns phone number for display) ────────
+  app.get("/api/sms/config", async (_req, res) => {
+    res.json({ phoneNumber: process.env.TWILIO_PHONE_NUMBER ?? null });
   });
 
   // Settings

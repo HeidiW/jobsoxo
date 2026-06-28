@@ -34,6 +34,7 @@ import {
   Copy,
   Check,
   RefreshCw,
+  MessageSquare,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
@@ -231,6 +232,19 @@ export default function SettingsPage() {
   const { data: settings, isLoading } = useQuery<Settings & { nextInboxSync?: string; lastInboxSync?: string | null }>({
     queryKey: ["/api/settings"],
   });
+
+  const [copiedPhone, setCopiedPhone] = useState(false);
+  const { data: smsConfig } = useQuery<{ phoneNumber: string | null }>({
+    queryKey: ["/api/sms/config"],
+  });
+
+  const copyPhone = () => {
+    if (smsConfig?.phoneNumber) {
+      navigator.clipboard.writeText(smsConfig.phoneNumber);
+      setCopiedPhone(true);
+      setTimeout(() => setCopiedPhone(false), 2000);
+    }
+  };
 
   const form = useForm<SettingsFormValues>({
     resolver: zodResolver(settingsFormSchema),
@@ -632,6 +646,59 @@ export default function SettingsPage() {
           </div>
         </form>
       </Form>
+
+      {/* SMS Time Logging — shown to all users so they can share the number */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            SMS Time Logging
+          </CardTitle>
+          <CardDescription>
+            Employees can text their hours directly to this number — no app or login needed
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {smsConfig?.phoneNumber ? (
+            <>
+              <div className="flex items-center gap-2">
+                <code
+                  className="flex-1 rounded-md border bg-muted px-3 py-2 font-mono text-sm tracking-wider"
+                  data-testid="text-sms-phone-number"
+                >
+                  {smsConfig.phoneNumber}
+                </code>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={copyPhone}
+                  title="Copy number"
+                  data-testid="button-copy-sms-phone"
+                >
+                  {copiedPhone ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              </div>
+              <div className="rounded-md bg-muted/60 p-3 text-sm space-y-1 text-muted-foreground">
+                <p className="font-medium text-foreground">How employees log hours</p>
+                <p>Text <code className="rounded bg-background px-1 py-0.5 text-xs font-mono">8</code> for 8 hours today</p>
+                <p>Text <code className="rounded bg-background px-1 py-0.5 text-xs font-mono">7.5 painting fence</code> for 7.5 hours with a note</p>
+                <p>Text <code className="rounded bg-background px-1 py-0.5 text-xs font-mono">HELP</code> anytime for a reminder</p>
+                <p className="pt-1">Each employee's mobile number must be saved in their profile (Payroll → Employees) for the system to recognise them.</p>
+              </div>
+            </>
+          ) : (
+            <div className="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground space-y-2" data-testid="text-sms-not-configured">
+              <Phone className="mx-auto h-8 w-8 opacity-40" />
+              <p className="font-medium">SMS not yet configured</p>
+              <p>Add your <code className="rounded bg-muted px-1 text-xs font-mono">TWILIO_ACCOUNT_SID</code>, <code className="rounded bg-muted px-1 text-xs font-mono">TWILIO_AUTH_TOKEN</code>, and <code className="rounded bg-muted px-1 text-xs font-mono">TWILIO_PHONE_NUMBER</code> secrets, then point your Twilio number's incoming-SMS webhook to:</p>
+              <code className="block rounded bg-muted px-2 py-1 text-xs font-mono break-all">
+                https://your-domain.replit.app/api/sms/inbound
+              </code>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Only admins can manage invite codes */}
       {user?.isAdmin && <InvitePanel />}
