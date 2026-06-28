@@ -755,8 +755,25 @@ export async function registerRoutes(
         quantity: z.union([z.string(), z.number()]),
         unit: z.string(),
         rate: z.union([z.string(), z.number()]),
+        amount: z.union([z.string(), z.number()]).optional(),
         isChangeOrder: z.boolean().optional(),
         changeOrderReason: z.string().optional().nullable(),
+      }).superRefine((item, ctx) => {
+        if (item.amount !== undefined) {
+          const qty = parseFloat(String(item.quantity));
+          const rate = parseFloat(String(item.rate));
+          const amount = parseFloat(String(item.amount));
+          if (!isNaN(qty) && !isNaN(rate) && !isNaN(amount)) {
+            const expected = qty * rate;
+            if (Math.abs(amount - expected) > 0.001) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: `Amount must equal quantity × rate (expected ${expected.toFixed(2)}, got ${amount.toFixed(2)})`,
+                path: ["amount"],
+              });
+            }
+          }
+        }
       })).optional(),
       send: z.boolean().optional(),
     });
