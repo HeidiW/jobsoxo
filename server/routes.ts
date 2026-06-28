@@ -332,16 +332,19 @@ export async function registerRoutes(
   app.post("/api/sms/inbound", async (req, res) => {
     try {
       const authToken = process.env.TWILIO_AUTH_TOKEN;
-      if (authToken) {
-        const sig = (req.headers["x-twilio-signature"] as string) || "";
-        const proto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0].trim() ?? req.protocol;
-        const host = (req.headers["x-forwarded-host"] as string | undefined)?.split(",")[0].trim() ?? req.headers.host ?? "localhost:5000";
-        const url = `${proto}://${host}${req.originalUrl}`;
-        const isValid = twilio.validateRequest(authToken, sig, url, req.body as Record<string, string>);
-        if (!isValid) {
-          res.type("text/xml").send(twimlReply("Forbidden"));
-          return;
-        }
+      if (!authToken) {
+        console.error("SMS webhook: TWILIO_AUTH_TOKEN is not configured — rejecting request");
+        res.status(403).type("text/xml").send(twimlReply("Service not configured"));
+        return;
+      }
+      const sig = (req.headers["x-twilio-signature"] as string) || "";
+      const proto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0].trim() ?? req.protocol;
+      const host = (req.headers["x-forwarded-host"] as string | undefined)?.split(",")[0].trim() ?? req.headers.host ?? "localhost:5000";
+      const url = `${proto}://${host}${req.originalUrl}`;
+      const isValid = twilio.validateRequest(authToken, sig, url, req.body as Record<string, string>);
+      if (!isValid) {
+        res.status(403).type("text/xml").send(twimlReply("Forbidden"));
+        return;
       }
       const from: string = req.body?.From ?? "";
       const body: string = req.body?.Body ?? "";
