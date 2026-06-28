@@ -567,7 +567,7 @@ export default function JobLineItems() {
                 Add Item
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-md flex flex-col max-h-[90dvh] overflow-hidden">
+            <DialogContent className="max-w-md !flex flex-col max-h-[90dvh] overflow-hidden">
               <DialogHeader className="shrink-0">
                 <DialogTitle>{editingItem ? "Edit Line Item" : "Add Line Item"}</DialogTitle>
               </DialogHeader>
