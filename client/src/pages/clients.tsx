@@ -46,13 +46,25 @@ import {
   Edit,
   FileText,
   MoreHorizontal,
+  Trash2,
 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { format } from "date-fns";
 import type { Client } from "@shared/schema";
 
@@ -305,6 +317,23 @@ export default function Clients() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [deletingClient, setDeletingClient] = useState<Client | null>(null);
+  const { toast } = useToast();
+
+  const deleteClientMutation = useMutation({
+    mutationFn: async (clientId: string) => {
+      await apiRequest("DELETE", `/api/clients/${clientId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      toast({ title: "Client deleted", description: `"${deletingClient?.name}" has been deleted.` });
+      setDeletingClient(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to delete client", variant: "destructive" });
+    },
+  });
 
   const { data: clients, isLoading } = useQuery<ClientWithStats[]>({
     queryKey: ["/api/clients"],
@@ -455,7 +484,7 @@ export default function Clients() {
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
+                          <DropdownMenuContent align="end" sideOffset={4} collisionPadding={12}>
                             <DropdownMenuItem
                               onClick={() => {
                                 setEditingClient(client);
@@ -472,6 +501,15 @@ export default function Clients() {
                                 Create Invoice
                               </Link>
                             </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive focus:text-destructive"
+                              onClick={() => setDeletingClient(client)}
+                              data-testid={`button-delete-client-${client.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -483,6 +521,27 @@ export default function Clients() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!deletingClient} onOpenChange={(o) => { if (!o) setDeletingClient(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete client?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete <strong>"{deletingClient?.name}"</strong> and all their associated jobs, invoices, and data. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deletingClient && deleteClientMutation.mutate(deletingClient.id)}
+              data-testid="button-confirm-delete-client"
+            >
+              {deleteClientMutation.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
