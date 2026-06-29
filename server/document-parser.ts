@@ -41,6 +41,7 @@ function cleanText(s: string): string {
     .replace(PAREN_REF_RE, "")           // remove parenthetical plan refs like (RCP, ID-102)
     .replace(/([a-zA-Z])(PT-\d+[A-Z]?)/g, "$1 $2")  // insert space before PT code when directly joined e.g. "wallsPT-01B"
     .replace(/\s*\/\s*(?=[A-Z\s]|$)/g, " ")   // clean lone slashes from "PT-01B/ PT-08" artifacts
+    .replace(/,(?!\s)/g, ", ")           // ensure space after every comma
     .replace(/\s+/g, " ")
     .replace(/^[\s.,;()\-–_\/]+/, "")    // strip leading punctuation
     .replace(/[\-–_.,;()\/\s]+$/, "")    // strip trailing punctuation
