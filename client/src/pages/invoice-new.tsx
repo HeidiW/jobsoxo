@@ -17,7 +17,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
-import { Plus, Trash2, FileText, Save, Send } from "lucide-react";
+import { Plus, FileText, Save, Send } from "lucide-react";
 import { format, addDays } from "date-fns";
 import type { Client, Job, Settings } from "@shared/schema";
 import { Link } from "wouter";
@@ -433,7 +433,7 @@ export default function InvoiceNew() {
 
   const { toast } = useToast();
   const [lineItems, setLineItems] = useState<NewLineItem[]>([]);
-  const [showLineItemForm, setShowLineItemForm] = useState(false);
+  const [sectionsOpen, setSectionsOpen] = useState<Record<string, boolean>>({});
   const [parsedDoc, setParsedDoc] = useState<ParsedDocument | null>(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [selectedParsedItems, setSelectedParsedItems] = useState<Set<number>>(new Set());
@@ -549,10 +549,31 @@ export default function InvoiceNew() {
     toast({ title: `Imported ${toAdd.length} item${toAdd.length !== 1 ? "s" : ""}` });
   };
 
-  const addLineItem = (data: LineItemFormValues) => {
-    setLineItems([...lineItems, { id: crypto.randomUUID(), ...data, quantity: parseFloat(data.quantity), rate: parseFloat(data.rate), amount: parseFloat(data.amount) }]);
-    setShowLineItemForm(false);
+  const updateItem = (id: string, updates: Partial<NewLineItem>) =>
+    setLineItems(prev => prev.map(i => i.id === id ? { ...i, ...updates } : i));
+
+  const removeItem = (id: string) =>
+    setLineItems(prev => prev.filter(i => i.id !== id));
+
+  const addItemToSection = (sec: string) =>
+    setLineItems(prev => [...prev, {
+      id: crypto.randomUUID(), description: "", quantity: 1, unit: "lump",
+      rate: 0, amount: 0, category: "labor" as const, section: sec || undefined,
+    }]);
+
+  const renameSection = (oldSec: string, newSec: string) =>
+    setLineItems(prev => prev.map(i => (i.section || "General") === oldSec ? { ...i, section: newSec } : i));
+
+  const deleteSection = (sec: string) =>
+    setLineItems(prev => prev.filter(i => (i.section || "General") !== sec));
+
+  const addSection = () => {
+    const existing = [...new Set(lineItems.map(i => i.section || "General"))];
+    addItemToSection(`Section ${existing.length + 1}`);
   };
+
+  const toggleSection = (sec: string) =>
+    setSectionsOpen(prev => ({ ...prev, [sec]: !(prev[sec] !== false) }));
 
   const onSubmit = (data: InvoiceFormValues, send = false) => {
     if (lineItems.length === 0) {
@@ -843,46 +864,125 @@ export default function InvoiceNew() {
                     <span style={{ marginLeft: "auto", fontSize: "12px", color: "#94a3b8", fontWeight: 600 }}>Grouped by section · subtotals update live</span>
                   </div>
 
-                  {lineItems.length > 0 && (
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", marginBottom: "12px" }}>
-                      <thead>
-                        <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
-                          <th style={{ ...labelStyle, textAlign: "left", paddingBottom: "6px" }}>Description</th>
-                          <th style={{ ...labelStyle, textAlign: "right", paddingBottom: "6px", width: "90px" }}>Qty</th>
-                          <th style={{ ...labelStyle, textAlign: "right", paddingBottom: "6px", width: "90px" }}>Rate</th>
-                          <th style={{ ...labelStyle, textAlign: "right", paddingBottom: "6px", width: "90px" }}>Amount</th>
-                          <th style={{ width: "32px" }} />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {lineItems.map((item) => (
-                          <tr key={item.id} style={{ borderBottom: "1px solid #f8fafc" }}>
-                            <td style={{ padding: "8px 8px 8px 0", color: "#0f172a", fontWeight: 500, fontSize: "13px" }}>
-                              <div>{item.description}</div>
-                              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "1px", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>{item.category.replace(/_/g, " ")}</div>
-                            </td>
-                            <td style={{ textAlign: "right", fontFamily: "ui-monospace,monospace", fontSize: "12.5px", color: "#64748b", padding: "8px 4px" }}>{item.quantity} {item.unit}</td>
-                            <td style={{ textAlign: "right", fontFamily: "ui-monospace,monospace", fontSize: "12.5px", color: "#64748b", padding: "8px 4px" }}>{formatCurrency(item.rate)}</td>
-                            <td style={{ textAlign: "right", fontFamily: "ui-monospace,monospace", fontSize: "12.5px", fontWeight: 700, color: "#0f172a", padding: "8px 4px" }}>{formatCurrency(item.amount)}</td>
-                            <td style={{ textAlign: "right", padding: "8px 0 8px 4px" }}>
-                              <button type="button" onClick={() => setLineItems(lineItems.filter((i) => i.id !== item.id))} style={{ border: "none", background: "none", cursor: "pointer", color: "#f87171", padding: "4px", borderRadius: "4px" }} data-testid={`button-remove-item-${item.id}`}>
-                                <Trash2 style={{ width: "14px", height: "14px" }} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
+                  {(() => {
+                    const sectionOrder = [...new Set(lineItems.map(i => i.section || "General"))];
+                    const fLabel: React.CSSProperties = { display: "block", fontSize: "10px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: "3px" };
+                    const fInput: React.CSSProperties = { width: "100%", padding: "7px 9px", border: "1px solid #cbd5e1", borderRadius: "7px", fontSize: "12.5px", color: "#0f172a", background: "#fff", fontFamily: "inherit", boxSizing: "border-box" };
+                    return (
+                      <>
+                        {sectionOrder.map((sec, si) => {
+                          const secItems = lineItems.filter(i => (i.section || "General") === sec);
+                          const secTotal = secItems.reduce((s, i) => s + i.amount, 0);
+                          const isOpen = sectionsOpen[sec] !== false;
+                          return (
+                            <div key={sec} style={{ borderTop: si > 0 ? "1px solid #f1f5f9" : undefined, paddingTop: si > 0 ? "6px" : undefined, marginTop: si > 0 ? "6px" : undefined }}>
+                              {/* Section header */}
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 2px" }}>
+                                <button type="button" onClick={() => toggleSection(sec)}
+                                  style={{ border: "none", background: "none", cursor: "pointer", fontSize: "12px", color: "#64748b", width: "18px", padding: 0, flexShrink: 0 }}>
+                                  {isOpen ? "▾" : "▸"}
+                                </button>
+                                <input
+                                  value={sec}
+                                  onChange={e => renameSection(sec, e.target.value)}
+                                  style={{ flex: 1, border: "1px solid transparent", background: "none", fontSize: "14px", fontWeight: 800, color: "#0f172a", padding: "5px 6px", borderRadius: "6px", fontFamily: "inherit" }}
+                                  onFocus={e => { e.currentTarget.style.borderColor = "#cbd5e1"; e.currentTarget.style.background = "#fff"; e.currentTarget.style.outline = "none"; }}
+                                  onBlur={e => { e.currentTarget.style.borderColor = "transparent"; e.currentTarget.style.background = "none"; }}
+                                  data-testid={`input-section-title-${si}`}
+                                />
+                                <span style={{ fontSize: "13px", color: "#0f172a", fontWeight: 700, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>
+                                  {formatCurrency(secTotal)}
+                                </span>
+                                <button type="button" onClick={() => deleteSection(sec)}
+                                  style={{ border: "none", background: "#f8fafc", color: "#94a3b8", cursor: "pointer", width: "26px", height: "26px", borderRadius: "7px", fontSize: "16px", flexShrink: 0 }}
+                                  data-testid={`button-delete-section-${si}`}
+                                  onMouseEnter={e => { e.currentTarget.style.background = "#fee2e2"; e.currentTarget.style.color = "#dc2626"; }}
+                                  onMouseLeave={e => { e.currentTarget.style.background = "#f8fafc"; e.currentTarget.style.color = "#94a3b8"; }}>
+                                  ×
+                                </button>
+                              </div>
 
-                  {showLineItemForm ? (
-                    <LineItemForm onSubmit={addLineItem} onCancel={() => setShowLineItemForm(false)} />
-                  ) : (
-                    <button type="button" onClick={() => setShowLineItemForm(true)} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "9px 14px", border: "1.5px dashed #cbd5e1", background: "transparent", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#64748b", cursor: "pointer", fontFamily: "inherit", width: "100%" }} data-testid="button-add-line-item">
-                      <Plus style={{ width: "15px", height: "15px" }} />
-                      Add line item
-                    </button>
-                  )}
+                              {/* Items */}
+                              {isOpen && (
+                                <div style={{ display: "flex", flexDirection: "column", gap: "10px", padding: "2px 2px 10px" }}>
+                                  {secItems.map(item => (
+                                    <div key={item.id} style={{ border: "1px solid #e2e8f0", borderRadius: "10px", padding: "11px 12px", background: "#fbfcfe", display: "flex", flexDirection: "column", gap: "9px" }}>
+                                      {/* Description + delete */}
+                                      <div style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
+                                        <input
+                                          value={item.description}
+                                          onChange={e => updateItem(item.id, { description: e.target.value })}
+                                          placeholder="Description of work"
+                                          style={{ flex: 1, padding: "8px 10px", border: "1px solid #cbd5e1", borderRadius: "7px", fontSize: "13.5px", fontWeight: 600, color: "#0f172a", background: "#fff", fontFamily: "inherit" }}
+                                          data-testid={`input-item-desc-${item.id}`}
+                                        />
+                                        <button type="button" onClick={() => removeItem(item.id)}
+                                          style={{ border: "1px solid #e2e8f0", background: "#fff", color: "#94a3b8", cursor: "pointer", width: "32px", height: "32px", borderRadius: "7px", fontSize: "18px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}
+                                          data-testid={`button-remove-item-${item.id}`}
+                                          onMouseEnter={e => { e.currentTarget.style.background = "#fee2e2"; e.currentTarget.style.color = "#dc2626"; e.currentTarget.style.borderColor = "#fecaca"; }}
+                                          onMouseLeave={e => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = "#94a3b8"; e.currentTarget.style.borderColor = "#e2e8f0"; }}>
+                                          ×
+                                        </button>
+                                      </div>
+                                      {/* Fields grid */}
+                                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(92px,1fr))", gap: "8px", alignItems: "end" }}>
+                                        <div>
+                                          <label style={fLabel}>Qty</label>
+                                          <input type="number" min="0" step="any" value={item.quantity}
+                                            onChange={e => { const q = parseFloat(e.target.value) || 1; updateItem(item.id, { quantity: q, amount: +(q * item.rate).toFixed(2) }); }}
+                                            style={fInput} data-testid={`input-item-qty-${item.id}`} />
+                                        </div>
+                                        <div>
+                                          <label style={fLabel}>Unit</label>
+                                          <select value={item.unit} onChange={e => updateItem(item.id, { unit: e.target.value })}
+                                            style={{ ...fInput, appearance: "auto" as React.CSSProperties["appearance"] }}
+                                            data-testid={`select-item-unit-${item.id}`}>
+                                            <option value="lump">Lump sum</option>
+                                            <option value="flat">Flat rate</option>
+                                            <option value="hours">Hours</option>
+                                            <option value="sqft">Sq ft</option>
+                                            <option value="each">Each</option>
+                                            <option value="day">Days</option>
+                                          </select>
+                                        </div>
+                                        <div>
+                                          <label style={fLabel}>Rate ($)</label>
+                                          <input type="number" min="0" step="any" value={item.rate}
+                                            onChange={e => { const r = parseFloat(e.target.value) || 0; updateItem(item.id, { rate: r, amount: +(item.quantity * r).toFixed(2) }); }}
+                                            style={{ ...fInput, fontFamily: "ui-monospace,monospace" }}
+                                            data-testid={`input-item-rate-${item.id}`} />
+                                        </div>
+                                        <div>
+                                          <label style={fLabel}>Amount</label>
+                                          <div style={{ width: "100%", padding: "7px 9px", border: "1px solid #e2e8f0", borderRadius: "7px", fontSize: "12.5px", fontWeight: 700, fontFamily: "ui-monospace,monospace", color: "#0f172a", background: "#f8fafc", boxSizing: "border-box" }}>
+                                            {formatCurrency(item.amount)}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {/* Add item button */}
+                                  <button type="button" onClick={() => addItemToSection(sec)}
+                                    style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "5px", padding: "8px", border: "1.5px dashed #cbd5e1", background: "transparent", borderRadius: "8px", fontSize: "12px", fontWeight: 600, color: "#64748b", cursor: "pointer", fontFamily: "inherit", width: "100%" }}
+                                    data-testid={`button-add-item-section-${si}`}>
+                                    <Plus style={{ width: "13px", height: "13px" }} /> Add item
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {/* Add section */}
+                        <button type="button" onClick={addSection}
+                          style={{ display: "flex", alignItems: "center", gap: "6px", padding: "9px 14px", border: "1.5px dashed #cbd5e1", background: "transparent", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#64748b", cursor: "pointer", fontFamily: "inherit", width: "100%", marginTop: sectionOrder.length > 0 ? "8px" : 0 }}
+                          data-testid="button-add-line-item">
+                          <Plus style={{ width: "15px", height: "15px" }} />
+                          {sectionOrder.length === 0 ? "Add line items" : "Add section"}
+                        </button>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
