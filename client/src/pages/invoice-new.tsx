@@ -363,6 +363,51 @@ export default function InvoiceNew() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
+          {/* ── Import from Document ── */}
+          <Card className="border-dashed">
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-start gap-4">
+                <div className="rounded-lg bg-muted p-2.5 mt-0.5 shrink-0">
+                  <Upload className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">Import from Document</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Upload a PDF quote or invoice to auto-fill line items, due date and notes.
+                  </p>
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                  onChange={handleFileChange}
+                  data-testid="input-document-upload"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={parseDocumentMutation.isPending}
+                  data-testid="button-import-document"
+                  className="shrink-0"
+                >
+                  {parseDocumentMutation.isPending ? (
+                    <>
+                      <FileText className="h-4 w-4 mr-1 animate-pulse" />
+                      Parsing…
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="h-4 w-4 mr-1" />
+                      Choose PDF
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Invoice Details</CardTitle>
@@ -483,39 +528,10 @@ export default function InvoiceNew() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle>Line Items</CardTitle>
-              <div className="flex gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  className="hidden"
-                  onChange={handleFileChange}
-                  data-testid="input-document-upload"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={parseDocumentMutation.isPending}
-                  data-testid="button-import-document"
-                >
-                  {parseDocumentMutation.isPending ? (
-                    <>
-                      <FileText className="h-4 w-4 mr-1 animate-pulse" />
-                      Parsing…
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="h-4 w-4 mr-1" />
-                      Import from Document
-                    </>
-                  )}
-                </Button>
-                <Button size="sm" onClick={() => setShowLineItemForm(true)} data-testid="button-add-line-item">
-                  <Plus className="h-4 w-4 mr-1" />
-                  Add Item
-                </Button>
-              </div>
+              <Button size="sm" onClick={() => setShowLineItemForm(true)} data-testid="button-add-line-item">
+                <Plus className="h-4 w-4 mr-1" />
+                Add Item
+              </Button>
             </CardHeader>
             <CardContent>
               {lineItems.length === 0 && !showLineItemForm ? (
