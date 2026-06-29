@@ -53,10 +53,11 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { format } from "date-fns";
-import type { Invoice, Client, LineItem, Payment } from "@shared/schema";
+import type { Invoice, Client, LineItem, Payment, Job, Settings } from "@shared/schema";
 
 interface InvoiceDetail extends Invoice {
   client: Client;
+  job: Job | null;
   lineItems: LineItem[];
   payments: Payment[];
 }
@@ -305,6 +306,81 @@ function ChangeOrderForm({
   );
 }
 
+function ordinalDay(d: number): string {
+  if (d >= 11 && d <= 13) return `${d}th`;
+  const suffix = ["th", "st", "nd", "rd"];
+  return `${d}${suffix[d % 10] ?? "th"}`;
+}
+
+function formatChangeOrderDate(date: Date): string {
+  const month = date.toLocaleDateString("en-US", { month: "long" });
+  const day = ordinalDay(date.getDate());
+  const year = date.getFullYear();
+  return `${month} ${day}, ${year}`;
+}
+
+function printChangeOrderDoc(invoice: InvoiceDetail, settings: Settings | null) {
+  const changeOrders = invoice.lineItems?.filter((i) => i.isChangeOrder) ?? [];
+  if (!changeOrders.length) return;
+
+  const fmt = (n: string | number | null | undefined) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Number(n ?? 0));
+
+  const today = formatChangeOrderDate(new Date());
+  const companyName = settings?.companyName ?? "";
+  const companyAddress = settings?.companyAddress ?? "";
+
+  const jobLine = [invoice.job?.title, invoice.job?.address].filter(Boolean).join(", ");
+
+  const total = changeOrders.reduce((s, co) => s + Number(co.amount), 0);
+
+  const client = invoice.client;
+  const clientAddr = [client.address, client.city, client.state, client.zipCode].filter(Boolean).join(" ");
+  const presentedTo = client.name ? `Presented to ${client.name}${clientAddr ? `, at ${clientAddr}` : ""}.` : "";
+
+  const itemLines = changeOrders
+    .map((co, i) => `<p class="item">${i + 1}. ${co.description} - ${fmt(co.amount)}.</p>`)
+    .join("\n");
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Change Order</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; font-size: 13pt; color: #000; padding: 60px 72px; line-height: 1.6; }
+  .date { margin-bottom: 4px; }
+  .company-name { font-weight: bold; margin-bottom: 2px; }
+  .company-address { margin-bottom: 24px; }
+  .project { font-weight: bold; text-transform: uppercase; margin-bottom: 16px; }
+  .item { margin-bottom: 6px; }
+  .total { font-weight: bold; text-transform: uppercase; margin-top: 24px; margin-bottom: 24px; }
+  .footer { margin-top: 0; }
+  @media print {
+    body { padding: 40px 54px; }
+  }
+</style>
+</head>
+<body>
+  <p class="date">${today}</p>
+  ${companyName ? `<p class="company-name">${companyName}</p>` : ""}
+  ${companyAddress ? `<p class="company-address">${companyAddress}.</p>` : ""}
+  ${jobLine ? `<p class="project">${jobLine}:</p>` : ""}
+  ${itemLines}
+  <p class="total">OUTSTANDING TOTAL - ${fmt(total)}.</p>
+  ${presentedTo ? `<p class="footer">${presentedTo}</p>` : ""}
+</body>
+</html>`;
+
+  const win = window.open("", "_blank", "width=800,height=900");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 400);
+}
+
 export default function InvoiceDetail() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
@@ -314,6 +390,10 @@ export default function InvoiceDetail() {
   const { data: invoice, isLoading } = useQuery<InvoiceDetail>({
     queryKey: ["/api/invoices", id],
     enabled: !!id,
+  });
+
+  const { data: settings } = useQuery<Settings>({
+    queryKey: ["/api/settings"],
   });
 
   const sendInvoiceMutation = useMutation({
@@ -423,6 +503,17 @@ export default function InvoiceDetail() {
             <Download className="h-4 w-4 mr-2" />
             Download PDF
           </Button>
+          {changeOrders.length > 0 && (
+            <Button
+              variant="outline"
+              className="border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950"
+              onClick={() => printChangeOrderDoc(invoice, settings ?? null)}
+              data-testid="button-print-change-order"
+            >
+              <AlertTriangle className="h-4 w-4 mr-2" />
+              Print Change Order
+            </Button>
+          )}
         </div>
       </div>
 
