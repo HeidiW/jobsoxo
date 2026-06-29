@@ -101,216 +101,195 @@ function InvoiceDocument({
   const baseItems = invoice.lineItems?.filter((i) => !i.isChangeOrder) ?? [];
   const changeOrders = invoice.lineItems?.filter((i) => i.isChangeOrder) ?? [];
 
-  const grouped = baseItems.reduce<Record<string, LineItem[]>>((acc, item) => {
-    const cat = item.category || "other";
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(item);
+  const sectionOrder = [...new Set(baseItems.map((i) => (i as any).section || "General"))];
+  const bySec = sectionOrder.reduce<Record<string, LineItem[]>>((acc, sec) => {
+    acc[sec] = baseItems.filter((i) => ((i as any).section || "General") === sec);
     return acc;
   }, {});
 
-  const categoryLabel = (cat: string) =>
-    cat.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const mono: React.CSSProperties = { fontFamily: "ui-monospace,Menlo,monospace" };
+  const lbl: React.CSSProperties = {
+    fontSize: "10px", fontWeight: 800, color: "#94a3b8",
+    textTransform: "uppercase", letterSpacing: ".08em", marginBottom: "6px",
+  };
 
   return (
     <div
-      className="bg-white rounded-xl shadow-sm border border-slate-200 print:shadow-none print:border-none print:rounded-none"
-      style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", padding: "48px 56px" }}
+      className="print:shadow-none print:rounded-none print:max-w-none"
+      style={{
+        fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+        background: "#fff",
+        borderRadius: "6px",
+        boxShadow: "0 8px 30px rgba(15,23,42,.14)",
+        padding: "40px 48px",
+        maxWidth: "720px",
+        margin: "0 auto",
+      }}
     >
       {/* ── Header ── */}
-      <div className="flex justify-between items-start mb-8">
-        <div className="flex-1 min-w-0 pr-8">
-          <div className="text-xl font-bold text-slate-900 leading-tight">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "24px" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: "15px", fontWeight: 800, color: "#0f172a" }}>
             {settings?.companyName || "Your Company"}
           </div>
           {settings?.companyAddress && (
-            <div className="text-sm text-slate-500 mt-1 whitespace-pre-line">{settings.companyAddress}</div>
+            <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.6, whiteSpace: "pre-line" }}>
+              {settings.companyAddress}
+            </div>
           )}
           {(settings?.companyEmail || settings?.companyPhone) && (
-            <div className="text-sm text-slate-400 mt-1">
+            <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px", lineHeight: 1.6 }}>
               {[settings?.companyEmail, settings?.companyPhone].filter(Boolean).join(" · ")}
             </div>
           )}
         </div>
-        <div className="text-right flex-shrink-0">
-          <div
-            className="font-black text-blue-600 uppercase tracking-widest"
-            style={{ fontSize: "32px", letterSpacing: "0.08em" }}
-          >
-            Invoice
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <div style={{ fontSize: "26px", fontWeight: 800, letterSpacing: ".06em", color: "#2563eb" }}>INVOICE</div>
+          <div style={{ fontSize: "13px", ...mono, color: "#0f172a", marginTop: "6px" }}>{invoice.invoiceNumber}</div>
+          <div style={{ fontSize: "11.5px", color: "#64748b", marginTop: "8px" }}>
+            Issued&nbsp;&nbsp;<span style={{ color: "#0f172a", fontWeight: 600 }}>{format(new Date(invoice.issueDate), "MMMM d, yyyy")}</span>
           </div>
-          <div className="text-sm font-mono text-slate-500 mt-1">{invoice.invoiceNumber}</div>
-          <div className="text-sm text-slate-500 mt-3 space-y-0.5">
-            <div>
-              <span className="text-slate-400">Issued&nbsp;</span>
-              {format(new Date(invoice.issueDate), "MMMM d, yyyy")}
-            </div>
-            <div>
-              <span className="text-slate-400">Due&nbsp;</span>
-              {format(new Date(invoice.dueDate), "MMMM d, yyyy")}
-            </div>
+          <div style={{ fontSize: "11.5px", color: "#64748b" }}>
+            Due&nbsp;&nbsp;<span style={{ color: "#0f172a", fontWeight: 600 }}>{format(new Date(invoice.dueDate), "MMMM d, yyyy")}</span>
           </div>
         </div>
       </div>
 
-      {/* Blue divider */}
-      <div className="h-0.5 bg-blue-600 mb-7" />
+      {/* Grey divider */}
+      <div style={{ height: "1px", background: "#e2e8f0", margin: "22px 0" }} />
 
       {/* ── Bill To / Project Site ── */}
-      <div className="grid grid-cols-2 gap-8 mb-7">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
         <div>
-          <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Bill To</div>
-          <div className="text-base font-bold text-slate-900">{invoice.client?.name}</div>
+          <div style={lbl}>Bill to</div>
+          <div style={{ fontSize: "13.5px", fontWeight: 700, color: "#0f172a" }}>{invoice.client?.name}</div>
           {invoice.client?.address && (
-            <div className="text-sm text-slate-500 mt-0.5">
+            <div style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6, marginTop: "2px" }}>
               {invoice.client.address}
-              {invoice.client.city && <>, {invoice.client.city}</>}
-              {invoice.client.state && <>, {invoice.client.state}</>}
-              {invoice.client.zipCode && <> {invoice.client.zipCode}</>}
+              {invoice.client.city && `, ${invoice.client.city}`}
+              {invoice.client.state && `, ${invoice.client.state}`}
+              {invoice.client.zipCode && ` ${invoice.client.zipCode}`}
             </div>
           )}
-          {invoice.client?.email && (
-            <div className="text-sm text-slate-500 mt-0.5">{invoice.client.email}</div>
-          )}
-          {invoice.client?.phone && (
-            <div className="text-sm text-slate-500 mt-0.5">{invoice.client.phone}</div>
-          )}
+          {invoice.client?.email && <div style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6 }}>{invoice.client.email}</div>}
+          {invoice.client?.phone && <div style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6 }}>{invoice.client.phone}</div>}
         </div>
         {invoice.job && (
           <div>
-            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Project / Site</div>
-            <div className="text-base font-bold text-slate-900">{invoice.job.name}</div>
-            {(invoice.job as any).siteAddress && (
-              <div className="text-sm text-slate-500 mt-0.5">{(invoice.job as any).siteAddress}</div>
+            <div style={lbl}>Project / site</div>
+            <div style={{ fontSize: "13.5px", fontWeight: 700, color: "#0f172a" }}>
+              {(invoice.job as any).title || (invoice.job as any).name}
+            </div>
+            {((invoice.job as any).address || (invoice.job as any).siteAddress) && (
+              <div style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6, marginTop: "2px", whiteSpace: "pre-line" }}>
+                {(invoice.job as any).address || (invoice.job as any).siteAddress}
+              </div>
             )}
           </div>
         )}
       </div>
 
-      {/* ── Memo / Notes blockquote ── */}
+      {/* Notes */}
       {invoice.notes && (
-        <div className="border-l-4 border-blue-200 pl-4 py-1 mb-7">
-          <p className="text-sm text-slate-500 italic">{invoice.notes}</p>
+        <div style={{ marginTop: "18px", fontSize: "12.5px", color: "#475569", fontStyle: "italic", lineHeight: 1.6, borderLeft: "3px solid #dbeafe", paddingLeft: "12px" }}>
+          {invoice.notes}
         </div>
       )}
 
-      {/* ── Line items table ── */}
-      <table className="w-full text-sm mb-6" style={{ borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ borderBottom: "1.5px solid #e2e8f0" }}>
-            <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-widest pb-3">
-              Description
-            </th>
-            <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-widest pb-3 w-24">
-              Qty
-            </th>
-            <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-widest pb-3 w-32">
-              Amount
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.entries(grouped).map(([cat, items]) => {
-            const catTotal = items.reduce((s, i) => s + Number(i.amount), 0);
-            return (
-              <>
-                <tr key={`hdr-${cat}`}>
-                  <td
-                    className="font-bold text-slate-800 text-xs uppercase tracking-wide pt-5 pb-1"
-                    colSpan={2}
-                  >
-                    {categoryLabel(cat)}
-                  </td>
-                  <td className="text-right font-bold text-blue-600 pt-5 pb-1">
-                    {formatCurrency(catTotal)}
-                  </td>
-                </tr>
-                {items.map((item) => (
-                  <tr key={item.id}>
-                    <td className="py-1.5 pr-6 text-slate-600">{item.description}</td>
-                    <td className="py-1.5 text-right text-slate-400 font-mono text-xs">
-                      {Number(item.quantity) === 0 ? "—" : `${Number(item.quantity)} ${item.unit}`}
-                    </td>
-                    <td className="py-1.5 text-right text-slate-700 font-mono">
-                      {formatCurrency(item.amount)}
-                    </td>
-                  </tr>
-                ))}
-              </>
-            );
-          })}
+      {/* ── Line items ── */}
+      <div style={{ marginTop: "24px" }}>
+        {/* Column header */}
+        <div style={{ display: "flex", fontSize: "10px", fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", paddingBottom: "8px", borderBottom: "2px solid #0f172a" }}>
+          <span style={{ flex: 1 }}>Description</span>
+          <span style={{ width: "70px", textAlign: "right" }}>Qty</span>
+          <span style={{ width: "110px", textAlign: "right" }}>Amount</span>
+        </div>
 
-          {changeOrders.length > 0 && (
-            <>
-              <tr key="hdr-co" style={{ borderTop: "1.5px solid #fef3c7" }}>
-                <td
-                  className="font-bold text-amber-700 text-xs uppercase tracking-wide pt-5 pb-1"
-                  colSpan={2}
-                >
-                  Change Orders
-                </td>
-                <td className="text-right font-bold text-amber-700 pt-5 pb-1">
-                  +{formatCurrency(changeOrders.reduce((s, i) => s + Number(i.amount), 0))}
-                </td>
-              </tr>
-              {changeOrders.map((item) => (
-                <tr key={item.id}>
-                  <td className="py-1.5 pr-6 text-slate-600">
-                    <div>{item.description}</div>
-                    {item.changeOrderReason && (
-                      <div className="text-xs text-slate-400 italic mt-0.5">{item.changeOrderReason}</div>
+        {/* Sections */}
+        {sectionOrder.map((sec) => {
+          const items = bySec[sec];
+          const secTotal = items.reduce((s, i) => s + Number(i.amount), 0);
+          return (
+            <div key={sec}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "13px 0 6px", borderBottom: "1px solid #f1f5f9" }}>
+                <span style={{ fontSize: "12px", fontWeight: 800, color: "#0f172a", textTransform: "uppercase", letterSpacing: ".03em" }}>{sec}</span>
+                <span style={{ fontSize: "11.5px", fontWeight: 700, color: "#64748b", ...mono }}>{formatCurrency(secTotal)}</span>
+              </div>
+              {items.map((item) => (
+                <div key={item.id} style={{ display: "flex", alignItems: "flex-start", padding: "9px 0", borderBottom: "1px solid #f8fafc" }}>
+                  <div style={{ flex: 1, paddingRight: "12px" }}>
+                    <div style={{ fontSize: "12.5px", color: "#0f172a", lineHeight: 1.45 }}>{item.description}</div>
+                    {(item as any).refs && (
+                      <div style={{ fontSize: "10.5px", color: "#2563eb", ...mono, marginTop: "2px" }}>
+                        {(item as any).refs}
+                      </div>
                     )}
-                  </td>
-                  <td className="py-1.5 text-right text-slate-400 font-mono text-xs">
+                  </div>
+                  <div style={{ width: "70px", textAlign: "right", fontSize: "11.5px", color: "#64748b", ...mono }}>
                     {Number(item.quantity) === 0 ? "—" : `${Number(item.quantity)} ${item.unit}`}
-                  </td>
-                  <td className="py-1.5 text-right text-amber-700 font-mono">
-                    +{formatCurrency(item.amount)}
-                  </td>
-                </tr>
+                  </div>
+                  <div style={{ width: "110px", textAlign: "right", fontSize: "12.5px", fontWeight: 600, color: "#0f172a", ...mono }}>
+                    {formatCurrency(item.amount)}
+                  </div>
+                </div>
               ))}
-            </>
-          )}
-        </tbody>
-      </table>
+            </div>
+          );
+        })}
 
-      {/* ── Totals ── */}
-      <div className="flex justify-end">
-        <div className="w-64 space-y-2 text-sm">
-          {changeOrders.length > 0 && (
-            <div className="flex justify-between text-slate-500">
-              <span>Base subtotal</span>
-              <span className="font-mono">
-                {formatCurrency(baseItems.reduce((s, i) => s + Number(i.amount), 0))}
+        {/* Change orders */}
+        {changeOrders.length > 0 && (
+          <div>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "13px 0 6px", borderTop: "2px solid #fef3c7", borderBottom: "1px solid #fef3c7" }}>
+              <span style={{ fontSize: "12px", fontWeight: 800, color: "#b45309", textTransform: "uppercase", letterSpacing: ".03em" }}>Change Orders</span>
+              <span style={{ fontSize: "11.5px", fontWeight: 700, color: "#b45309", ...mono }}>
+                +{formatCurrency(changeOrders.reduce((s, i) => s + Number(i.amount), 0))}
               </span>
             </div>
-          )}
-          <div className="flex justify-between text-slate-500">
+            {changeOrders.map((item) => (
+              <div key={item.id} style={{ display: "flex", alignItems: "flex-start", padding: "9px 0", borderBottom: "1px solid #f8fafc" }}>
+                <div style={{ flex: 1, paddingRight: "12px" }}>
+                  <div style={{ fontSize: "12.5px", color: "#0f172a", lineHeight: 1.45 }}>{item.description}</div>
+                  {item.changeOrderReason && (
+                    <div style={{ fontSize: "11px", color: "#94a3b8", fontStyle: "italic", marginTop: "2px" }}>{item.changeOrderReason}</div>
+                  )}
+                </div>
+                <div style={{ width: "70px", textAlign: "right", fontSize: "11.5px", color: "#64748b", ...mono }}>
+                  {Number(item.quantity) === 0 ? "—" : `${Number(item.quantity)} ${item.unit}`}
+                </div>
+                <div style={{ width: "110px", textAlign: "right", fontSize: "12.5px", fontWeight: 600, color: "#b45309", ...mono }}>
+                  +{formatCurrency(item.amount)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Totals ── */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "22px" }}>
+        <div style={{ width: "300px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#475569" }}>
             <span>Subtotal</span>
-            <span className="font-mono">{formatCurrency(invoice.subtotal)}</span>
+            <span style={{ ...mono, color: "#0f172a" }}>{formatCurrency(invoice.subtotal)}</span>
           </div>
-          <div className="flex justify-between text-slate-500">
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#475569" }}>
             <span>Tax ({Number(invoice.taxRate)}%)</span>
-            <span className="font-mono">{formatCurrency(invoice.taxAmount)}</span>
+            <span style={{ ...mono, color: "#0f172a" }}>{formatCurrency(invoice.taxAmount)}</span>
           </div>
-          <div className="h-px bg-slate-200" />
-          <div className="flex justify-between font-bold text-slate-900 text-base pt-0.5">
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "15px", fontWeight: 800, color: "#0f172a", paddingTop: "9px", borderTop: "2px solid #0f172a" }}>
             <span>Total</span>
-            <span className="font-mono">{formatCurrency(invoice.total)}</span>
+            <span style={mono}>{formatCurrency(invoice.total)}</span>
           </div>
           {Number(invoice.amountPaid) > 0 && (
             <>
-              <div className="flex justify-between text-green-600">
-                <span>Paid</span>
-                <span className="font-mono">−{formatCurrency(invoice.amountPaid)}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", fontWeight: 800, color: "#fff", background: "#2563eb", padding: "11px 13px", borderRadius: "8px", marginTop: "6px" }}>
+                <span>Deposit paid</span>
+                <span style={mono}>−{formatCurrency(invoice.amountPaid)}</span>
               </div>
-              <div className="h-px bg-slate-200" />
-              <div className="flex justify-between font-bold text-slate-900">
-                <span>Balance Due</span>
-                <span
-                  className={`font-mono ${
-                    Number(invoice.balance) > 0 ? "text-red-600" : "text-green-600"
-                  }`}
-                >
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#475569" }}>
+                <span>Balance remaining</span>
+                <span style={{ ...mono, color: Number(invoice.balance) > 0 ? "#dc2626" : "#16a34a" }}>
                   {formatCurrency(invoice.balance)}
                 </span>
               </div>
@@ -319,13 +298,14 @@ function InvoiceDocument({
         </div>
       </div>
 
-      {/* ── Terms ── */}
+      {/* Bottom divider */}
+      <div style={{ height: "1px", background: "#e2e8f0", margin: "24px 0 18px" }} />
+
+      {/* Footer */}
       {invoice.termsAndConditions && (
-        <div className="mt-8 pt-6 border-t border-slate-100">
-          <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">
-            Terms &amp; Conditions
-          </div>
-          <p className="text-sm text-slate-500">{invoice.termsAndConditions}</p>
+        <div>
+          <div style={lbl}>Terms &amp; Conditions</div>
+          <p style={{ fontSize: "11.5px", color: "#475569", lineHeight: 1.6, margin: 0 }}>{invoice.termsAndConditions}</p>
         </div>
       )}
     </div>

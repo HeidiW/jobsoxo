@@ -144,6 +144,8 @@ export const lineItems = pgTable("line_items", {
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   isChangeOrder: boolean("is_change_order").default(false),
   changeOrderReason: text("change_order_reason"),
+  section: text("section"),
+  refs: text("refs"),
 });
 
 export const lineItemsRelations = relations(lineItems, ({ one }) => ({
