@@ -302,7 +302,7 @@ export default function Jobs() {
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
+                          <DropdownMenuContent align="end" sideOffset={4} collisionPadding={12}>
                             <DropdownMenuItem asChild>
                               <Link href={`/jobs/${job.id}`} data-testid={`button-view-job-${job.id}`}>
                                 <Eye className="h-4 w-4 mr-2" />
