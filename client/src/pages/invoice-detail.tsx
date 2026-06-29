@@ -612,7 +612,7 @@ export default function InvoiceDetail() {
       <div className="max-w-4xl mx-auto">
 
         {/* ── Top action bar ── */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 print:hidden">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => setLocation("/invoices")} data-testid="button-back">
               <ArrowLeft className="h-4 w-4" />
@@ -672,7 +672,7 @@ export default function InvoiceDetail() {
 
         {/* ── Change order panel ── */}
         {invoice.status !== "paid" && (
-          <div className="mt-4">
+          <div className="mt-4 print:hidden">
             {showChangeOrderForm ? (
               <ChangeOrderForm
                 invoiceId={invoice.id}
@@ -696,7 +696,7 @@ export default function InvoiceDetail() {
 
         {/* ── Payment History ── */}
         {invoice.payments && invoice.payments.length > 0 && (
-          <Card className="mt-4">
+          <Card className="mt-4 print:hidden">
             <CardHeader>
               <CardTitle className="text-base">Payment History</CardTitle>
             </CardHeader>

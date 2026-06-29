@@ -140,15 +140,17 @@ function InvoicePreview({
   const taxAmount = subtotal * (taxRate / 100);
   const total = subtotal + taxAmount;
 
-  const grouped = lineItems.reduce<Record<string, NewLineItem[]>>((acc, item) => {
-    const cat = item.category;
-    if (!acc[cat]) acc[cat] = [];
-    acc[cat].push(item);
+  const sectionOrder = [...new Set(lineItems.map(i => i.section || "General"))];
+  const bySec = sectionOrder.reduce<Record<string, NewLineItem[]>>((acc, sec) => {
+    acc[sec] = lineItems.filter(i => (i.section || "General") === sec);
     return acc;
   }, {});
 
-  const categoryLabel = (cat: string) =>
-    cat.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  const mono: React.CSSProperties = { fontFamily: "ui-monospace,Menlo,monospace" };
+  const lbl: React.CSSProperties = {
+    fontSize: "10px", fontWeight: 800, color: "#94a3b8",
+    textTransform: "uppercase" as const, letterSpacing: ".08em", marginBottom: "6px",
+  };
 
   const fmtDate = (d: string) => {
     try { return format(new Date(d + "T12:00:00"), "MMMM d, yyyy"); }
@@ -156,54 +158,74 @@ function InvoicePreview({
   };
 
   return (
-    <div style={{ background: "#fff", borderRadius: "12px", padding: "40px 48px", boxShadow: "0 1px 3px rgba(15,23,42,.08), 0 0 0 1px rgba(15,23,42,.06)", fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", minHeight: "500px" }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "28px" }}>
-        <div style={{ flex: 1, minWidth: 0, paddingRight: "24px" }}>
-          <div style={{ fontSize: "18px", fontWeight: 800, color: "#0f172a", lineHeight: 1.2 }}>
-            {settings?.companyName || <span style={{ color: "#cbd5e1" }}>Your company name</span>}
+    <div style={{
+      fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+      background: "#fff",
+      borderRadius: "6px",
+      boxShadow: "0 8px 30px rgba(15,23,42,.14)",
+      padding: "40px 48px",
+    }}>
+      {/* ── Header ── */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "24px" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: "15px", fontWeight: 800, color: "#0f172a" }}>
+            {settings?.companyName || <span style={{ color: "#cbd5e1" }}>Your Company</span>}
           </div>
           {settings?.companyAddress && (
-            <div style={{ fontSize: "12.5px", color: "#64748b", marginTop: "4px", whiteSpace: "pre-line" }}>{settings.companyAddress}</div>
+            <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.6, whiteSpace: "pre-line" }}>
+              {settings.companyAddress}
+            </div>
           )}
           {(settings?.companyEmail || settings?.companyPhone) && (
-            <div style={{ fontSize: "12.5px", color: "#94a3b8", marginTop: "3px" }}>
-              {[settings?.companyEmail, settings?.companyPhone].filter(Boolean).join(" · ")}
+            <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px", lineHeight: 1.6 }}>
+              {[settings?.companyEmail, settings?.companyPhone ? formatPhone(settings.companyPhone) : null].filter(Boolean).join(" · ")}
             </div>
           )}
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: "28px", fontWeight: 900, color: "#2563eb", letterSpacing: "0.08em", textTransform: "uppercase" }}>Invoice</div>
-          <div style={{ fontSize: "13px", color: "#64748b", marginTop: "10px", lineHeight: 1.7 }}>
-            {issueDate && <div><span style={{ color: "#94a3b8" }}>Issued </span>{fmtDate(issueDate)}</div>}
-            {dueDate && <div><span style={{ color: "#94a3b8" }}>Due </span>{fmtDate(dueDate)}</div>}
-          </div>
+          <div style={{ fontSize: "26px", fontWeight: 800, letterSpacing: ".06em", color: "#2563eb" }}>INVOICE</div>
+          <div style={{ fontSize: "13px", ...mono, color: "#94a3b8", marginTop: "6px" }}>Draft</div>
+          {issueDate && (
+            <div style={{ fontSize: "11.5px", color: "#64748b", marginTop: "8px" }}>
+              Issued&nbsp;&nbsp;<span style={{ color: "#0f172a", fontWeight: 600 }}>{fmtDate(issueDate)}</span>
+            </div>
+          )}
+          {dueDate && (
+            <div style={{ fontSize: "11.5px", color: "#64748b" }}>
+              Due&nbsp;&nbsp;<span style={{ color: "#0f172a", fontWeight: 600 }}>{fmtDate(dueDate)}</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Blue divider */}
-      <div style={{ height: "2px", background: "#2563eb", marginBottom: "24px" }} />
+      {/* Grey divider */}
+      <div style={{ height: "1px", background: "#e2e8f0", margin: "22px 0" }} />
 
-      {/* Bill To / Project Site */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginBottom: "20px" }}>
+      {/* ── Bill To / Project Site ── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px" }}>
         <div>
-          <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: "6px" }}>Bill To</div>
+          <div style={lbl}>Bill to</div>
           {client ? (
             <>
-              <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a" }}>{client.name}</div>
-              {client.address && <div style={{ fontSize: "12.5px", color: "#64748b", marginTop: "2px" }}>{client.address}{client.city && `, ${client.city}`}{client.state && `, ${client.state}`}{client.zipCode && ` ${client.zipCode}`}</div>}
-              {client.email && <div style={{ fontSize: "12.5px", color: "#64748b", marginTop: "2px" }}>{client.email}</div>}
+              <div style={{ fontSize: "13.5px", fontWeight: 700, color: "#0f172a" }}>{client.name}</div>
+              {client.address && (
+                <div style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6, marginTop: "2px" }}>
+                  {client.address}{client.city && `, ${client.city}`}{client.state && `, ${client.state}`}{client.zipCode && ` ${client.zipCode}`}
+                </div>
+              )}
+              {client.email && <div style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6 }}>{client.email}</div>}
+              {client.phone && <div style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6 }}>{formatPhone(client.phone)}</div>}
             </>
           ) : (
             <div style={{ fontSize: "13px", color: "#cbd5e1" }}>Select a client</div>
           )}
         </div>
         <div>
-          <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: "6px" }}>Project / Site</div>
+          <div style={lbl}>Project / site</div>
           {job ? (
             <>
-              <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a" }}>{job.title}</div>
-              {job.address && <div style={{ fontSize: "12.5px", color: "#64748b", marginTop: "2px" }}>{job.address}</div>}
+              <div style={{ fontSize: "13.5px", fontWeight: 700, color: "#0f172a" }}>{job.title}</div>
+              {job.address && <div style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6, marginTop: "2px" }}>{job.address}</div>}
             </>
           ) : (
             <div style={{ fontSize: "13px", color: "#cbd5e1" }}>Link a job (optional)</div>
@@ -211,78 +233,86 @@ function InvoicePreview({
         </div>
       </div>
 
-      {/* Notes blockquote */}
+      {/* Notes */}
       {notes && (
-        <div style={{ borderLeft: "4px solid #bfdbfe", paddingLeft: "14px", marginBottom: "20px" }}>
-          <p style={{ margin: 0, fontSize: "13px", color: "#64748b", fontStyle: "italic" }}>{notes}</p>
+        <div style={{ marginTop: "18px", fontSize: "12.5px", color: "#475569", fontStyle: "italic", lineHeight: 1.6, borderLeft: "3px solid #dbeafe", paddingLeft: "12px" }}>
+          {notes}
         </div>
       )}
 
-      {/* Line items */}
-      {lineItems.length > 0 ? (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", marginBottom: "20px" }}>
-          <thead>
-            <tr style={{ borderBottom: "1.5px solid #e2e8f0" }}>
-              <th style={{ textAlign: "left", fontSize: "10.5px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", paddingBottom: "8px" }}>Description</th>
-              <th style={{ textAlign: "right", fontSize: "10.5px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", paddingBottom: "8px", width: "80px" }}>Qty</th>
-              <th style={{ textAlign: "right", fontSize: "10.5px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", paddingBottom: "8px", width: "100px" }}>Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {Object.entries(grouped).map(([cat, items]) => {
-              const catTotal = items.reduce((s, i) => s + i.amount, 0);
-              return (
-                <>
-                  <tr key={`hdr-${cat}`}>
-                    <td style={{ fontWeight: 700, fontSize: "11px", textTransform: "uppercase", letterSpacing: ".04em", color: "#1e293b", paddingTop: "16px", paddingBottom: "4px" }} colSpan={2}>
-                      {categoryLabel(cat)}
-                    </td>
-                    <td style={{ textAlign: "right", fontWeight: 700, color: "#2563eb", paddingTop: "16px", paddingBottom: "4px" }}>
-                      {formatCurrency(catTotal)}
-                    </td>
-                  </tr>
-                  {items.map((item) => (
-                    <tr key={item.id}>
-                      <td style={{ color: "#475569", paddingTop: "4px", paddingBottom: "4px", paddingRight: "16px" }}>{item.description}</td>
-                      <td style={{ textAlign: "right", color: "#94a3b8", fontFamily: "ui-monospace,monospace", fontSize: "12px", paddingTop: "4px", paddingBottom: "4px" }}>
-                        {item.quantity} {item.unit}
-                      </td>
-                      <td style={{ textAlign: "right", color: "#475569", fontFamily: "ui-monospace,monospace", paddingTop: "4px", paddingBottom: "4px" }}>
-                        {formatCurrency(item.amount)}
-                      </td>
-                    </tr>
-                  ))}
-                </>
-              );
-            })}
-          </tbody>
-        </table>
-      ) : (
-        <div style={{ border: "1.5px dashed #e2e8f0", borderRadius: "10px", padding: "24px", textAlign: "center", color: "#94a3b8", fontSize: "13px", marginBottom: "20px" }}>
-          Line items will appear here
+      {/* ── Line items ── */}
+      <div style={{ marginTop: "24px" }}>
+        {/* Column header */}
+        <div style={{ display: "flex", fontSize: "10px", fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", paddingBottom: "8px", borderBottom: "2px solid #0f172a" }}>
+          <span style={{ flex: 1 }}>Description</span>
+          <span style={{ width: "70px", textAlign: "right" }}>Qty</span>
+          <span style={{ width: "110px", textAlign: "right" }}>Amount</span>
         </div>
-      )}
 
-      {/* Totals */}
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <div style={{ width: "220px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#64748b", marginBottom: "6px" }}>
-            <span>Subtotal</span><span style={{ fontFamily: "ui-monospace,monospace" }}>{formatCurrency(subtotal)}</span>
+        {lineItems.length === 0 ? (
+          <div style={{ padding: "32px 0", textAlign: "center", color: "#cbd5e1", fontSize: "13px" }}>
+            Line items will appear here
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#64748b", marginBottom: "8px" }}>
-            <span>Tax ({taxRate}%)</span><span style={{ fontFamily: "ui-monospace,monospace" }}>{formatCurrency(taxAmount)}</span>
+        ) : (
+          sectionOrder.map(sec => {
+            const items = bySec[sec];
+            const secTotal = items.reduce((s, i) => s + i.amount, 0);
+            return (
+              <div key={sec}>
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "13px 0 6px", borderBottom: "1px solid #f1f5f9" }}>
+                  <span style={{ fontSize: "12px", fontWeight: 800, color: "#0f172a", textTransform: "uppercase", letterSpacing: ".03em" }}>{sec}</span>
+                  <span style={{ fontSize: "11.5px", fontWeight: 700, color: "#64748b", ...mono }}>{formatCurrency(secTotal)}</span>
+                </div>
+                {items.map(item => (
+                  <div key={item.id} style={{ display: "flex", alignItems: "flex-start", padding: "9px 0", borderBottom: "1px solid #f8fafc" }}>
+                    <div style={{ flex: 1, paddingRight: "12px" }}>
+                      <div style={{ fontSize: "12.5px", color: "#0f172a", lineHeight: 1.45 }}>
+                        {item.description || <span style={{ color: "#cbd5e1" }}>No description</span>}
+                      </div>
+                      {item.refs && (
+                        <div style={{ fontSize: "10.5px", color: "#2563eb", ...mono, marginTop: "2px" }}>{item.refs}</div>
+                      )}
+                    </div>
+                    <div style={{ width: "70px", textAlign: "right", fontSize: "11.5px", color: "#64748b", ...mono }}>
+                      {item.quantity === 0 ? "—" : `${item.quantity} ${item.unit}`}
+                    </div>
+                    <div style={{ width: "110px", textAlign: "right", fontSize: "12.5px", fontWeight: 600, color: "#0f172a", ...mono }}>
+                      {formatCurrency(item.amount)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* ── Totals ── */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "22px" }}>
+        <div style={{ width: "300px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#475569" }}>
+            <span>Subtotal</span>
+            <span style={{ ...mono, color: "#0f172a" }}>{formatCurrency(subtotal)}</span>
           </div>
-          <div style={{ borderTop: "1.5px solid #e2e8f0", paddingTop: "8px", display: "flex", justifyContent: "space-between", fontSize: "15px", fontWeight: 800, color: "#0f172a" }}>
-            <span>Total</span><span style={{ fontFamily: "ui-monospace,monospace" }}>{formatCurrency(total)}</span>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#475569" }}>
+            <span>Tax ({taxRate}%)</span>
+            <span style={{ ...mono, color: "#0f172a" }}>{formatCurrency(taxAmount)}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "15px", fontWeight: 800, color: "#0f172a", paddingTop: "9px", borderTop: "2px solid #0f172a" }}>
+            <span>Total</span>
+            <span style={mono}>{formatCurrency(total)}</span>
           </div>
         </div>
       </div>
 
+      {/* Bottom divider */}
+      <div style={{ height: "1px", background: "#e2e8f0", margin: "24px 0 18px" }} />
+
       {/* Terms */}
       {termsAndConditions && (
-        <div style={{ marginTop: "24px", paddingTop: "16px", borderTop: "1px solid #f1f5f9" }}>
-          <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: "6px" }}>Terms & Conditions</div>
-          <p style={{ margin: 0, fontSize: "12px", color: "#94a3b8" }}>{termsAndConditions}</p>
+        <div>
+          <div style={lbl}>Terms &amp; Conditions</div>
+          <div style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6 }}>{termsAndConditions}</div>
         </div>
       )}
     </div>
