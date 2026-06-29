@@ -31,6 +31,7 @@ interface ParsedLineItem {
   rate: number;
   amount: number;
   category: "materials" | "labor" | "square_footage" | "other";
+  section?: string;
 }
 
 interface ParsedDocument {
@@ -945,50 +946,87 @@ export default function InvoiceNew() {
           <DialogHeader>
             <DialogTitle>Import line items from document</DialogTitle>
           </DialogHeader>
-          {parsedDoc && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
-                  Found <strong>{parsedDoc.lineItems.length}</strong> line item{parsedDoc.lineItems.length !== 1 ? "s" : ""}. Select which to import:
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className="text-xs text-blue-600 hover:underline"
-                    onClick={() => setSelectedParsedItems(new Set(parsedDoc.lineItems.map((_, i) => i)))}
-                  >All</button>
-                  <span className="text-xs text-muted-foreground">·</span>
-                  <button
-                    type="button"
-                    className="text-xs text-blue-600 hover:underline"
-                    onClick={() => setSelectedParsedItems(new Set())}
-                  >None</button>
+          {parsedDoc && (() => {
+            // Group items by section
+            const sectionOrder: string[] = [];
+            const bySection: Record<string, Array<{ item: ParsedLineItem; idx: number }>> = {};
+            parsedDoc.lineItems.forEach((item, idx) => {
+              const sec = item.section || "Other";
+              if (!bySection[sec]) { bySection[sec] = []; sectionOrder.push(sec); }
+              bySection[sec].push({ item, idx });
+            });
+
+            const toggleSection = (sec: string, on: boolean) => {
+              const next = new Set(selectedParsedItems);
+              bySection[sec].forEach(({ idx }) => on ? next.add(idx) : next.delete(idx));
+              setSelectedParsedItems(next);
+            };
+
+            const sectionTotal = (sec: string) =>
+              bySection[sec].reduce((s, { item }) => s + item.amount, 0);
+
+            const sectionAllSelected = (sec: string) =>
+              bySection[sec].every(({ idx }) => selectedParsedItems.has(idx));
+
+            return (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    Found <strong>{parsedDoc.lineItems.length}</strong> line items across <strong>{sectionOrder.length}</strong> section{sectionOrder.length !== 1 ? "s" : ""}
+                  </p>
+                  <div className="flex gap-2">
+                    <button type="button" className="text-xs text-blue-600 hover:underline"
+                      onClick={() => setSelectedParsedItems(new Set(parsedDoc.lineItems.map((_, i) => i)))}>All</button>
+                    <span className="text-xs text-muted-foreground">·</span>
+                    <button type="button" className="text-xs text-blue-600 hover:underline"
+                      onClick={() => setSelectedParsedItems(new Set())}>None</button>
+                  </div>
+                </div>
+
+                <div className="max-h-[460px] overflow-y-auto pr-1 space-y-4">
+                  {sectionOrder.map((sec) => (
+                    <div key={sec}>
+                      {/* Section header */}
+                      <div className="flex items-center justify-between py-1.5 px-2 bg-slate-50 dark:bg-slate-800 rounded-md mb-1.5 border border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center gap-2">
+                          <Checkbox
+                            checked={sectionAllSelected(sec)}
+                            onCheckedChange={(v) => toggleSection(sec, !!v)}
+                          />
+                          <span className="text-xs font-bold tracking-wide text-slate-700 dark:text-slate-200 uppercase">{sec}</span>
+                          <span className="text-xs text-muted-foreground">({bySection[sec].length} item{bySection[sec].length !== 1 ? "s" : ""})</span>
+                        </div>
+                        <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{formatCurrency(sectionTotal(sec))}</span>
+                      </div>
+
+                      {/* Items in this section */}
+                      <div className="space-y-1 ml-1">
+                        {bySection[sec].map(({ item, idx }) => (
+                          <div key={idx} className="flex items-start gap-3 rounded-md border border-transparent hover:border-slate-200 hover:bg-muted/30 px-2 py-2 transition-colors">
+                            <Checkbox
+                              checked={selectedParsedItems.has(idx)}
+                              onCheckedChange={(checked) => {
+                                const next = new Set(selectedParsedItems);
+                                if (checked) next.add(idx); else next.delete(idx);
+                                setSelectedParsedItems(next);
+                              }}
+                              className="mt-0.5 shrink-0"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm leading-snug">{item.description}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">{item.unit}</p>
+                            </div>
+                            <span className="text-sm font-semibold shrink-0 pt-0.5 text-right">{formatCurrency(item.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
-                {parsedDoc.lineItems.map((item, i) => (
-                  <div key={i} className="flex items-start gap-3 rounded-md border p-2.5 hover:bg-muted/40 transition-colors">
-                    <Checkbox
-                      id={`item-${i}`}
-                      checked={selectedParsedItems.has(i)}
-                      onCheckedChange={(checked) => {
-                        const next = new Set(selectedParsedItems);
-                        if (checked) next.add(i); else next.delete(i);
-                        setSelectedParsedItems(next);
-                      }}
-                      className="mt-0.5"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium leading-snug">{item.description}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{item.unit} · {formatCurrency(item.rate)}</p>
-                    </div>
-                    <span className="text-sm font-semibold text-right shrink-0 pt-0.5">{formatCurrency(item.amount)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          <DialogFooter className="mt-1">
+            );
+          })()}
+          <DialogFooter className="mt-2">
             <Button variant="outline" onClick={() => setShowImportDialog(false)}>Cancel</Button>
             <Button onClick={applyParsedItems} disabled={selectedParsedItems.size === 0}>
               Import {selectedParsedItems.size} item{selectedParsedItems.size !== 1 ? "s" : ""}

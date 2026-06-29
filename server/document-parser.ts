@@ -5,6 +5,7 @@ export interface ParsedLineItem {
   rate: number;
   amount: number;
   category: "materials" | "labor" | "square_footage" | "other";
+  section?: string;
 }
 
 export interface ParsedDocument {
@@ -50,11 +51,33 @@ function cleanText(s: string): string {
 function isSectionHeader(line: string): boolean {
   const trimmed = line.trim();
   if (trimmed.length < 4) return false;
+  // Lines containing a dollar sign are price lines, not headers
+  if (/\$/.test(trimmed)) return false;
+  // Short plan/spec codes like "PT-01C." are never section headers
+  if (/^[A-Z]{2,4}-\d+[A-Z]?\.?\s*$/.test(trimmed)) return false;
+  // Skip summary keywords
+  if (SKIP_RE.test(trimmed)) return false;
   // Count uppercase letters vs total alpha characters
   const alpha = trimmed.replace(/[^A-Za-z]/g, "");
   if (alpha.length === 0) return false;
   const upperRatio = (trimmed.match(/[A-Z]/g) || []).length / alpha.length;
   return upperRatio >= 0.85 && /^[A-Z]/.test(trimmed);
+}
+
+// ── Section name mapper ───────────────────────────────────────────────────────
+// Maps raw ALL-CAPS section header text → Claude design section names
+
+function mapSectionName(rawHeader: string): string {
+  const h = rawHeader.toUpperCase().replace(/[:.\s]+$/, "").trim();
+  if (/\bBASEMENT\b/.test(h)) return "Basement";
+  if (/\bEXTERIOR\b/.test(h)) return "Exterior";
+  if (/\bGROUND\s*FLOOR\b/.test(h)) return "Ground Floor - Ceilings";
+  if (/\bWALLS?\s*(AND|&)\s*TRIM\b/.test(h)) return "Ground Floor - Walls & Trim";
+  if (/\bFIRST\s*FLOOR\b/.test(h)) return "First Floor";
+  if (/\bSECOND\s*FLOOR\b/.test(h)) return "Second Floor";
+  if (/\bUPPER\s*FLOOR\b/.test(h)) return "Upper Floor";
+  // Capitalise the raw header as a fallback
+  return h.charAt(0) + h.slice(1).toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 // ── Painting-quote line-accumulation parser ──────────────────────────────────
@@ -74,6 +97,7 @@ function parsePaintingQuote(rawText: string): ParsedLineItem[] {
   const items: ParsedLineItem[] = [];
   let accumLines: string[] = [];
   let pastPreamble = false;   // ignore company/address header before first section
+  let currentSection = "";
 
   const emitItem = (descParts: string[], amount: number) => {
     const raw = descParts.join(" ");
@@ -81,22 +105,38 @@ function parsePaintingQuote(rawText: string): ParsedLineItem[] {
     if (desc.length < 3 || SKIP_RE.test(desc)) return;
     if (/^TOTAL\b/i.test(desc)) return;
     const cat = guessCategory(desc);
-    items.push({ description: desc, quantity: 1, unit: "flat", rate: amount, amount, category: cat });
+    items.push({ description: desc, quantity: 1, unit: "flat", rate: amount, amount, category: cat, section: currentSection || undefined });
   };
 
+  // Matches a known section keyword at the START of a line that also contains a price,
+  // e.g. "EXTERIOR: PT-08 Sprayed semi gloss $9,000."
+  const INLINE_SECTION_RE = /^(BASEMENT|EXTERIOR|GROUND\s+FLOOR|WALLS?\s+(?:AND|&)\s+TRIM|FIRST\s+FLOOR|SECOND\s+FLOOR|UPPER\s+FLOOR)\s*:\s*/i;
+
   for (const line of lines) {
-    // Section headers (BASEMENT:, GROUND FLOOR:, etc.) end the preamble & reset context
+    // Pure section headers (no $ on the line) → update section & reset accumulation
     if (isSectionHeader(line)) {
       pastPreamble = true;
       accumLines = [];
+      currentSection = mapSectionName(line);
       continue;
+    }
+
+    // Inline section prefix on a price line, e.g. "EXTERIOR: Sprayed semi gloss $9,000."
+    // Strip the prefix so it doesn't bleed into item descriptions.
+    const inlineMatch = line.match(INLINE_SECTION_RE);
+    let activeLine = line;
+    if (inlineMatch) {
+      pastPreamble = true;
+      accumLines = [];
+      currentSection = mapSectionName(inlineMatch[1]);
+      activeLine = line.slice(inlineMatch[0].length); // strip "EXTERIOR: " etc.
     }
 
     // Skip preamble (address, date, company name before first section)
     if (!pastPreamble) continue;
 
     // Skip summary totals
-    if (SKIP_RE.test(line)) {
+    if (SKIP_RE.test(activeLine)) {
       accumLines = [];
       continue;
     }
@@ -105,7 +145,7 @@ function parsePaintingQuote(rawText: string): ParsedLineItem[] {
     const priceMatches: Array<{ amount: number; index: number; end: number }> = [];
     let pm: RegExpExecArray | null;
     const priceRe = new RegExp(PRICE_RE.source, "g");
-    while ((pm = priceRe.exec(line)) !== null) {
+    while ((pm = priceRe.exec(activeLine)) !== null) {
       const amount = parseFloat(pm[1].replace(/,/g, ""));
       if (!isNaN(amount) && amount >= 100) {
         priceMatches.push({ amount, index: pm.index, end: pm.index + pm[0].length });
@@ -114,12 +154,16 @@ function parsePaintingQuote(rawText: string): ParsedLineItem[] {
 
     if (priceMatches.length === 0) {
       // If line ends with a lone "$" (no valid amount), it's an unpriced entry — skip entirely
-      if (/\$\s*$/.test(line)) {
+      if (/\$\s*$/.test(activeLine)) {
         accumLines = [];
         continue;
       }
       // No prices — accumulate cleaned text
-      const cleaned = cleanText(line);
+      const cleaned = cleanText(activeLine);
+      // Skip room reference lines like "Bar 114.0. Dining 114.1. Epicrie 114.2"
+      if (/\b\d{3}\.\d\b/.test(cleaned)) continue;
+      // Skip single-word sub-headers like "Ceilings." "Walls." that follow a section header
+      if (/^[A-Z][a-z]+\.?$/.test(cleaned)) continue;
       if (cleaned.length > 2 && !SKIP_RE.test(cleaned)) {
         accumLines.push(cleaned);
       }
@@ -132,7 +176,7 @@ function parsePaintingQuote(rawText: string): ParsedLineItem[] {
       const { amount, index, end } = priceMatches[pi];
 
       // Text before this $ sign on the line
-      const beforeDollar = cleanText(line.slice(scanFrom, index));
+      const beforeDollar = cleanText(activeLine.slice(scanFrom, index));
 
       if (pi === 0) {
         // First price on line: combine previously accumulated lines + text before this $
@@ -153,7 +197,7 @@ function parsePaintingQuote(rawText: string): ParsedLineItem[] {
     }
 
     // Text remaining after the last price on this line → start next accumulation
-    const remaining = cleanText(line.slice(priceMatches[priceMatches.length - 1].end));
+    const remaining = cleanText(activeLine.slice(priceMatches[priceMatches.length - 1].end));
     accumLines = remaining.length > 2 ? [remaining] : [];
   }
 
