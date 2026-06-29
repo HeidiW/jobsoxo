@@ -537,7 +537,7 @@ export default function InvoiceNew() {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
       toast({ title: "Invoice created", description: `Invoice ${data.invoiceNumber} has been created.` });
-      setLocation("/invoices");
+      setLocation(`/invoices/${data.id}`);
     },
     onError: (error: Error) => {
       if (error instanceof ApiError && error.details) {
