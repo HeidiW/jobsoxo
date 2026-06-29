@@ -56,7 +56,8 @@ import { format } from "date-fns";
 import type { Client } from "@shared/schema";
 
 const clientFormSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  name: z.string().min(1, "Client name is required"),
+  generalContractorName: z.string().optional(),
   email: z.string().email("Invalid email").optional().or(z.literal("")),
   phone: z.string().optional(),
   address: z.string().optional(),
@@ -90,6 +91,7 @@ function ClientForm({
     resolver: zodResolver(clientFormSchema),
     defaultValues: {
       name: client?.name || "",
+      generalContractorName: client?.generalContractorName || "",
       email: client?.email || "",
       phone: client?.phone || "",
       address: client?.address || "",
@@ -145,19 +147,34 @@ function ClientForm({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-        <FormField
-          control={form.control}
-          name="name"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Name *</FormLabel>
-              <FormControl>
-                <Input placeholder="Client name" {...field} data-testid="input-client-name" />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <div className="grid grid-cols-2 gap-4">
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Client Name *</FormLabel>
+                <FormControl>
+                  <Input placeholder="Client name" {...field} data-testid="input-client-name" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="generalContractorName"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>General Contractor <span className="text-muted-foreground font-normal">(optional)</span></FormLabel>
+                <FormControl>
+                  <Input placeholder="GC company name" {...field} data-testid="input-client-gc-name" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </div>
         <div className="grid grid-cols-2 gap-4">
           <FormField
             control={form.control}

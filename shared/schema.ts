@@ -75,6 +75,7 @@ export type InsertOAuthAccount = typeof oauthAccounts.$inferInsert;
 export const clients = pgTable("clients", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
+  generalContractorName: text("general_contractor_name"),
   email: text("email"),
   phone: text("phone"),
   address: text("address"),
