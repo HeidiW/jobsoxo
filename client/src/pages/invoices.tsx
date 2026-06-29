@@ -35,6 +35,16 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -52,6 +62,7 @@ import {
   Banknote,
   CreditCard,
   Building2,
+  Trash2,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { Invoice, Client, Job } from "@shared/schema";
@@ -114,6 +125,7 @@ export default function Invoices() {
   const [quickPayInvoice, setQuickPayInvoice] = useState<InvoiceWithRelations | null>(null);
   const [quickPayMethod, setQuickPayMethod] = useState<string>("cash");
   const [quickPayDate, setQuickPayDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
+  const [deleteInvoiceId, setDeleteInvoiceId] = useState<string | null>(null);
 
   const { data: invoices, isLoading } = useQuery<InvoiceWithRelations[]>({
     queryKey: ["/api/invoices"],
@@ -149,6 +161,21 @@ export default function Invoices() {
     },
     onError: (error: Error) => {
       toast({ title: "Error recording payment", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteInvoiceMutation = useMutation({
+    mutationFn: async (invoiceId: string) => {
+      await apiRequest("DELETE", `/api/invoices/${invoiceId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      setDeleteInvoiceId(null);
+      toast({ title: "Invoice deleted", description: "The invoice has been permanently deleted." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error deleting invoice", description: error.message, variant: "destructive" });
     },
   });
 
@@ -468,6 +495,15 @@ export default function Invoices() {
                                   Download PDF
                                 </Link>
                               </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-destructive focus:text-destructive"
+                                onClick={() => setDeleteInvoiceId(invoice.id)}
+                                data-testid={`button-delete-invoice-${invoice.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -481,6 +517,28 @@ export default function Invoices() {
         </CardContent>
       </Card>
     </div>
+
+    <AlertDialog open={!!deleteInvoiceId} onOpenChange={(o) => { if (!o) setDeleteInvoiceId(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete invoice?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This will permanently delete the invoice and all its line items. This cannot be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid="button-cancel-delete-invoice">Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            onClick={() => deleteInvoiceId && deleteInvoiceMutation.mutate(deleteInvoiceId)}
+            disabled={deleteInvoiceMutation.isPending}
+            data-testid="button-confirm-delete-invoice"
+          >
+            {deleteInvoiceMutation.isPending ? "Deleting…" : "Delete"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     </>
   );
 }

@@ -37,6 +37,16 @@ import { changeOrderSchema, type ChangeOrderValues } from "@/lib/change-order-sc
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatPhone } from "@/lib/formatPhone";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   ArrowLeft,
   Mail,
   Download,
@@ -47,6 +57,7 @@ import {
   Plus,
   X,
   AlertTriangle,
+  Trash2,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { Invoice, Client, LineItem, Payment, Job, Settings } from "@shared/schema";
@@ -530,6 +541,7 @@ export default function InvoiceDetail() {
   const { toast } = useToast();
   const [showChangeOrderForm, setShowChangeOrderForm] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const handleDownloadPdf = async () => {
     const element = document.getElementById("invoice-printable");
@@ -608,6 +620,21 @@ export default function InvoiceDetail() {
     },
     onError: (error: Error) => {
       toast({ title: "Error sending change order", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteInvoiceMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/invoices/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      toast({ title: "Invoice deleted", description: "The invoice has been permanently deleted." });
+      setLocation("/invoices");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error deleting invoice", description: error.message, variant: "destructive" });
     },
   });
 
@@ -709,6 +736,15 @@ export default function InvoiceDetail() {
               <Download className="h-4 w-4 mr-2" />
               {isDownloading ? "Generating…" : "Download PDF"}
             </Button>
+            <Button
+              variant="outline"
+              className="border-destructive text-destructive hover:bg-destructive/10"
+              onClick={() => setShowDeleteDialog(true)}
+              data-testid="button-delete-invoice"
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete
+            </Button>
           </div>
         </div>
 
@@ -795,6 +831,28 @@ export default function InvoiceDetail() {
         )}
 
       </div>
+
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete invoice?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete invoice <strong>{invoice.invoiceNumber}</strong> and all its line items. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-invoice">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteInvoiceMutation.mutate()}
+              disabled={deleteInvoiceMutation.isPending}
+              data-testid="button-confirm-delete-invoice"
+            >
+              {deleteInvoiceMutation.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
