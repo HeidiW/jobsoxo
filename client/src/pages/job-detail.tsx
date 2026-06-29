@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,18 +39,19 @@ import {
   Users,
   FileText,
   AlertTriangle,
-  DollarSign,
-  CheckCircle,
-  Clock,
-  Mail,
   Edit,
   Plus,
   Trash2,
+  Tag,
+  Upload,
+  Download,
+  File,
+  Paperclip,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
-import type { Job, Client, Invoice, LineItem, Employee } from "@shared/schema";
+import type { Job, Client, Invoice, LineItem, Employee, JobDocument } from "@shared/schema";
 import JobForm from "@/components/job-form";
 
 interface InvoiceWithItems extends Invoice {
@@ -106,12 +107,84 @@ function SkeletonPage() {
   );
 }
 
+type JobDocumentMeta = Omit<JobDocument, "fileData">;
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const [editOpen, setEditOpen] = useState(false);
   const [deleteInvoiceId, setDeleteInvoiceId] = useState<string | null>(null);
+  const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  const { data: documents, isLoading: docsLoading } = useQuery<JobDocumentMeta[]>({
+    queryKey: ["/api/jobs", id, "documents"],
+    enabled: !!id,
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/jobs/${id}/documents`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error(err.error || "Upload failed");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", id, "documents"] });
+      toast({ title: "Document uploaded" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Upload failed", description: error.message, variant: "destructive" });
+    },
+    onSettled: () => setUploading(false),
+  });
+
+  const deleteDocMutation = useMutation({
+    mutationFn: async (docId: string) => {
+      await apiRequest("DELETE", `/api/job-documents/${docId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", id, "documents"] });
+      toast({ title: "Document deleted" });
+      setDeleteDocId(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to delete document", variant: "destructive" });
+    },
+  });
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    uploadMutation.mutate(file);
+    e.target.value = "";
+  };
+
+  const handleDownload = (doc: JobDocumentMeta) => {
+    const a = document.createElement("a");
+    a.href = `/api/job-documents/${doc.id}/download`;
+    a.download = doc.fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
 
   const deleteInvoiceMutation = useMutation({
     mutationFn: async (invoiceId: string) => {
@@ -288,6 +361,28 @@ export default function JobDetail() {
                 </div>
               </div>
             </div>
+            {(() => {
+              const codes = (job.referenceCodes as { label: string; code: string }[] | null | undefined) ?? [];
+              return codes.length > 0 ? (
+                <>
+                  <Separator className="mt-4 mb-4" />
+                  <div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                      <Tag className="h-3.5 w-3.5" />
+                      Reference Codes
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {codes.map((rc, i) => (
+                        <div key={i} className="flex items-center gap-1.5 rounded-md border bg-muted/40 px-2.5 py-1" data-testid={`ref-code-${i}`}>
+                          <span className="text-xs text-muted-foreground">{rc.label}:</span>
+                          <span className="text-xs font-mono font-medium">{rc.code}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : null;
+            })()}
           </CardContent>
         </Card>
 
@@ -513,7 +608,130 @@ export default function JobDetail() {
             )}
           </CardContent>
         </Card>
+        {/* Documents */}
+        <Card className="mb-6">
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <CardTitle className="flex items-center gap-2">
+              <Paperclip className="h-5 w-5" />
+              Plan Documents
+              {documents && documents.length > 0 && (
+                <Badge variant="secondary">{documents.length}</Badge>
+              )}
+            </CardTitle>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              data-testid="button-upload-document"
+            >
+              <Upload className="h-4 w-4 mr-1" />
+              {uploading ? "Uploading…" : "Upload"}
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={handleFileChange}
+              data-testid="input-document-file"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.txt,.csv"
+            />
+          </CardHeader>
+          <CardContent>
+            {docsLoading ? (
+              <div className="space-y-2">
+                {[1, 2].map((i) => (
+                  <div key={i} className="flex items-center gap-3 p-3 rounded-md border">
+                    <Skeleton className="h-8 w-8 rounded" />
+                    <div className="flex-1 space-y-1.5">
+                      <Skeleton className="h-4 w-48" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : !documents || documents.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                <File className="h-8 w-8 mx-auto mb-3 text-muted-foreground/40" />
+                <p className="font-medium text-foreground">No documents uploaded</p>
+                <p className="mt-1">Upload plans, permits, specs, or any job-related files.</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  data-testid="button-upload-first-document"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload Document
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {documents.map((doc) => (
+                  <div
+                    key={doc.id}
+                    className="flex items-center gap-3 p-3 rounded-md border hover:bg-muted/30 transition-colors"
+                    data-testid={`document-row-${doc.id}`}
+                  >
+                    <div className="h-9 w-9 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+                      <FileText className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{doc.fileName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatBytes(doc.fileSize)} · {format(new Date(doc.uploadedAt), "MMM d, yyyy")}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleDownload(doc)}
+                        data-testid={`button-download-doc-${doc.id}`}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                        onClick={() => setDeleteDocId(doc.id)}
+                        data-testid={`button-delete-doc-${doc.id}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
+
+      <AlertDialog open={!!deleteDocId} onOpenChange={(o) => { if (!o) setDeleteDocId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete document?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the file and cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteDocId && deleteDocMutation.mutate(deleteDocId)}
+              data-testid="button-confirm-delete-document"
+            >
+              {deleteDocMutation.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!deleteInvoiceId} onOpenChange={(o) => { if (!o) setDeleteInvoiceId(null); }}>
         <AlertDialogContent>

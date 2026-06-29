@@ -107,6 +107,7 @@ export const jobs = pgTable("jobs", {
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   estimatedTotal: decimal("estimated_total", { precision: 10, scale: 2 }),
+  referenceCodes: jsonb("reference_codes").$type<{ label: string; code: string }[]>().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -127,6 +128,7 @@ export const insertJobSchema = createInsertSchema(jobs)
     endDate: z.coerce.date().optional().nullable(),
     squareFootage: z.coerce.string().optional().nullable(),
     estimatedTotal: z.coerce.string().optional().nullable(),
+    referenceCodes: z.array(z.object({ label: z.string(), code: z.string() })).optional().nullable(),
   });
 export type InsertJob = z.infer<typeof insertJobSchema>;
 export type Job = typeof jobs.$inferSelect;
@@ -448,3 +450,18 @@ export const insertSettingsSchema = createInsertSchema(settings)
   });
 export type InsertSettings = z.infer<typeof insertSettingsSchema>;
 export type Settings = typeof settings.$inferSelect;
+
+// Job Documents table
+export const jobDocuments = pgTable("job_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobId: varchar("job_id").notNull().references(() => jobs.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  fileType: text("file_type").notNull(),
+  fileSize: integer("file_size").notNull(),
+  fileData: text("file_data").notNull(),
+  uploadedAt: timestamp("uploaded_at").defaultNow().notNull(),
+});
+
+export const insertJobDocumentSchema = createInsertSchema(jobDocuments).omit({ id: true, uploadedAt: true });
+export type InsertJobDocument = z.infer<typeof insertJobDocumentSchema>;
+export type JobDocument = typeof jobDocuments.$inferSelect;

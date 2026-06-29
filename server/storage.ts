@@ -25,6 +25,8 @@ import {
   type InboxTask,
   type InsertInboxTask,
   type GoogleToken,
+  type JobDocument,
+  type InsertJobDocument,
   users,
   clients,
   jobs,
@@ -39,6 +41,7 @@ import {
   invites,
   inboxTasks,
   googleTokens,
+  jobDocuments,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql, isNull, or, inArray } from "drizzle-orm";
@@ -149,6 +152,12 @@ export interface IStorage {
   deleteManyInboxTasks(userId: string, emailIds: string[]): Promise<void>;
   deleteUserInboxTasks(userId: string): Promise<void>;
   deleteAllInboxTasks(): Promise<void>;
+
+  // Job Documents
+  getJobDocuments(jobId: string): Promise<JobDocument[]>;
+  getJobDocument(id: string): Promise<JobDocument | undefined>;
+  createJobDocument(doc: InsertJobDocument): Promise<JobDocument>;
+  deleteJobDocument(id: string): Promise<void>;
 
   // Dashboard
   getDashboardStats(): Promise<{
@@ -685,6 +694,25 @@ export class DatabaseStorage implements IStorage {
       .update(googleTokens)
       .set({ syncLabels: labels })
       .where(eq(googleTokens.userId, userId));
+  }
+
+  // Job Documents
+  async getJobDocuments(jobId: string): Promise<JobDocument[]> {
+    return db.select().from(jobDocuments).where(eq(jobDocuments.jobId, jobId)).orderBy(desc(jobDocuments.uploadedAt));
+  }
+
+  async getJobDocument(id: string): Promise<JobDocument | undefined> {
+    const [doc] = await db.select().from(jobDocuments).where(eq(jobDocuments.id, id));
+    return doc ?? undefined;
+  }
+
+  async createJobDocument(doc: InsertJobDocument): Promise<JobDocument> {
+    const [newDoc] = await db.insert(jobDocuments).values(doc).returning();
+    return newDoc;
+  }
+
+  async deleteJobDocument(id: string): Promise<void> {
+    await db.delete(jobDocuments).where(eq(jobDocuments.id, id));
   }
 
   // Dashboard

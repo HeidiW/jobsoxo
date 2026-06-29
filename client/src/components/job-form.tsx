@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
+import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import {
@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
-import { Users } from "lucide-react";
+import { Users, Plus, Trash2, Tag } from "lucide-react";
 import { format } from "date-fns";
 import type { Job, Client, Employee, EmployeeAssignment } from "@shared/schema";
 
@@ -38,6 +38,7 @@ const jobFormSchema = z.object({
   endDate: z.string().optional(),
   estimatedTotal: z.string().optional(),
   employeeIds: z.array(z.string()).optional(),
+  referenceCodes: z.array(z.object({ label: z.string(), code: z.string() })).optional(),
 });
 
 type JobFormValues = z.infer<typeof jobFormSchema>;
@@ -67,6 +68,8 @@ export default function JobForm({
     enabled: isEdit && !!job?.id,
   });
 
+  const existingCodes = (job?.referenceCodes as { label: string; code: string }[] | null | undefined) ?? [];
+
   const form = useForm<JobFormValues>({
     resolver: zodResolver(jobFormSchema),
     defaultValues: {
@@ -80,7 +83,13 @@ export default function JobForm({
       endDate: job?.endDate ? format(new Date(job.endDate), "yyyy-MM-dd") : "",
       estimatedTotal: job?.estimatedTotal?.toString() || "",
       employeeIds: [],
+      referenceCodes: existingCodes,
     },
+  });
+
+  const { fields: refFields, append: appendRef, remove: removeRef } = useFieldArray({
+    control: form.control,
+    name: "referenceCodes",
   });
 
   if (isEdit && existingAssignments && form.getValues("employeeIds")?.length === 0 && existingAssignments.length > 0) {
@@ -98,6 +107,7 @@ export default function JobForm({
         estimatedTotal: jobData.estimatedTotal ? parseFloat(jobData.estimatedTotal) : null,
         startDate: jobData.startDate ? new Date(jobData.startDate).toISOString() : null,
         endDate: jobData.endDate ? new Date(jobData.endDate).toISOString() : null,
+        referenceCodes: jobData.referenceCodes ?? [],
       };
       const res = await apiRequest(method, url, payload);
       const savedJob = await res.json();
@@ -274,6 +284,82 @@ export default function JobForm({
             </FormItem>
           )}
         />
+        {/* Reference Codes */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium flex items-center gap-1.5">
+              <Tag className="h-4 w-4" />
+              Reference Codes
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => appendRef({ label: "", code: "" })}
+              data-testid="button-add-reference-code"
+            >
+              <Plus className="h-3 w-3 mr-1" />
+              Add Code
+            </Button>
+          </div>
+          {refFields.length === 0 && (
+            <p className="text-xs text-muted-foreground py-1">
+              No reference codes — add permit numbers, PO numbers, project IDs, etc.
+            </p>
+          )}
+          <div className="space-y-2">
+            {refFields.map((field, index) => (
+              <div key={field.id} className="flex gap-2 items-start">
+                <FormField
+                  control={form.control}
+                  name={`referenceCodes.${index}.label`}
+                  render={({ field: f }) => (
+                    <FormItem className="flex-1 min-w-0">
+                      <FormControl>
+                        <Input
+                          placeholder="Label (e.g. PO No.)"
+                          {...f}
+                          className="text-sm"
+                          data-testid={`input-ref-label-${index}`}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name={`referenceCodes.${index}.code`}
+                  render={({ field: f }) => (
+                    <FormItem className="flex-1 min-w-0">
+                      <FormControl>
+                        <Input
+                          placeholder="Code (e.g. PO-2024-001)"
+                          {...f}
+                          className="text-sm"
+                          data-testid={`input-ref-code-${index}`}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
+                  onClick={() => removeRef(index)}
+                  data-testid={`button-remove-ref-${index}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {employees && employees.length > 0 && (
           <FormField
             control={form.control}

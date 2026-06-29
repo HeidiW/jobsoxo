@@ -587,6 +587,68 @@ export async function registerRoutes(
     }
   });
 
+  // Job Documents
+  const multerDocLib = _require("multer") as typeof import("multer").default;
+  const docUpload = multerDocLib({ storage: multerDocLib.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+  app.get("/api/jobs/:id/documents", async (req, res) => {
+    try {
+      const docs = await storage.getJobDocuments(req.params.id);
+      res.json(docs.map(({ fileData: _fd, ...rest }) => rest));
+    } catch (error) {
+      console.error("Get job documents error:", error);
+      res.status(500).json({ error: "Failed to get documents" });
+    }
+  });
+
+  app.post("/api/jobs/:id/documents", docUpload.single("file"), async (req, res) => {
+    try {
+      const job = await storage.getJob(req.params.id);
+      if (!job) return res.status(404).json({ error: "Job not found" });
+      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+      const fileData = req.file.buffer.toString("base64");
+      const doc = await storage.createJobDocument({
+        jobId: req.params.id,
+        fileName: req.file.originalname,
+        fileType: req.file.mimetype,
+        fileSize: req.file.size,
+        fileData,
+      });
+      const { fileData: _fd, ...rest } = doc;
+      res.status(201).json(rest);
+    } catch (error) {
+      console.error("Upload document error:", error);
+      res.status(500).json({ error: "Failed to upload document" });
+    }
+  });
+
+  app.get("/api/job-documents/:docId/download", async (req, res) => {
+    try {
+      const doc = await storage.getJobDocument(req.params.docId);
+      if (!doc) return res.status(404).json({ error: "Document not found" });
+      const buffer = Buffer.from(doc.fileData, "base64");
+      res.setHeader("Content-Type", doc.fileType);
+      res.setHeader("Content-Disposition", `attachment; filename="${doc.fileName}"`);
+      res.setHeader("Content-Length", buffer.length);
+      res.send(buffer);
+    } catch (error) {
+      console.error("Download document error:", error);
+      res.status(500).json({ error: "Failed to download document" });
+    }
+  });
+
+  app.delete("/api/job-documents/:docId", async (req, res) => {
+    try {
+      const doc = await storage.getJobDocument(req.params.docId);
+      if (!doc) return res.status(404).json({ error: "Document not found" });
+      await storage.deleteJobDocument(req.params.docId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete document error:", error);
+      res.status(500).json({ error: "Failed to delete document" });
+    }
+  });
+
   // Line Items
   app.get("/api/jobs/:id/line-items", async (req, res) => {
     try {
