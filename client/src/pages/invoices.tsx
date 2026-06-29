@@ -435,7 +435,7 @@ export default function Invoices() {
                                 <MoreHorizontal className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
+                            <DropdownMenuContent align="end" sideOffset={4} collisionPadding={12}>
                               <DropdownMenuItem asChild>
                                 <Link href={`/invoices/${invoice.id}`} data-testid={`button-view-invoice-${invoice.id}`}>
                                   <Eye className="h-4 w-4 mr-2" />
@@ -462,9 +462,11 @@ export default function Invoices() {
                                 </>
                               )}
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem data-testid={`button-download-invoice-${invoice.id}`}>
-                                <Download className="h-4 w-4 mr-2" />
-                                Download PDF
+                              <DropdownMenuItem asChild>
+                                <Link href={`/invoices/${invoice.id}?autoDownload=1`} data-testid={`button-download-invoice-${invoice.id}`}>
+                                  <Download className="h-4 w-4 mr-2" />
+                                  Download PDF
+                                </Link>
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>

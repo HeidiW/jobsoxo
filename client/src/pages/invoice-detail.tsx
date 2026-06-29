@@ -571,6 +571,14 @@ export default function InvoiceDetail() {
     enabled: !!id,
   });
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("autoDownload") === "1" && invoice) {
+      const timer = setTimeout(() => handleDownloadPdf(), 600);
+      return () => clearTimeout(timer);
+    }
+  }, [invoice]);
+
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
   });
