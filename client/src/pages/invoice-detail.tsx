@@ -323,57 +323,169 @@ function printChangeOrderDoc(invoice: InvoiceDetail, settings: Settings | null) 
   const changeOrders = invoice.lineItems?.filter((i) => i.isChangeOrder) ?? [];
   if (!changeOrders.length) return;
 
-  const fmt = (n: string | number | null | undefined) =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Number(n ?? 0));
+  const fmtCurrency = (n: string | number | null | undefined) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(Number(n ?? 0));
 
   const today = formatChangeOrderDate(new Date());
   const companyName = settings?.companyName ?? "";
+  const companyEmail = settings?.companyEmail ?? "";
+  const companyPhone = settings?.companyPhone ?? "";
   const companyAddress = settings?.companyAddress ?? "";
 
-  const jobLine = [invoice.job?.title, invoice.job?.address].filter(Boolean).join(", ");
+  const client = invoice.client;
+  const clientAddrParts = [client.address, client.city, client.state, client.zipCode].filter(Boolean);
+  const clientAddr = clientAddrParts.join(", ");
+
+  const jobTitle = invoice.job?.title ?? "";
+  const jobAddress = invoice.job?.address ?? "";
 
   const total = changeOrders.reduce((s, co) => s + Number(co.amount), 0);
 
-  const client = invoice.client;
-  const clientAddr = [client.address, client.city, client.state, client.zipCode].filter(Boolean).join(" ");
-  const presentedTo = client.name ? `Presented to ${client.name}${clientAddr ? `, at ${clientAddr}` : ""}.` : "";
-
-  const itemLines = changeOrders
-    .map((co, i) => `<p class="item">${i + 1}. ${co.description} - ${fmt(co.amount)}.</p>`)
-    .join("\n");
+  const itemRows = changeOrders.map((co, i) => `
+    <tr>
+      <td class="item-num">${i + 1}</td>
+      <td class="item-desc">${co.description}${co.changeOrderReason ? `<br><span class="item-reason">Reason: ${co.changeOrderReason}</span>` : ""}</td>
+      <td class="item-amount">${fmtCurrency(co.amount)}</td>
+    </tr>`).join("");
 
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Change Order</title>
+<title>Change Order — ${invoice.invoiceNumber}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: Arial, sans-serif; font-size: 13pt; color: #000; padding: 60px 72px; line-height: 1.6; }
-  .date { margin-bottom: 4px; }
-  .company-name { font-weight: bold; margin-bottom: 2px; }
-  .company-address { margin-bottom: 24px; }
-  .project { font-weight: bold; text-transform: uppercase; margin-bottom: 16px; }
-  .item { margin-bottom: 6px; }
-  .total { font-weight: bold; text-transform: uppercase; margin-top: 24px; margin-bottom: 24px; }
-  .footer { margin-top: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #111; background: #fff; }
+  .page { max-width: 760px; margin: 0 auto; padding: 48px 56px; }
+
+  /* ── Header ── */
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 36px; border-bottom: 3px solid #1a1a1a; padding-bottom: 24px; }
+  .company-block .company-name { font-size: 18pt; font-weight: 700; margin-bottom: 4px; }
+  .company-block .company-detail { font-size: 9.5pt; color: #444; line-height: 1.6; }
+  .doc-title { text-align: right; }
+  .doc-title h1 { font-size: 22pt; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; color: #1a1a1a; }
+  .doc-title .ref { font-size: 9.5pt; color: #555; margin-top: 4px; }
+  .doc-title .doc-date { font-size: 10pt; font-weight: 600; margin-top: 2px; }
+
+  /* ── Info grid ── */
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; }
+  .info-box { border: 1px solid #ddd; border-radius: 4px; padding: 14px 16px; }
+  .info-box .label { font-size: 8pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #888; margin-bottom: 6px; }
+  .info-box .value { font-size: 10.5pt; line-height: 1.6; }
+  .info-box .value strong { display: block; font-size: 11pt; }
+
+  /* ── Table ── */
+  table { width: 100%; border-collapse: collapse; margin-bottom: 0; }
+  thead tr { background: #1a1a1a; color: #fff; }
+  thead th { padding: 10px 14px; font-size: 9pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; }
+  thead th.col-num { width: 40px; text-align: center; }
+  thead th.col-desc { text-align: left; }
+  thead th.col-amount { width: 120px; text-align: right; }
+  tbody tr { border-bottom: 1px solid #e8e8e8; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:nth-child(even) { background: #f9f9f9; }
+  td { padding: 11px 14px; vertical-align: top; }
+  td.item-num { text-align: center; color: #888; font-size: 9.5pt; }
+  td.item-desc { font-size: 10.5pt; line-height: 1.5; }
+  td.item-amount { text-align: right; font-size: 10.5pt; font-weight: 600; white-space: nowrap; }
+  .item-reason { font-size: 8.5pt; color: #777; font-style: italic; }
+
+  /* ── Totals ── */
+  .totals-wrapper { border: 1px solid #ddd; border-top: none; }
+  .totals-row { display: flex; justify-content: flex-end; }
+  .totals-table { width: 280px; border-collapse: collapse; }
+  .totals-table td { padding: 9px 14px; font-size: 10.5pt; border-top: 1px solid #e8e8e8; }
+  .totals-table .total-row td { background: #1a1a1a; color: #fff; font-weight: 700; font-size: 11.5pt; padding: 12px 14px; }
+  .totals-table .total-label { text-transform: uppercase; letter-spacing: 0.4px; }
+  .totals-table .total-amount { text-align: right; font-weight: 600; }
+  .totals-table .total-row .total-amount { font-weight: 800; }
+
+  /* ── Footer ── */
+  .footer { margin-top: 36px; padding-top: 16px; border-top: 1px solid #ddd; font-size: 9pt; color: #666; line-height: 1.7; }
+
   @media print {
-    body { padding: 40px 54px; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page { padding: 32px 40px; }
   }
 </style>
 </head>
 <body>
-  <p class="date">${today}</p>
-  ${companyName ? `<p class="company-name">${companyName}</p>` : ""}
-  ${companyAddress ? `<p class="company-address">${companyAddress}.</p>` : ""}
-  ${jobLine ? `<p class="project">${jobLine}:</p>` : ""}
-  ${itemLines}
-  <p class="total">OUTSTANDING TOTAL - ${fmt(total)}.</p>
-  ${presentedTo ? `<p class="footer">${presentedTo}</p>` : ""}
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="company-block">
+      ${companyName ? `<div class="company-name">${companyName}</div>` : ""}
+      <div class="company-detail">
+        ${companyAddress ? `${companyAddress}<br>` : ""}
+        ${companyPhone ? `${companyPhone}<br>` : ""}
+        ${companyEmail ? `${companyEmail}` : ""}
+      </div>
+    </div>
+    <div class="doc-title">
+      <h1>Change Order</h1>
+      <div class="ref">Ref: ${invoice.invoiceNumber}</div>
+      <div class="doc-date">${today}</div>
+    </div>
+  </div>
+
+  <!-- Bill To / Project -->
+  <div class="info-grid">
+    <div class="info-box">
+      <div class="label">Presented To</div>
+      <div class="value">
+        <strong>${client.name}</strong>
+        ${clientAddr ? clientAddr : ""}
+        ${client.email ? `<br>${client.email}` : ""}
+        ${client.phone ? `<br>${client.phone}` : ""}
+      </div>
+    </div>
+    <div class="info-box">
+      <div class="label">Project</div>
+      <div class="value">
+        ${jobTitle ? `<strong>${jobTitle}</strong>` : ""}
+        ${jobAddress ? jobAddress : ""}
+      </div>
+    </div>
+  </div>
+
+  <!-- Line items table -->
+  <table>
+    <thead>
+      <tr>
+        <th class="col-num">#</th>
+        <th class="col-desc">Description</th>
+        <th class="col-amount">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemRows}
+    </tbody>
+  </table>
+
+  <!-- Totals -->
+  <div class="totals-wrapper">
+    <div class="totals-row">
+      <table class="totals-table">
+        <tr class="total-row">
+          <td class="total-label">Outstanding Total</td>
+          <td class="total-amount">${fmtCurrency(total)}</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    This change order amends the original contract and is subject to acceptance by all parties.<br>
+    Authorised signature: ___________________________________ &nbsp;&nbsp; Date: _______________
+  </div>
+
+</div>
 </body>
 </html>`;
 
-  const win = window.open("", "_blank", "width=800,height=900");
+  const win = window.open("", "_blank", "width=860,height=1000");
   if (!win) return;
   win.document.write(html);
   win.document.close();
