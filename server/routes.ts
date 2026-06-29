@@ -817,7 +817,10 @@ export async function registerRoutes(
 
       if (req.file.mimetype === "application/pdf") {
         // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
-        const pdfParse = _require("pdf-parse") as any;
+        const pdfParseLib = _require("pdf-parse") as any;
+        // In the production CJS bundle the default export may be wrapped — unwrap it.
+        const pdfParse: (buf: Buffer) => Promise<{ text: string }> =
+          typeof pdfParseLib === "function" ? pdfParseLib : pdfParseLib.default ?? pdfParseLib;
         const parsed = await pdfParse(req.file.buffer);
         text = parsed.text;
       } else {
