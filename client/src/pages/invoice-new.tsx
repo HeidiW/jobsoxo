@@ -88,6 +88,7 @@ interface NewLineItem extends Omit<LineItemFormValues, "quantity" | "rate" | "am
   amount: number;
   refs?: string;
   section?: string;
+  hasQty?: boolean;
 }
 
 // ── Shared style helpers ─────────────────────────────────────────────────────
@@ -274,7 +275,7 @@ function InvoicePreview({
                       )}
                     </div>
                     <div style={{ width: "70px", textAlign: "right", fontSize: "11.5px", color: "#64748b", ...mono }}>
-                      {!item.quantity ? "—" : `${item.quantity} ${item.unit}`}
+                      {item.hasQty === false || !item.quantity ? "—" : `${item.quantity} ${item.unit}`}
                     </div>
                     <div style={{ width: "110px", textAlign: "right", fontSize: "12.5px", fontWeight: 600, color: "#0f172a", ...mono }}>
                       {formatCurrency(item.amount)}
@@ -521,7 +522,12 @@ export default function InvoiceNew() {
         ...data.formData,
         taxRate: parseFloat(data.formData.taxRate || "0"),
         subtotal, taxAmount, total, balance: total,
-        lineItems: lineItems.map(({ id: _id, ...item }) => item),
+        lineItems: lineItems.map(({ id: _id, hasQty, ...item }) => ({
+          ...item,
+          quantity: hasQty === false ? 1 : item.quantity,
+          unit:     hasQty === false ? "lump" : item.unit,
+          rate:     hasQty === false ? item.amount : item.rate,
+        })),
         send: data.send,
       };
       const res = await apiRequest("POST", "/api/invoices", payload);
@@ -592,7 +598,7 @@ export default function InvoiceNew() {
   const addItemToSection = (sec: string) =>
     setLineItems(prev => [...prev, {
       id: crypto.randomUUID(), description: "", refs: "", quantity: 1, unit: "lump",
-      rate: 0, amount: 0, category: "labor" as const, section: sec || undefined,
+      rate: 0, amount: 0, category: "labor" as const, section: sec || undefined, hasQty: true,
     }]);
 
   const renameSection = (oldSec: string, newSec: string) =>
@@ -972,38 +978,67 @@ export default function InvoiceNew() {
                                             />
                                           </div>
                                         )}
-                                        <div>
-                                          <label style={fLabel}>Qty</label>
-                                          <input type="number" min="0" step="any" value={item.quantity}
-                                            onChange={e => { const q = parseFloat(e.target.value) || 1; updateItem(item.id, { quantity: q, amount: +(q * item.rate).toFixed(2) }); }}
-                                            style={fInput} data-testid={`input-item-qty-${item.id}`} />
-                                        </div>
-                                        <div>
-                                          <label style={fLabel}>Unit</label>
-                                          <select value={item.unit} onChange={e => updateItem(item.id, { unit: e.target.value })}
-                                            style={{ ...fInput, appearance: "auto" as React.CSSProperties["appearance"] }}
-                                            data-testid={`select-item-unit-${item.id}`}>
-                                            <option value="lump">Lump sum</option>
-                                            <option value="flat">Flat rate</option>
-                                            <option value="hours">Hours</option>
-                                            <option value="sqft">Sq ft</option>
-                                            <option value="each">Each</option>
-                                            <option value="day">Days</option>
-                                          </select>
-                                        </div>
-                                        <div>
-                                          <label style={fLabel}>Rate ($)</label>
-                                          <input type="number" min="0" step="any" value={item.rate}
-                                            onChange={e => { const r = parseFloat(e.target.value) || 0; updateItem(item.id, { rate: r, amount: +(item.quantity * r).toFixed(2) }); }}
-                                            style={{ ...fInput, fontFamily: "ui-monospace,monospace" }}
-                                            data-testid={`input-item-rate-${item.id}`} />
-                                        </div>
-                                        <div>
-                                          <label style={fLabel}>Amount</label>
-                                          <div style={{ width: "100%", padding: "7px 9px", border: "1px solid #e2e8f0", borderRadius: "7px", fontSize: "12.5px", fontWeight: 700, fontFamily: "ui-monospace,monospace", color: "#0f172a", background: "#f8fafc", boxSizing: "border-box" }}>
-                                            {formatCurrency(item.amount)}
+
+                                        {item.hasQty !== false ? (
+                                          <>
+                                            <div>
+                                              <label style={{ ...fLabel, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                                <span>Qty</span>
+                                                <button type="button"
+                                                  onClick={() => updateItem(item.id, { hasQty: false, quantity: 1, rate: item.amount })}
+                                                  title="Remove quantity"
+                                                  style={{ border: "none", background: "none", cursor: "pointer", color: "#94a3b8", fontSize: "14px", lineHeight: 1, padding: 0, marginLeft: "4px" }}>
+                                                  ×
+                                                </button>
+                                              </label>
+                                              <input type="number" min="0" step="any" value={item.quantity}
+                                                onChange={e => { const q = parseFloat(e.target.value) || 1; updateItem(item.id, { quantity: q, amount: +(q * item.rate).toFixed(2) }); }}
+                                                style={fInput} data-testid={`input-item-qty-${item.id}`} />
+                                            </div>
+                                            <div>
+                                              <label style={fLabel}>Unit</label>
+                                              <select value={item.unit} onChange={e => updateItem(item.id, { unit: e.target.value })}
+                                                style={{ ...fInput, appearance: "auto" as React.CSSProperties["appearance"] }}
+                                                data-testid={`select-item-unit-${item.id}`}>
+                                                <option value="lump">Lump sum</option>
+                                                <option value="flat">Flat rate</option>
+                                                <option value="hours">Hours</option>
+                                                <option value="sqft">Sq ft</option>
+                                                <option value="each">Each</option>
+                                                <option value="day">Days</option>
+                                              </select>
+                                            </div>
+                                            <div>
+                                              <label style={fLabel}>Rate ($)</label>
+                                              <input type="number" min="0" step="any" value={item.rate}
+                                                onChange={e => { const r = parseFloat(e.target.value) || 0; updateItem(item.id, { rate: r, amount: +(item.quantity * r).toFixed(2) }); }}
+                                                style={{ ...fInput, fontFamily: "ui-monospace,monospace" }}
+                                                data-testid={`input-item-rate-${item.id}`} />
+                                            </div>
+                                            <div>
+                                              <label style={fLabel}>Amount</label>
+                                              <div style={{ width: "100%", padding: "7px 9px", border: "1px solid #e2e8f0", borderRadius: "7px", fontSize: "12.5px", fontWeight: 700, fontFamily: "ui-monospace,monospace", color: "#0f172a", background: "#f8fafc", boxSizing: "border-box" }}>
+                                                {formatCurrency(item.amount)}
+                                              </div>
+                                            </div>
+                                          </>
+                                        ) : (
+                                          <div style={{ gridColumn: "1 / -1" }}>
+                                            <label style={{ ...fLabel, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                              <span>Amount</span>
+                                              <button type="button"
+                                                onClick={() => updateItem(item.id, { hasQty: true, quantity: 1, rate: item.amount })}
+                                                style={{ border: "none", background: "none", cursor: "pointer", color: "#2563eb", fontSize: "11px", fontWeight: 700, letterSpacing: ".01em", padding: 0 }}
+                                                data-testid={`button-add-qty-${item.id}`}>
+                                                + Add qty
+                                              </button>
+                                            </label>
+                                            <input type="number" min="0" step="any" value={item.amount}
+                                              onChange={e => { const a = parseFloat(e.target.value) || 0; updateItem(item.id, { amount: a, rate: a }); }}
+                                              style={{ ...fInput, fontFamily: "ui-monospace,monospace" }}
+                                              data-testid={`input-item-amount-${item.id}`} />
                                           </div>
-                                        </div>
+                                        )}
                                       </div>
                                     </div>
                                   ))}
