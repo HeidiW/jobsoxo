@@ -36,12 +36,59 @@ const SKIP_RE = /^(total\b|sub[-\s]?total|grand\s*total|balance\s*due|amount\s*d
 // Section headers: lines that are entirely uppercase (or close to it) like "BASEMENT:" "WALLS AND TRIM."
 const SECTION_HDR_RE = /^[A-Z][A-Z0-9\s\/&\-]{3,}[:.\s]*$/;
 
+// Known construction/painting compound words that should be two words
+const WORD_SPLIT_MAP: Record<string, string> = {
+  doorcasing: "door casing",
+  doorcasings: "door casings",
+  doorframe: "door frame",
+  doorframes: "door frames",
+  doorjamb: "door jamb",
+  doorjambs: "door jambs",
+  windowsill: "window sill",
+  windowsills: "window sills",
+  windowframe: "window frame",
+  windowframes: "window frames",
+  picturerail: "picture rail",
+  picturerails: "picture rails",
+  crownmolding: "crown molding",
+  crownmoldings: "crown moldings",
+  baseboard: "base board",
+  baseboards: "base boards",
+  basecoat: "base coat",
+  basecoats: "base coats",
+  topcoat: "top coat",
+  topcoats: "top coats",
+  semigloss: "semi gloss",
+  semimatte: "semi matte",
+  eggshell: "egg shell",
+  dropsheeting: "drop sheeting",
+  dropsheet: "drop sheet",
+  dropsheets: "drop sheets",
+  floorboards: "floor boards",
+  floorboard: "floor board",
+  skimcoat: "skim coat",
+  skimcoats: "skim coats",
+  primercoat: "primer coat",
+  finishcoat: "finish coat",
+  finishcoats: "finish coats",
+  brushwork: "brush work",
+  rollwork: "roll work",
+  spraywork: "spray work",
+  lightlock: "light lock",
+};
+
+const WORD_SPLIT_RE = new RegExp(
+  `\\b(${Object.keys(WORD_SPLIT_MAP).join("|")})\\b`,
+  "gi"
+);
+
 function cleanText(s: string): string {
   return s
     .replace(PAREN_REF_RE, "")           // remove parenthetical plan refs like (RCP, ID-102)
     .replace(/([a-zA-Z])(PT-\d+[A-Z]?)/g, "$1 $2")  // insert space before PT code when directly joined e.g. "wallsPT-01B"
     .replace(/\s*\/\s*(?=[A-Z\s]|$)/g, " ")   // clean lone slashes from "PT-01B/ PT-08" artifacts
     .replace(/,(?!\s)/g, ", ")           // ensure space after every comma
+    .replace(WORD_SPLIT_RE, (m) => WORD_SPLIT_MAP[m.toLowerCase()] ?? m)  // split known compound words
     .replace(/\s+/g, " ")
     .replace(/^[\s.,;()\-–_\/]+/, "")    // strip leading punctuation
     .replace(/[\-–_.,;()\/\s]+$/, "")    // strip trailing punctuation
