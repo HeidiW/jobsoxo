@@ -1,11 +1,15 @@
 import { createRequire } from "node:module";
-// import.meta.url is valid in ESM (dev/tsx) but undefined in CJS bundles (production).
-// Fall back to process.cwd() so createRequire can still resolve node_modules.
-const _require = createRequire(
-  (typeof import.meta !== "undefined" && import.meta.url)
-    ? import.meta.url
-    : `file://${process.cwd()}/server.js`
-);
+// Function declaration (not const) so it's hoisted and immune to TDZ in circular-dep scenarios.
+// import.meta.url is valid in ESM (dev/tsx) but undefined in CJS bundles (production build).
+// Falls back to process.cwd() path so createRequire can still resolve node_modules.
+function _require(id: string): any {
+  const req = createRequire(
+    (typeof import.meta !== "undefined" && import.meta.url)
+      ? import.meta.url
+      : `file://${process.cwd()}/server.js`
+  );
+  return req(id);
+}
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
