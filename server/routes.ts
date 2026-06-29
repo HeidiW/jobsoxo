@@ -18,7 +18,7 @@ import {
   clients, jobs, invoices, lineItems, payments, employees, timeEntries, users,
   insertClientSchema, insertJobSchema, insertLineItemSchema, insertInvoiceSchema,
   insertPaymentSchema, insertEmployeeSchema, insertTimeEntrySchema, insertSettingsSchema,
-  insertPayrollRecordSchema
+  insertPayrollRecordSchema, insertChangeOrderSchema
 } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -1119,6 +1119,53 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Mark paid error:", error);
       res.status(500).json({ error: "Failed to mark invoice as paid" });
+    }
+  });
+
+  // Change Orders
+  app.get("/api/invoices/:id/change-orders", async (req, res) => {
+    try {
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+      const orders = await storage.getChangeOrdersByInvoice(req.params.id);
+      res.json(orders);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch change orders" });
+    }
+  });
+
+  app.post("/api/invoices/:id/change-orders", async (req, res) => {
+    try {
+      const parsed = insertChangeOrderSchema.safeParse({ ...req.body, invoiceId: req.params.id });
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+      const order = await storage.createChangeOrder(parsed.data);
+      res.status(201).json(order);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create change order" });
+    }
+  });
+
+  app.patch("/api/change-orders/:id", async (req, res) => {
+    try {
+      const order = await storage.getChangeOrder(req.params.id);
+      if (!order) return res.status(404).json({ error: "Change order not found" });
+      const updated = await storage.updateChangeOrder(req.params.id, req.body);
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update change order" });
+    }
+  });
+
+  app.delete("/api/change-orders/:id", async (req, res) => {
+    try {
+      const order = await storage.getChangeOrder(req.params.id);
+      if (!order) return res.status(404).json({ error: "Change order not found" });
+      await storage.deleteChangeOrder(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete change order" });
     }
   });
 

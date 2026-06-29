@@ -219,6 +219,7 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   }),
   lineItems: many(lineItems),
   payments: many(payments),
+  changeOrders: many(changeOrders),
 }));
 
 export const insertInvoiceSchema = createInsertSchema(invoices)
@@ -267,6 +268,33 @@ export const insertPaymentSchema = createInsertSchema(payments)
   });
 export type InsertPayment = z.infer<typeof insertPaymentSchema>;
 export type Payment = typeof payments.$inferSelect;
+
+// Change Orders table — one invoice can have many change orders
+export const changeOrders = pgTable("change_orders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  description: text("description").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  reason: text("reason"),
+  status: text("status").notNull().default("pending"), // pending, approved, rejected
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const changeOrdersRelations = relations(changeOrders, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [changeOrders.invoiceId],
+    references: [invoices.id],
+  }),
+}));
+
+export const insertChangeOrderSchema = createInsertSchema(changeOrders)
+  .omit({ id: true, createdAt: true })
+  .extend({
+    amount: nonNegativeNumericString("Amount"),
+    status: z.enum(["pending", "approved", "rejected"]).optional(),
+  });
+export type InsertChangeOrder = z.infer<typeof insertChangeOrderSchema>;
+export type ChangeOrder = typeof changeOrders.$inferSelect;
 
 // Employees table
 export const employees = pgTable("employees", {
