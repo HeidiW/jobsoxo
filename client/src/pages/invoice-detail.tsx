@@ -34,7 +34,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { changeOrderSchema, type ChangeOrderValues } from "@/lib/change-order-schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   ArrowLeft,
@@ -60,29 +60,6 @@ interface InvoiceDetail extends Invoice {
   lineItems: LineItem[];
   payments: Payment[];
 }
-
-// Mirror server-side positiveNumericString validation inline so errors surface
-// without a network round-trip. The exact rules (> 0) come from insertLineItemSchema.
-function positiveNumericField(label: string) {
-  return z
-    .string()
-    .min(1, `${label} is required`)
-    .refine(
-      (val) => !isNaN(parseFloat(val)) && isFinite(Number(val)),
-      `${label} must be a valid number`
-    )
-    .refine((val) => parseFloat(val) > 0, `${label} must be greater than zero`);
-}
-
-const changeOrderSchema = z.object({
-  category: z.enum(["materials", "labor", "square_footage", "other"]),
-  description: z.string().min(1, "Description is required"),
-  quantity: positiveNumericField("Quantity"),
-  unit: z.string().min(1, "Unit is required"),
-  rate: positiveNumericField("Rate"),
-  changeOrderReason: z.string().min(1, "Reason for change order is required"),
-});
-type ChangeOrderValues = z.infer<typeof changeOrderSchema>;
 
 function InvoiceStatusBadge({ status }: { status: string }) {
   const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
