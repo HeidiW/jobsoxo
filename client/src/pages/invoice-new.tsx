@@ -1,50 +1,28 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
+  Form, FormControl, FormField, FormItem, FormMessage,
 } from "@/components/ui/form";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
-import { Plus, Trash2, ArrowLeft, Save, Send, Upload, FileText, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Plus, Trash2, FileText, Save, Send } from "lucide-react";
 import { format, addDays } from "date-fns";
-import type { Client, Job, LineItem } from "@shared/schema";
+import type { Client, Job, Settings } from "@shared/schema";
+import { Link } from "wouter";
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface ParsedLineItem {
   description: string;
@@ -65,44 +43,32 @@ interface ParsedDocument {
 }
 
 function positiveNumericField(label: string) {
-  return z
-    .string()
-    .min(1, `${label} is required`)
-    .refine(
-      (val) => !isNaN(parseFloat(val)) && isFinite(Number(val)),
-      `${label} must be a valid number`
-    )
-    .refine((val) => parseFloat(val) > 0, `${label} must be greater than zero`);
+  return z.string().min(1, `${label} is required`)
+    .refine((v) => !isNaN(parseFloat(v)) && isFinite(Number(v)), `${label} must be a valid number`)
+    .refine((v) => parseFloat(v) > 0, `${label} must be greater than zero`);
 }
 
-const lineItemSchema = z
-  .object({
-    category: z.enum(["materials", "labor", "square_footage", "other"]),
-    description: z.string().min(1, "Description is required"),
-    quantity: positiveNumericField("Quantity"),
-    unit: z.string().min(1, "Unit is required"),
-    rate: positiveNumericField("Rate"),
-    amount: positiveNumericField("Amount"),
-  })
-  .superRefine((data, ctx) => {
-    const qty = parseFloat(data.quantity);
-    const rate = parseFloat(data.rate);
-    const amount = parseFloat(data.amount);
-    if (!isNaN(qty) && !isNaN(rate) && !isNaN(amount)) {
-      const expected = qty * rate;
-      if (Math.abs(amount - expected) > 0.001) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Amount must equal quantity × rate (expected ${expected.toFixed(2)}, got ${amount.toFixed(2)})`,
-          path: ["amount"],
-        });
-      }
+const lineItemSchema = z.object({
+  category: z.enum(["materials", "labor", "square_footage", "other"]),
+  description: z.string().min(1, "Description is required"),
+  quantity: positiveNumericField("Quantity"),
+  unit: z.string().min(1, "Unit is required"),
+  rate: positiveNumericField("Rate"),
+  amount: positiveNumericField("Amount"),
+}).superRefine((data, ctx) => {
+  const qty = parseFloat(data.quantity), rate = parseFloat(data.rate), amount = parseFloat(data.amount);
+  if (!isNaN(qty) && !isNaN(rate) && !isNaN(amount)) {
+    const expected = qty * rate;
+    if (Math.abs(amount - expected) > 0.001) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Amount must equal qty × rate (expected ${expected.toFixed(2)})`, path: ["amount"] });
     }
-  });
+  }
+});
 
 const invoiceFormSchema = z.object({
   clientId: z.string().min(1, "Client is required"),
   jobId: z.string().optional(),
+  issueDate: z.string().min(1, "Issue date is required"),
   dueDate: z.string().min(1, "Due date is required"),
   notes: z.string().optional(),
   termsAndConditions: z.string().optional(),
@@ -119,6 +85,344 @@ interface NewLineItem extends Omit<LineItemFormValues, "quantity" | "rate" | "am
   amount: number;
 }
 
+// ── Shared style helpers ─────────────────────────────────────────────────────
+
+const inputStyle: React.CSSProperties = {
+  width: "100%", padding: "9px 11px", border: "1px solid #cbd5e1",
+  borderRadius: "8px", fontSize: "13.5px", color: "#0f172a",
+  background: "#fff", fontFamily: "inherit", outline: "none",
+  boxSizing: "border-box",
+};
+const labelStyle: React.CSSProperties = {
+  display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b",
+  textTransform: "uppercase", letterSpacing: ".04em", marginBottom: "5px",
+};
+const sectionCardStyle: React.CSSProperties = {
+  background: "#fff", border: "1px solid #e2e8f0", borderRadius: "14px",
+  padding: "18px", boxShadow: "0 1px 2px rgba(15,23,42,.04)",
+};
+
+function SectionTitle({ color, children }: { color: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
+      <span style={{ width: "6px", height: "16px", borderRadius: "3px", background: color, flexShrink: 0 }} />
+      <h3 style={{ margin: 0, fontSize: "14px", fontWeight: 800, letterSpacing: "-.01em", color: "#0f172a" }}>
+        {children}
+      </h3>
+    </div>
+  );
+}
+
+const formatCurrency = (n: number) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(n);
+
+// ── Live Invoice Preview ─────────────────────────────────────────────────────
+
+function InvoicePreview({
+  settings, client, job, lineItems, issueDate, dueDate, notes, termsAndConditions, taxRate,
+}: {
+  settings?: Settings;
+  client?: Client;
+  job?: (Job & { client: Client }) | null;
+  lineItems: NewLineItem[];
+  issueDate: string;
+  dueDate: string;
+  notes: string;
+  termsAndConditions: string;
+  taxRate: number;
+}) {
+  const subtotal = lineItems.reduce((s, i) => s + i.amount, 0);
+  const taxAmount = subtotal * (taxRate / 100);
+  const total = subtotal + taxAmount;
+
+  const grouped = lineItems.reduce<Record<string, NewLineItem[]>>((acc, item) => {
+    const cat = item.category;
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(item);
+    return acc;
+  }, {});
+
+  const categoryLabel = (cat: string) =>
+    cat.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  const fmtDate = (d: string) => {
+    try { return format(new Date(d + "T12:00:00"), "MMMM d, yyyy"); }
+    catch { return d; }
+  };
+
+  return (
+    <div style={{ background: "#fff", borderRadius: "12px", padding: "40px 48px", boxShadow: "0 1px 3px rgba(15,23,42,.08), 0 0 0 1px rgba(15,23,42,.06)", fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", minHeight: "500px" }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "28px" }}>
+        <div style={{ flex: 1, minWidth: 0, paddingRight: "24px" }}>
+          <div style={{ fontSize: "18px", fontWeight: 800, color: "#0f172a", lineHeight: 1.2 }}>
+            {settings?.companyName || <span style={{ color: "#cbd5e1" }}>Your company name</span>}
+          </div>
+          {settings?.companyAddress && (
+            <div style={{ fontSize: "12.5px", color: "#64748b", marginTop: "4px", whiteSpace: "pre-line" }}>{settings.companyAddress}</div>
+          )}
+          {(settings?.companyEmail || settings?.companyPhone) && (
+            <div style={{ fontSize: "12.5px", color: "#94a3b8", marginTop: "3px" }}>
+              {[settings?.companyEmail, settings?.companyPhone].filter(Boolean).join(" · ")}
+            </div>
+          )}
+        </div>
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <div style={{ fontSize: "28px", fontWeight: 900, color: "#2563eb", letterSpacing: "0.08em", textTransform: "uppercase" }}>Invoice</div>
+          <div style={{ fontSize: "13px", color: "#64748b", marginTop: "10px", lineHeight: 1.7 }}>
+            {issueDate && <div><span style={{ color: "#94a3b8" }}>Issued </span>{fmtDate(issueDate)}</div>}
+            {dueDate && <div><span style={{ color: "#94a3b8" }}>Due </span>{fmtDate(dueDate)}</div>}
+          </div>
+        </div>
+      </div>
+
+      {/* Blue divider */}
+      <div style={{ height: "2px", background: "#2563eb", marginBottom: "24px" }} />
+
+      {/* Bill To / Project Site */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "24px", marginBottom: "20px" }}>
+        <div>
+          <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: "6px" }}>Bill To</div>
+          {client ? (
+            <>
+              <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a" }}>{client.name}</div>
+              {client.address && <div style={{ fontSize: "12.5px", color: "#64748b", marginTop: "2px" }}>{client.address}{client.city && `, ${client.city}`}{client.state && `, ${client.state}`}{client.zipCode && ` ${client.zipCode}`}</div>}
+              {client.email && <div style={{ fontSize: "12.5px", color: "#64748b", marginTop: "2px" }}>{client.email}</div>}
+            </>
+          ) : (
+            <div style={{ fontSize: "13px", color: "#cbd5e1" }}>Select a client</div>
+          )}
+        </div>
+        <div>
+          <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: "6px" }}>Project / Site</div>
+          {job ? (
+            <>
+              <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a" }}>{job.title}</div>
+              {job.address && <div style={{ fontSize: "12.5px", color: "#64748b", marginTop: "2px" }}>{job.address}</div>}
+            </>
+          ) : (
+            <div style={{ fontSize: "13px", color: "#cbd5e1" }}>Link a job (optional)</div>
+          )}
+        </div>
+      </div>
+
+      {/* Notes blockquote */}
+      {notes && (
+        <div style={{ borderLeft: "4px solid #bfdbfe", paddingLeft: "14px", marginBottom: "20px" }}>
+          <p style={{ margin: 0, fontSize: "13px", color: "#64748b", fontStyle: "italic" }}>{notes}</p>
+        </div>
+      )}
+
+      {/* Line items */}
+      {lineItems.length > 0 ? (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", marginBottom: "20px" }}>
+          <thead>
+            <tr style={{ borderBottom: "1.5px solid #e2e8f0" }}>
+              <th style={{ textAlign: "left", fontSize: "10.5px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", paddingBottom: "8px" }}>Description</th>
+              <th style={{ textAlign: "right", fontSize: "10.5px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", paddingBottom: "8px", width: "80px" }}>Qty</th>
+              <th style={{ textAlign: "right", fontSize: "10.5px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", paddingBottom: "8px", width: "100px" }}>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(grouped).map(([cat, items]) => {
+              const catTotal = items.reduce((s, i) => s + i.amount, 0);
+              return (
+                <>
+                  <tr key={`hdr-${cat}`}>
+                    <td style={{ fontWeight: 700, fontSize: "11px", textTransform: "uppercase", letterSpacing: ".04em", color: "#1e293b", paddingTop: "16px", paddingBottom: "4px" }} colSpan={2}>
+                      {categoryLabel(cat)}
+                    </td>
+                    <td style={{ textAlign: "right", fontWeight: 700, color: "#2563eb", paddingTop: "16px", paddingBottom: "4px" }}>
+                      {formatCurrency(catTotal)}
+                    </td>
+                  </tr>
+                  {items.map((item) => (
+                    <tr key={item.id}>
+                      <td style={{ color: "#475569", paddingTop: "4px", paddingBottom: "4px", paddingRight: "16px" }}>{item.description}</td>
+                      <td style={{ textAlign: "right", color: "#94a3b8", fontFamily: "ui-monospace,monospace", fontSize: "12px", paddingTop: "4px", paddingBottom: "4px" }}>
+                        {item.quantity} {item.unit}
+                      </td>
+                      <td style={{ textAlign: "right", color: "#475569", fontFamily: "ui-monospace,monospace", paddingTop: "4px", paddingBottom: "4px" }}>
+                        {formatCurrency(item.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </>
+              );
+            })}
+          </tbody>
+        </table>
+      ) : (
+        <div style={{ border: "1.5px dashed #e2e8f0", borderRadius: "10px", padding: "24px", textAlign: "center", color: "#94a3b8", fontSize: "13px", marginBottom: "20px" }}>
+          Line items will appear here
+        </div>
+      )}
+
+      {/* Totals */}
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ width: "220px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#64748b", marginBottom: "6px" }}>
+            <span>Subtotal</span><span style={{ fontFamily: "ui-monospace,monospace" }}>{formatCurrency(subtotal)}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#64748b", marginBottom: "8px" }}>
+            <span>Tax ({taxRate}%)</span><span style={{ fontFamily: "ui-monospace,monospace" }}>{formatCurrency(taxAmount)}</span>
+          </div>
+          <div style={{ borderTop: "1.5px solid #e2e8f0", paddingTop: "8px", display: "flex", justifyContent: "space-between", fontSize: "15px", fontWeight: 800, color: "#0f172a" }}>
+            <span>Total</span><span style={{ fontFamily: "ui-monospace,monospace" }}>{formatCurrency(total)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Terms */}
+      {termsAndConditions && (
+        <div style={{ marginTop: "24px", paddingTop: "16px", borderTop: "1px solid #f1f5f9" }}>
+          <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: "6px" }}>Terms & Conditions</div>
+          <p style={{ margin: 0, fontSize: "12px", color: "#94a3b8" }}>{termsAndConditions}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Line Item Form ───────────────────────────────────────────────────────────
+
+function LineItemForm({ onSubmit, onCancel }: { onSubmit: (data: LineItemFormValues) => void; onCancel: () => void }) {
+  const form = useForm<LineItemFormValues>({
+    resolver: zodResolver(lineItemSchema),
+    defaultValues: { category: "labor", description: "", quantity: "", unit: "hours", rate: "", amount: "" },
+  });
+
+  const quantity = parseFloat(form.watch("quantity") || "0");
+  const rate = parseFloat(form.watch("rate") || "0");
+  const category = form.watch("category");
+
+  useEffect(() => {
+    if (category === "labor") form.setValue("unit", "hours");
+    else if (category === "materials") form.setValue("unit", "each");
+    else if (category === "square_footage") form.setValue("unit", "sqft");
+  }, [category, form]);
+
+  useEffect(() => {
+    if (!isNaN(quantity) && !isNaN(rate) && quantity > 0 && rate > 0) {
+      form.setValue("amount", (quantity * rate).toFixed(2));
+    }
+  }, [quantity, rate, form]);
+
+  const cat = [
+    { value: "labor", label: "Labor" },
+    { value: "materials", label: "Materials" },
+    { value: "square_footage", label: "Square Footage" },
+    { value: "other", label: "Other" },
+  ];
+  const units = ["hours", "each", "sqft", "gallon", "linear_ft", "flat"];
+
+  return (
+    <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "16px" }}>
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+            <div>
+              <label style={labelStyle}>Category</label>
+              <FormField control={form.control} name="category" render={({ field }) => (
+                <FormItem>
+                  <FormControl>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <SelectTrigger style={inputStyle} data-testid="select-li-category">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {cat.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+            <div>
+              <label style={labelStyle}>Unit</label>
+              <FormField control={form.control} name="unit" render={({ field }) => (
+                <FormItem>
+                  <FormControl>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <SelectTrigger style={inputStyle} data-testid="select-li-unit">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {units.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+          </div>
+          <div>
+            <label style={labelStyle}>Description</label>
+            <FormField control={form.control} name="description" render={({ field }) => (
+              <FormItem>
+                <FormControl>
+                  <input {...field} placeholder="e.g. Skim and paint feature wall" style={inputStyle} data-testid="input-li-description" />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
+            <div>
+              <label style={labelStyle}>Quantity</label>
+              <FormField control={form.control} name="quantity" render={({ field }) => (
+                <FormItem>
+                  <FormControl>
+                    <input {...field} type="number" step="0.01" placeholder="0" style={inputStyle} data-testid="input-li-quantity" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+            <div>
+              <label style={labelStyle}>Rate ($)</label>
+              <FormField control={form.control} name="rate" render={({ field }) => (
+                <FormItem>
+                  <FormControl>
+                    <input {...field} type="number" step="0.01" placeholder="0.00" style={inputStyle} data-testid="input-li-rate" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+            <div>
+              <label style={labelStyle}>Amount ($)</label>
+              <FormField control={form.control} name="amount" render={({ field }) => (
+                <FormItem>
+                  <FormControl>
+                    <input {...field} type="number" step="0.01" placeholder="0.00" style={{ ...inputStyle, background: "#f1f5f9" }} data-testid="input-li-amount" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" }}>
+            <button type="button" onClick={onCancel} style={{ padding: "8px 14px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "8px", fontSize: "13px", fontWeight: 600, color: "#475569", cursor: "pointer", fontFamily: "inherit" }}>
+              Cancel
+            </button>
+            <button type="submit" style={{ padding: "8px 16px", border: "none", background: "#2563eb", borderRadius: "8px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit" }} data-testid="button-save-line-item">
+              Add Item
+            </button>
+          </div>
+        </form>
+      </Form>
+    </div>
+  );
+}
+
+// ── Main page ────────────────────────────────────────────────────────────────
+
+type ViewMode = "split" | "tabbed" | "builder";
+type TabSection = "details" | "items" | "totals";
+
 export default function InvoiceNew() {
   const [, setLocation] = useLocation();
   const search = useSearch();
@@ -133,23 +437,22 @@ export default function InvoiceNew() {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [selectedParsedItems, setSelectedParsedItems] = useState<Set<number>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("split");
+  const [activeTab, setActiveTab] = useState<TabSection>("details");
 
-  const { data: clients } = useQuery<Client[]>({
-    queryKey: ["/api/clients"],
-  });
-
-  const { data: jobs } = useQuery<(Job & { client: Client })[]>({
-    queryKey: ["/api/jobs"],
-  });
+  const { data: clients } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
+  const { data: jobs } = useQuery<(Job & { client: Client })[]>({ queryKey: ["/api/jobs"] });
+  const { data: settings } = useQuery<Settings>({ queryKey: ["/api/settings"] });
 
   const form = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceFormSchema),
     defaultValues: {
       clientId: preselectedClientId,
       jobId: preselectedJobId,
+      issueDate: format(new Date(), "yyyy-MM-dd"),
       dueDate: format(addDays(new Date(), 30), "yyyy-MM-dd"),
       notes: "",
-      termsAndConditions: "Payment is due within 30 days. Late payments may incur additional fees.",
+      termsAndConditions: settings?.invoiceTerms || "Payment is due within 30 days. Late payments may incur additional fees.",
       taxRate: "0",
     },
   });
@@ -157,22 +460,23 @@ export default function InvoiceNew() {
   const selectedClientId = form.watch("clientId");
   const selectedJobId = form.watch("jobId");
   const taxRate = parseFloat(form.watch("taxRate") || "0");
+  const notes = form.watch("notes") || "";
+  const termsAndConditions = form.watch("termsAndConditions") || "";
+  const issueDate = form.watch("issueDate");
+  const dueDate = form.watch("dueDate");
 
   useEffect(() => {
     if (preselectedJobId && jobs) {
       const job = jobs.find((j) => j.id === preselectedJobId);
-      if (job) {
-        form.setValue("clientId", job.clientId);
-      }
+      if (job) form.setValue("clientId", job.clientId);
     }
   }, [preselectedJobId, jobs, form]);
 
+  const filteredJobs = jobs?.filter((j) => !selectedClientId || j.clientId === selectedClientId);
+  const selectedClient = clients?.find((c) => c.id === selectedClientId);
+  const selectedJob = selectedJobId ? jobs?.find((j) => j.id === selectedJobId) : null;
 
-  const filteredJobs = jobs?.filter((job) =>
-    !selectedClientId || job.clientId === selectedClientId
-  );
-
-  const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
+  const subtotal = lineItems.reduce((s, i) => s + i.amount, 0);
   const taxAmount = subtotal * (taxRate / 100);
   const total = subtotal + taxAmount;
 
@@ -181,18 +485,8 @@ export default function InvoiceNew() {
       const payload = {
         ...data.formData,
         taxRate: parseFloat(data.formData.taxRate || "0"),
-        subtotal,
-        taxAmount,
-        total,
-        balance: total,
-        lineItems: lineItems.map((item) => ({
-          category: item.category,
-          description: item.description,
-          quantity: item.quantity,
-          unit: item.unit,
-          rate: item.rate,
-          amount: item.amount,
-        })),
+        subtotal, taxAmount, total, balance: total,
+        lineItems: lineItems.map(({ id: _id, ...item }) => item),
         send: data.send,
       };
       const res = await apiRequest("POST", "/api/invoices", payload);
@@ -201,30 +495,17 @@ export default function InvoiceNew() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
-      toast({
-        title: "Invoice created",
-        description: `Invoice ${data.invoiceNumber} has been created.`,
-      });
+      toast({ title: "Invoice created", description: `Invoice ${data.invoiceNumber} has been created.` });
       setLocation("/invoices");
     },
     onError: (error: Error) => {
       if (error instanceof ApiError && error.details) {
         Object.entries(error.details).forEach(([field, messages]) => {
-          form.setError(field as keyof InvoiceFormValues, {
-            type: "server",
-            message: Array.isArray(messages) ? messages[0] : String(messages),
-          });
+          form.setError(field as keyof InvoiceFormValues, { type: "server", message: Array.isArray(messages) ? messages[0] : String(messages) });
         });
-        toast({
-          title: "Please fix the errors below",
-          variant: "destructive",
-        });
+        toast({ title: "Please fix the errors below", variant: "destructive" });
       } else {
-        toast({
-          title: "Error creating invoice",
-          description: error.message,
-          variant: "destructive",
-        });
+        toast({ title: "Error creating invoice", description: error.message, variant: "destructive" });
       }
     },
   });
@@ -234,28 +515,19 @@ export default function InvoiceNew() {
       const fd = new FormData();
       fd.append("file", file);
       const res = await fetch("/api/invoices/parse-document", { method: "POST", body: fd });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to parse document");
-      }
+      if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || "Failed to parse document"); }
       return res.json() as Promise<ParsedDocument>;
     },
     onSuccess: (data) => {
       if (data.lineItems.length === 0) {
-        toast({
-          title: "No line items found",
-          description: data.message ?? "The document didn't contain recognisable line items. Try a different file.",
-          variant: "destructive",
-        });
+        toast({ title: "No line items found", description: data.message ?? "Try a different file.", variant: "destructive" });
         return;
       }
       setParsedDoc(data);
       setSelectedParsedItems(new Set(data.lineItems.map((_, i) => i)));
       setShowImportDialog(true);
     },
-    onError: (err: Error) => {
-      toast({ title: "Parse failed", description: err.message, variant: "destructive" });
-    },
+    onError: (err: Error) => { toast({ title: "Parse failed", description: err.message, variant: "destructive" }); },
   });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -266,699 +538,447 @@ export default function InvoiceNew() {
 
   const applyParsedItems = () => {
     if (!parsedDoc) return;
-    const toAdd: NewLineItem[] = parsedDoc.lineItems
-      .filter((_, i) => selectedParsedItems.has(i))
-      .map((item) => ({
-        id: crypto.randomUUID(),
-        category: item.category,
-        description: item.description,
-        quantity: item.quantity,
-        unit: item.unit,
-        rate: item.rate,
-        amount: item.amount,
-      }));
+    const toAdd: NewLineItem[] = parsedDoc.lineItems.filter((_, i) => selectedParsedItems.has(i)).map((item) => ({ id: crypto.randomUUID(), ...item }));
     setLineItems((prev) => [...prev, ...toAdd]);
     if (parsedDoc.dueDate) form.setValue("dueDate", parsedDoc.dueDate);
     if (parsedDoc.taxRate !== undefined) form.setValue("taxRate", String(parsedDoc.taxRate));
     if (parsedDoc.notes) form.setValue("notes", parsedDoc.notes);
     setShowImportDialog(false);
     setParsedDoc(null);
-    toast({ title: `Imported ${toAdd.length} item${toAdd.length !== 1 ? "s" : ""}`, description: "Line items have been added to the invoice." });
+    toast({ title: `Imported ${toAdd.length} item${toAdd.length !== 1 ? "s" : ""}` });
   };
 
   const addLineItem = (data: LineItemFormValues) => {
-    const quantity = parseFloat(data.quantity);
-    const rate = parseFloat(data.rate);
-    const amount = parseFloat(data.amount);
-
-    setLineItems([
-      ...lineItems,
-      {
-        id: crypto.randomUUID(),
-        category: data.category,
-        description: data.description,
-        unit: data.unit,
-        quantity,
-        rate,
-        amount,
-      },
-    ]);
+    setLineItems([...lineItems, { id: crypto.randomUUID(), ...data, quantity: parseFloat(data.quantity), rate: parseFloat(data.rate), amount: parseFloat(data.amount) }]);
     setShowLineItemForm(false);
   };
 
-  const removeLineItem = (id: string) => {
-    setLineItems(lineItems.filter((item) => item.id !== id));
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-    }).format(amount);
-  };
-
-  const onSubmit = (data: InvoiceFormValues, send: boolean = false) => {
+  const onSubmit = (data: InvoiceFormValues, send = false) => {
     if (lineItems.length === 0) {
-      toast({
-        title: "No line items",
-        description: "Please add at least one line item to the invoice.",
-        variant: "destructive",
-      });
+      toast({ title: "No line items", description: "Add at least one line item to the invoice.", variant: "destructive" });
       return;
     }
     createInvoiceMutation.mutate({ formData: data, send });
   };
 
+  // ── Toggle button helper ──────────────────────────────────────────────────
+
+  const toggleBtnStyle = (active: boolean): React.CSSProperties => ({
+    padding: "6px 14px", border: "none", borderRadius: "8px", fontSize: "12.5px",
+    fontWeight: 700, cursor: "pointer", fontFamily: "inherit", transition: "all .15s",
+    background: active ? "#fff" : "transparent",
+    color: active ? "#0f172a" : "#94a3b8",
+    boxShadow: active ? "0 1px 3px rgba(15,23,42,.12)" : "none",
+  });
+
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    flex: 1, padding: "8px", border: "none", borderRadius: "8px",
+    fontSize: "12.5px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
+    background: active ? "#fff" : "transparent",
+    color: active ? "#0f172a" : "#94a3b8",
+    boxShadow: active ? "0 1px 3px rgba(15,23,42,.10)" : "none",
+  });
+
+  const showDetails = viewMode !== "tabbed" || activeTab === "details";
+  const showItems = viewMode !== "tabbed" || activeTab === "items";
+  const showTotals = viewMode !== "tabbed" || activeTab === "totals";
+  const showPreview = viewMode === "split";
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center gap-4 mb-6">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/invoices")} data-testid="button-back">
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-3xl font-semibold">Create Invoice</h1>
-          <p className="text-muted-foreground mt-1">Generate a new invoice for your client</p>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#f1f5f9", fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", color: "#0f172a" }}>
+
+      {/* ── Header ── */}
+      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", padding: "11px 22px", background: "#fff", borderBottom: "1px solid #e2e8f0", flexShrink: 0, zIndex: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "11px", minWidth: "170px" }}>
+          <div style={{ width: "34px", height: "34px", borderRadius: "9px", background: "#2563eb", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: "17px", flexShrink: 0 }}>J</div>
+          <div>
+            <div style={{ fontSize: "15px", fontWeight: 800, letterSpacing: "-.01em" }}>JobsOxo</div>
+            <div style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 600, marginTop: "1px" }}>Create Invoice</div>
+          </div>
         </div>
+
+        {/* View toggle */}
+        <div style={{ display: "flex", alignItems: "center", gap: "3px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: "11px", padding: "4px" }}>
+          <button onClick={() => setViewMode("split")} style={toggleBtnStyle(viewMode === "split")}>Split view</button>
+          <button onClick={() => setViewMode("tabbed")} style={toggleBtnStyle(viewMode === "tabbed")}>Tabbed</button>
+          <button onClick={() => setViewMode("builder")} style={toggleBtnStyle(viewMode === "builder")}>Builder</button>
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: "flex", alignItems: "center", gap: "9px", minWidth: "170px", justifyContent: "flex-end" }}>
+          <button
+            onClick={form.handleSubmit((d) => onSubmit(d, false))}
+            disabled={createInvoiceMutation.isPending}
+            style={{ padding: "8px 14px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#475569", cursor: "pointer", fontFamily: "inherit" }}
+            data-testid="button-save-draft"
+          >
+            <Save style={{ display: "inline", width: "14px", height: "14px", marginRight: "6px", verticalAlign: "middle", marginTop: "-2px" }} />
+            Save draft
+          </button>
+          <button
+            onClick={form.handleSubmit((d) => onSubmit(d, true))}
+            disabled={createInvoiceMutation.isPending}
+            style={{ padding: "8px 16px", border: "none", background: "#2563eb", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit" }}
+            data-testid="button-send-invoice"
+          >
+            <Send style={{ display: "inline", width: "14px", height: "14px", marginRight: "6px", verticalAlign: "middle", marginTop: "-2px" }} />
+            Send invoice
+          </button>
+        </div>
+      </header>
+
+      {/* ── PDF import strip ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "9px 22px", background: "#eff6ff", borderBottom: "1px solid #dbeafe", flexShrink: 0 }}>
+        <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "#2563eb", flexShrink: 0 }} />
+        <span style={{ fontSize: "12.5px", color: "#1e40af", fontWeight: 600 }}>Import a PDF quote or invoice to auto-fill parties, sections and line items.</span>
+        <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" style={{ display: "none" }} onChange={handleFileChange} data-testid="input-document-upload" />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={parseDocumentMutation.isPending}
+          style={{ marginLeft: "auto", padding: "6px 13px", border: "1px solid #93c5fd", background: "#fff", borderRadius: "8px", fontSize: "12.5px", fontWeight: 700, color: "#1d4ed8", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "6px" }}
+          data-testid="button-import-document"
+        >
+          <FileText style={{ width: "13px", height: "13px" }} />
+          {parseDocumentMutation.isPending ? "Parsing…" : "Choose PDF"}
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          {/* ── Import from Document ── */}
-          <Card className="border-dashed">
-            <CardContent className="pt-5 pb-4">
-              <div className="flex items-start gap-4">
-                <div className="rounded-lg bg-muted p-2.5 mt-0.5 shrink-0">
-                  <Upload className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm">Import from Document</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Upload a PDF quote or invoice to auto-fill line items, due date and notes.
-                  </p>
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  className="hidden"
-                  onChange={handleFileChange}
-                  data-testid="input-document-upload"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={parseDocumentMutation.isPending}
-                  data-testid="button-import-document"
-                  className="shrink-0"
-                >
-                  {parseDocumentMutation.isPending ? (
-                    <>
-                      <FileText className="h-4 w-4 mr-1 animate-pulse" />
-                      Parsing…
-                    </>
-                  ) : (
-                    <>
-                      <FileText className="h-4 w-4 mr-1" />
-                      Choose PDF
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+      {/* ── Body ── */}
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Invoice Details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Form {...form}>
-                <form className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="clientId"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Client *</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl>
-                              <SelectTrigger data-testid="select-invoice-client">
-                                <SelectValue placeholder="Select client" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {clients?.map((client) => (
-                                <SelectItem key={client.id} value={client.id}>
-                                  {client.name}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="jobId"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Job (Optional)</FormLabel>
-                          <Select onValueChange={(v) => field.onChange(v === "none" ? "" : v)} value={field.value || "none"}>
-                            <FormControl>
-                              <SelectTrigger data-testid="select-invoice-job">
-                                <SelectValue placeholder="Link to job" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="none">No job</SelectItem>
-                              {filteredJobs?.map((job) => (
-                                <SelectItem key={job.id} value={job.id}>
-                                  {job.title}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="dueDate"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Due Date *</FormLabel>
-                          <FormControl>
-                            <Input type="date" {...field} data-testid="input-invoice-due-date" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="taxRate"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Tax Rate (%)</FormLabel>
-                          <FormControl>
-                            <Input type="number" step="0.01" placeholder="0" {...field} data-testid="input-invoice-tax-rate" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </form>
-              </Form>
-            </CardContent>
-          </Card>
+        {/* Left: Form */}
+        <div style={{ overflowY: "auto", padding: "20px 22px 80px", borderRight: showPreview ? "1px solid #e2e8f0" : "none", width: showPreview ? "52%" : "100%", maxWidth: showPreview ? "52%" : "760px", margin: showPreview ? "0" : "0 auto" }}>
+          <Form {...form}>
+            <form style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-2">
-              <CardTitle>Line Items</CardTitle>
-              <Button size="sm" onClick={() => setShowLineItemForm(true)} data-testid="button-add-line-item">
-                <Plus className="h-4 w-4 mr-1" />
-                Add Item
-              </Button>
-            </CardHeader>
-            <CardContent>
-              {lineItems.length === 0 && !showLineItemForm ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <p>No line items yet. Add items to build your invoice.</p>
+              {/* ── Tabbed nav ── */}
+              {viewMode === "tabbed" && (
+                <div style={{ display: "flex", gap: "4px", background: "#fff", border: "1px solid #e2e8f0", borderRadius: "11px", padding: "4px", position: "sticky", top: "-20px", zIndex: 8 }}>
+                  <button type="button" onClick={() => setActiveTab("details")} style={tabStyle(activeTab === "details")}>1 · Details</button>
+                  <button type="button" onClick={() => setActiveTab("items")} style={tabStyle(activeTab === "items")}>2 · Line items</button>
+                  <button type="button" onClick={() => setActiveTab("totals")} style={tabStyle(activeTab === "totals")}>3 · Totals &amp; Terms</button>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  {lineItems.length > 0 && (
-                    <div className="rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Description</TableHead>
-                            <TableHead className="w-24">Qty</TableHead>
-                            <TableHead className="w-24">Rate</TableHead>
-                            <TableHead className="w-28 text-right">Amount</TableHead>
-                            <TableHead className="w-12"></TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {lineItems.map((item) => (
-                            <TableRow key={item.id}>
-                              <TableCell>
-                                <div className="flex flex-col gap-0.5">
-                                  <span className="font-medium">{item.description}</span>
-                                  <Badge variant="secondary" className="w-fit text-xs">
-                                    {item.category.replace("_", " ")}
-                                  </Badge>
-                                </div>
-                              </TableCell>
-                              <TableCell className="font-mono text-sm">
-                                {item.quantity} {item.unit}
-                              </TableCell>
-                              <TableCell className="font-mono text-sm">
-                                {formatCurrency(item.rate)}
-                              </TableCell>
-                              <TableCell className="font-mono text-right font-medium">
-                                {formatCurrency(item.amount)}
-                              </TableCell>
-                              <TableCell>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => removeLineItem(item.id)}
-                                  data-testid={`button-remove-item-${item.id}`}
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+              )}
+
+              {/* ── From — your business ── */}
+              {showDetails && (
+                <div style={sectionCardStyle}>
+                  <SectionTitle color="#2563eb">From — your business</SectionTitle>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: "12px 14px" }}>
+                    <div style={{ gridColumn: "1/-1" }}>
+                      <label style={labelStyle}>Business name</label>
+                      <div style={{ ...inputStyle, background: "#f8fafc", color: settings?.companyName ? "#0f172a" : "#94a3b8", fontWeight: 700 }}>
+                        {settings?.companyName || "Not set — update in Settings"}
+                      </div>
                     </div>
+                    <div style={{ gridColumn: "1/-1" }}>
+                      <label style={labelStyle}>Address</label>
+                      <div style={{ ...inputStyle, background: "#f8fafc", color: settings?.companyAddress ? "#0f172a" : "#94a3b8", minHeight: "60px", whiteSpace: "pre-line" }}>
+                        {settings?.companyAddress || "—"}
+                      </div>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Email</label>
+                      <div style={{ ...inputStyle, background: "#f8fafc", color: settings?.companyEmail ? "#0f172a" : "#94a3b8" }}>
+                        {settings?.companyEmail || "—"}
+                      </div>
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Phone</label>
+                      <div style={{ ...inputStyle, background: "#f8fafc", color: settings?.companyPhone ? "#0f172a" : "#94a3b8" }}>
+                        {settings?.companyPhone || "—"}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: "10px" }}>
+                    <Link href="/settings" style={{ fontSize: "12px", color: "#2563eb", fontWeight: 600, textDecoration: "none" }}>
+                      Edit business details in Settings →
+                    </Link>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Bill to + Project side by side ── */}
+              {showDetails && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: "16px" }}>
+                  {/* Bill to */}
+                  <div style={sectionCardStyle}>
+                    <SectionTitle color="#0ea5e9">Bill to — client</SectionTitle>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                      <div>
+                        <label style={labelStyle}>Client / company *</label>
+                        <FormField control={form.control} name="clientId" render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <SelectTrigger style={inputStyle} data-testid="select-invoice-client">
+                                  <SelectValue placeholder="Select client" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {clients?.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                      </div>
+                      {selectedClient && (
+                        <>
+                          {selectedClient.address && (
+                            <div>
+                              <label style={labelStyle}>Billing address</label>
+                              <div style={{ ...inputStyle, background: "#f8fafc", fontSize: "13px", color: "#475569", minHeight: "44px" }}>
+                                {selectedClient.address}{selectedClient.city && `, ${selectedClient.city}`}{selectedClient.state && `, ${selectedClient.state}`}
+                              </div>
+                            </div>
+                          )}
+                          {selectedClient.email && (
+                            <div>
+                              <label style={labelStyle}>Email</label>
+                              <div style={{ ...inputStyle, background: "#f8fafc", fontSize: "13px", color: "#475569" }}>{selectedClient.email}</div>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Project / site */}
+                  <div style={sectionCardStyle}>
+                    <SectionTitle color="#14b8a6">Project / site</SectionTitle>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                      <div>
+                        <label style={labelStyle}>Project / job name</label>
+                        <FormField control={form.control} name="jobId" render={({ field }) => (
+                          <FormItem>
+                            <FormControl>
+                              <Select onValueChange={(v) => field.onChange(v === "none" ? "" : v)} value={field.value || "none"}>
+                                <SelectTrigger style={inputStyle} data-testid="select-invoice-job">
+                                  <SelectValue placeholder="Link to job (optional)" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">No job</SelectItem>
+                                  {filteredJobs?.map((j) => <SelectItem key={j.id} value={j.id}>{j.title}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )} />
+                      </div>
+                      {selectedJob?.address && (
+                        <div>
+                          <label style={labelStyle}>Site location</label>
+                          <div style={{ ...inputStyle, background: "#f8fafc", fontSize: "13px", color: "#475569" }}>{selectedJob.address}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Invoice dates + scope notes ── */}
+              {showDetails && (
+                <div style={sectionCardStyle}>
+                  <SectionTitle color="#6366f1">Invoice details</SectionTitle>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: "12px 14px" }}>
+                    <div>
+                      <label style={labelStyle}>Invoice date</label>
+                      <FormField control={form.control} name="issueDate" render={({ field }) => (
+                        <FormItem>
+                          <FormControl>
+                            <input {...field} type="date" style={inputStyle} data-testid="input-invoice-issue-date" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Due date *</label>
+                      <FormField control={form.control} name="dueDate" render={({ field }) => (
+                        <FormItem>
+                          <FormControl>
+                            <input {...field} type="date" style={inputStyle} data-testid="input-invoice-due-date" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Tax rate (%)</label>
+                      <FormField control={form.control} name="taxRate" render={({ field }) => (
+                        <FormItem>
+                          <FormControl>
+                            <input {...field} type="number" step="0.01" placeholder="0" style={inputStyle} data-testid="input-invoice-tax-rate" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                  </div>
+                  <div style={{ marginTop: "14px" }}>
+                    <label style={labelStyle}>Scope summary / notes</label>
+                    <FormField control={form.control} name="notes" render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <textarea {...field} rows={2} placeholder="Summary line shown at the top of the invoice" style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} data-testid="input-invoice-notes" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                </div>
+              )}
+
+              {/* ── Line items ── */}
+              {showItems && (
+                <div style={sectionCardStyle}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
+                    <span style={{ width: "6px", height: "16px", borderRadius: "3px", background: "#2563eb", flexShrink: 0 }} />
+                    <h3 style={{ margin: 0, fontSize: "14px", fontWeight: 800, letterSpacing: "-.01em" }}>Line items</h3>
+                    <span style={{ marginLeft: "auto", fontSize: "12px", color: "#94a3b8", fontWeight: 600 }}>Grouped by section · subtotals update live</span>
+                  </div>
+
+                  {lineItems.length > 0 && (
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", marginBottom: "12px" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <th style={{ ...labelStyle, textAlign: "left", paddingBottom: "6px" }}>Description</th>
+                          <th style={{ ...labelStyle, textAlign: "right", paddingBottom: "6px", width: "90px" }}>Qty</th>
+                          <th style={{ ...labelStyle, textAlign: "right", paddingBottom: "6px", width: "90px" }}>Rate</th>
+                          <th style={{ ...labelStyle, textAlign: "right", paddingBottom: "6px", width: "90px" }}>Amount</th>
+                          <th style={{ width: "32px" }} />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {lineItems.map((item) => (
+                          <tr key={item.id} style={{ borderBottom: "1px solid #f8fafc" }}>
+                            <td style={{ padding: "8px 8px 8px 0", color: "#0f172a", fontWeight: 500, fontSize: "13px" }}>
+                              <div>{item.description}</div>
+                              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "1px", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".04em" }}>{item.category.replace(/_/g, " ")}</div>
+                            </td>
+                            <td style={{ textAlign: "right", fontFamily: "ui-monospace,monospace", fontSize: "12.5px", color: "#64748b", padding: "8px 4px" }}>{item.quantity} {item.unit}</td>
+                            <td style={{ textAlign: "right", fontFamily: "ui-monospace,monospace", fontSize: "12.5px", color: "#64748b", padding: "8px 4px" }}>{formatCurrency(item.rate)}</td>
+                            <td style={{ textAlign: "right", fontFamily: "ui-monospace,monospace", fontSize: "12.5px", fontWeight: 700, color: "#0f172a", padding: "8px 4px" }}>{formatCurrency(item.amount)}</td>
+                            <td style={{ textAlign: "right", padding: "8px 0 8px 4px" }}>
+                              <button type="button" onClick={() => setLineItems(lineItems.filter((i) => i.id !== item.id))} style={{ border: "none", background: "none", cursor: "pointer", color: "#f87171", padding: "4px", borderRadius: "4px" }} data-testid={`button-remove-item-${item.id}`}>
+                                <Trash2 style={{ width: "14px", height: "14px" }} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   )}
 
-                  {showLineItemForm && (
-                    <LineItemForm
-                      onSubmit={addLineItem}
-                      onCancel={() => setShowLineItemForm(false)}
-                    />
+                  {showLineItemForm ? (
+                    <LineItemForm onSubmit={addLineItem} onCancel={() => setShowLineItemForm(false)} />
+                  ) : (
+                    <button type="button" onClick={() => setShowLineItemForm(true)} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "9px 14px", border: "1.5px dashed #cbd5e1", background: "transparent", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#64748b", cursor: "pointer", fontFamily: "inherit", width: "100%" }} data-testid="button-add-line-item">
+                      <Plus style={{ width: "15px", height: "15px" }} />
+                      Add line item
+                    </button>
                   )}
                 </div>
               )}
-            </CardContent>
-          </Card>
 
-          <Form {...form}>
-            <Card>
-              <CardHeader>
-                <CardTitle>Notes & Terms</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="notes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Notes</FormLabel>
-                      <FormControl>
-                        <Textarea placeholder="Additional notes for the client" {...field} data-testid="input-invoice-notes" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="termsAndConditions"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Terms & Conditions</FormLabel>
-                      <FormControl>
-                        <Textarea placeholder="Payment terms and conditions" {...field} data-testid="input-invoice-terms" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </CardContent>
-            </Card>
+              {/* ── Totals & Terms ── */}
+              {showTotals && (
+                <div style={sectionCardStyle}>
+                  <SectionTitle color="#f59e0b">Totals &amp; terms</SectionTitle>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "16px" }}>
+                    <div style={{ width: "240px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: "#64748b", marginBottom: "6px" }}>
+                        <span>Subtotal</span><span style={{ fontFamily: "ui-monospace,monospace" }}>{formatCurrency(subtotal)}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: "#64748b", marginBottom: "8px" }}>
+                        <span>Tax ({taxRate}%)</span><span style={{ fontFamily: "ui-monospace,monospace" }}>{formatCurrency(taxAmount)}</span>
+                      </div>
+                      <div style={{ borderTop: "1.5px solid #e2e8f0", paddingTop: "8px", display: "flex", justifyContent: "space-between", fontSize: "16px", fontWeight: 800, color: "#0f172a" }}>
+                        <span>Total</span><span style={{ fontFamily: "ui-monospace,monospace" }}>{formatCurrency(total)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Terms &amp; conditions</label>
+                    <FormField control={form.control} name="termsAndConditions" render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <textarea {...field} rows={3} placeholder="Payment terms and conditions" style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5, fontSize: "13px", color: "#475569", background: "#f8fafc" }} data-testid="input-invoice-terms" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                </div>
+              )}
+
+            </form>
           </Form>
         </div>
 
-        <div className="space-y-6">
-          <Card className="sticky top-6">
-            <CardHeader>
-              <CardTitle>Invoice Summary</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <span className="font-mono">{formatCurrency(subtotal)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Tax ({taxRate}%)</span>
-                  <span className="font-mono">{formatCurrency(taxAmount)}</span>
-                </div>
-                <div className="border-t pt-3">
-                  <div className="flex justify-between font-medium">
-                    <span>Total</span>
-                    <span className="text-xl font-mono">{formatCurrency(total)}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-6 space-y-2">
-                <Button
-                  className="w-full"
-                  onClick={form.handleSubmit((data) => onSubmit(data, true))}
-                  disabled={createInvoiceMutation.isPending || lineItems.length === 0}
-                  data-testid="button-create-send-invoice"
-                >
-                  <Send className="h-4 w-4 mr-2" />
-                  {createInvoiceMutation.isPending ? "Creating..." : "Create & Send"}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={form.handleSubmit((data) => onSubmit(data, false))}
-                  disabled={createInvoiceMutation.isPending || lineItems.length === 0}
-                  data-testid="button-save-draft-invoice"
-                >
-                  <Save className="h-4 w-4 mr-2" />
-                  Save as Draft
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Right: Live preview */}
+        {showPreview && (
+          <div style={{ flex: 1, overflowY: "auto", padding: "20px 22px 80px", background: "#f1f5f9" }}>
+            <div style={{ fontSize: "11px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: "10px" }}>Live preview</div>
+            <InvoicePreview
+              settings={settings}
+              client={selectedClient}
+              job={selectedJob}
+              lineItems={lineItems}
+              issueDate={issueDate}
+              dueDate={dueDate}
+              notes={notes}
+              termsAndConditions={termsAndConditions}
+              taxRate={taxRate}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Document Import Dialog */}
+      {/* ── PDF Import Dialog ── */}
       <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col" data-testid="dialog-import-document">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Import from Document
-            </DialogTitle>
+            <DialogTitle>Import line items from document</DialogTitle>
           </DialogHeader>
-
           {parsedDoc && (
-            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-              {/* Confidence banner */}
-              <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-md ${
-                parsedDoc.confidence === "high"
-                  ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-400"
-                  : parsedDoc.confidence === "medium"
-                  ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
-                  : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400"
-              }`}>
-                {parsedDoc.confidence === "high" ? (
-                  <CheckCircle2 className="h-4 w-4 shrink-0" />
-                ) : (
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                )}
-                <span>
-                  {parsedDoc.confidence === "high"
-                    ? `Extracted ${parsedDoc.lineItems.length} line items with high confidence.`
-                    : parsedDoc.confidence === "medium"
-                    ? `Extracted ${parsedDoc.lineItems.length} line item${parsedDoc.lineItems.length !== 1 ? "s" : ""} — review and adjust quantities/rates before importing.`
-                    : "Low confidence extraction — please review all fields carefully."}
-                </span>
-              </div>
-
-              {/* Extra fields detected */}
-              {(parsedDoc.dueDate || parsedDoc.taxRate !== undefined || parsedDoc.notes) && (
-                <div className="rounded-md border px-4 py-3 space-y-1 text-sm">
-                  <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide mb-2">Also detected</p>
-                  {parsedDoc.dueDate && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Due Date</span>
-                      <span className="font-mono">{parsedDoc.dueDate}</span>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Found {parsedDoc.lineItems.length} line item{parsedDoc.lineItems.length !== 1 ? "s" : ""}. Select which to import:
+              </p>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {parsedDoc.lineItems.map((item, i) => (
+                  <div key={i} className="flex items-start gap-3 rounded-md border p-3">
+                    <Checkbox
+                      id={`item-${i}`}
+                      checked={selectedParsedItems.has(i)}
+                      onCheckedChange={(checked) => {
+                        const next = new Set(selectedParsedItems);
+                        if (checked) next.add(i); else next.delete(i);
+                        setSelectedParsedItems(next);
+                      }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{item.description}</p>
+                      <p className="text-xs text-muted-foreground">{item.quantity} {item.unit} × {formatCurrency(item.rate)} = {formatCurrency(item.amount)}</p>
                     </div>
-                  )}
-                  {parsedDoc.taxRate !== undefined && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Tax Rate</span>
-                      <span className="font-mono">{parsedDoc.taxRate}%</span>
-                    </div>
-                  )}
-                  {parsedDoc.notes && (
-                    <div className="flex justify-between gap-4">
-                      <span className="text-muted-foreground shrink-0">Notes</span>
-                      <span className="text-right truncate">{parsedDoc.notes}</span>
-                    </div>
-                  )}
-                  <p className="text-xs text-muted-foreground pt-1">These fields will be applied when you import.</p>
-                </div>
-              )}
-
-              {/* Line items selection */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium">Select items to import</p>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      className="text-xs text-primary underline-offset-2 hover:underline"
-                      onClick={() => setSelectedParsedItems(new Set(parsedDoc.lineItems.map((_, i) => i)))}
-                    >
-                      All
-                    </button>
-                    <span className="text-xs text-muted-foreground">·</span>
-                    <button
-                      type="button"
-                      className="text-xs text-primary underline-offset-2 hover:underline"
-                      onClick={() => setSelectedParsedItems(new Set())}
-                    >
-                      None
-                    </button>
                   </div>
-                </div>
-
-                <div className="rounded-md border divide-y">
-                  {parsedDoc.lineItems.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className={`flex items-start gap-3 px-4 py-3 transition-colors cursor-pointer ${
-                        selectedParsedItems.has(idx) ? "bg-muted/40" : ""
-                      }`}
-                      onClick={() =>
-                        setSelectedParsedItems((prev) => {
-                          const next = new Set(prev);
-                          next.has(idx) ? next.delete(idx) : next.add(idx);
-                          return next;
-                        })
-                      }
-                      data-testid={`import-item-${idx}`}
-                    >
-                      <Checkbox
-                        checked={selectedParsedItems.has(idx)}
-                        onCheckedChange={(checked) =>
-                          setSelectedParsedItems((prev) => {
-                            const next = new Set(prev);
-                            checked ? next.add(idx) : next.delete(idx);
-                            return next;
-                          })
-                        }
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-0.5"
-                        data-testid={`checkbox-import-item-${idx}`}
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{item.description}</p>
-                        <div className="flex gap-3 mt-0.5 text-xs text-muted-foreground">
-                          <Badge variant="secondary" className="text-xs py-0">
-                            {item.category.replace("_", " ")}
-                          </Badge>
-                          <span>{item.quantity} {item.unit}</span>
-                          <span>@&nbsp;${item.rate.toFixed(2)}</span>
-                        </div>
-                      </div>
-                      <span className="font-mono text-sm font-medium shrink-0">
-                        ${item.amount.toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                ))}
               </div>
             </div>
           )}
-
-          <DialogFooter className="border-t pt-4 mt-2">
-            <Button variant="outline" onClick={() => setShowImportDialog(false)} data-testid="button-cancel-import">
-              Cancel
-            </Button>
-            <Button
-              onClick={applyParsedItems}
-              disabled={selectedParsedItems.size === 0}
-              data-testid="button-apply-import"
-            >
-              Import {selectedParsedItems.size > 0 ? `${selectedParsedItems.size} item${selectedParsedItems.size !== 1 ? "s" : ""}` : ""}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowImportDialog(false)}>Cancel</Button>
+            <Button onClick={applyParsedItems} disabled={selectedParsedItems.size === 0}>
+              Import {selectedParsedItems.size} item{selectedParsedItems.size !== 1 ? "s" : ""}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function LineItemForm({
-  onSubmit,
-  onCancel,
-}: {
-  onSubmit: (data: LineItemFormValues) => void;
-  onCancel: () => void;
-}) {
-  const form = useForm<LineItemFormValues>({
-    resolver: zodResolver(lineItemSchema),
-    mode: "onChange",
-    defaultValues: {
-      category: "labor",
-      description: "",
-      quantity: "",
-      unit: "hours",
-      rate: "",
-      amount: "",
-    },
-  });
-
-  const category = form.watch("category");
-  const watchedQuantity = form.watch("quantity");
-  const watchedRate = form.watch("rate");
-
-  const computedAmount = (() => {
-    const q = parseFloat(watchedQuantity);
-    const r = parseFloat(watchedRate);
-    if (isNaN(q) || isNaN(r) || !isFinite(q) || !isFinite(r)) return 0;
-    if (q <= 0 || r <= 0) return 0;
-    return q * r;
-  })();
-
-  useEffect(() => {
-    if (computedAmount > 0) {
-      form.setValue("amount", computedAmount.toFixed(2), { shouldValidate: true });
-    }
-  }, [computedAmount, form]);
-
-  useEffect(() => {
-    if (category === "labor") {
-      form.setValue("unit", "hours");
-    } else if (category === "materials") {
-      form.setValue("unit", "each");
-    } else if (category === "square_footage") {
-      form.setValue("unit", "sqft");
-    }
-  }, [category, form]);
-
-  return (
-    <Card className="border-dashed">
-      <CardContent className="pt-4">
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="category"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Category</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-line-item-category">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="materials">Materials</SelectItem>
-                        <SelectItem value="labor">Labor</SelectItem>
-                        <SelectItem value="square_footage">Square Footage</SelectItem>
-                        <SelectItem value="other">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="unit"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Unit</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-line-item-unit">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="hours">Hours</SelectItem>
-                        <SelectItem value="each">Each</SelectItem>
-                        <SelectItem value="sqft">Sq Ft</SelectItem>
-                        <SelectItem value="gallon">Gallon</SelectItem>
-                        <SelectItem value="linear_ft">Linear Ft</SelectItem>
-                        <SelectItem value="flat">Flat Rate</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Interior wall painting" {...field} data-testid="input-line-item-description" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="quantity"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Quantity</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" placeholder="10" {...field} data-testid="input-line-item-quantity" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="rate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Rate ($)</FormLabel>
-                    <FormControl>
-                      <Input type="number" step="0.01" placeholder="45.00" {...field} data-testid="input-line-item-rate" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            <FormField
-              control={form.control}
-              name="amount"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Amount ($)</FormLabel>
-                  <FormControl>
-                    <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-line-item-amount" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={onCancel} data-testid="button-cancel-line-item">
-                Cancel
-              </Button>
-              <Button type="submit" data-testid="button-add-item-submit">
-                Add Item
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </CardContent>
-    </Card>
   );
 }
