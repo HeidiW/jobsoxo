@@ -23,7 +23,6 @@ import { getLastInboxSyncTime, getNextInboxSyncTime, syncInboxForConnectedUsers 
 import { handleInboundSms, twimlReply } from "./sms";
 import { sendChangeOrderEmail } from "./email";
 import twilio from "twilio";
-import multer from "multer";
 import { parseDocumentText } from "./document-parser";
 
 function parseNumeric(value: unknown): number {
@@ -784,8 +783,11 @@ export async function registerRoutes(
       send: z.boolean().optional(),
     });
 
-  const upload = multer({
-    storage: multer.memoryStorage(),
+  // Lazy-load multer to avoid Vite SSR hoisting issues in tests
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const multerLib = require("multer") as typeof import("multer").default;
+  const upload = multerLib({
+    storage: multerLib.memoryStorage(),
     limits: { fileSize: 20 * 1024 * 1024 },
     fileFilter: (_req, file, cb) => {
       const ok = /^(application\/pdf|image\/(jpeg|png|webp|gif))$/.test(file.mimetype);

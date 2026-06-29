@@ -79,13 +79,14 @@ export async function handleInboundSms(from: string, body: string): Promise<stri
   }
 
   const entryDescription = [description, "(via SMS)"].filter(Boolean).join(" ").trim();
-  await storage.createTimeEntry({
+  const entry: import("@shared/schema").InsertTimeEntry = {
     employeeId: employee.id,
     jobId: null,
     date: now,
     hoursWorked: String(hours),
     description: entryDescription || "(via SMS)",
-  } as any);
+  };
+  await storage.createTimeEntry(entry);
 
   const dayName = now.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
   const totalStr = newTotal % 1 === 0 ? String(newTotal) : newTotal.toFixed(1);
