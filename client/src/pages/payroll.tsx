@@ -489,7 +489,14 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
         )}
 
         <div className="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
+          <Tooltip open={mutation.isPending ? undefined : false}>
+            <TooltipTrigger asChild>
+              <span tabIndex={mutation.isPending ? 0 : undefined}>
+                <Button type="button" variant="outline" onClick={onClose} disabled={mutation.isPending} data-testid="button-cancel-run-payroll">Cancel</Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>Payroll run in progress — please wait</TooltipContent>
+          </Tooltip>
           <Tooltip open={overlappingPeriods.length > 0 && !mutation.isPending ? undefined : false}>
             <TooltipTrigger asChild>
               <span tabIndex={overlappingPeriods.length > 0 && !mutation.isPending ? 0 : undefined}>
