@@ -1,3 +1,5 @@
+import { createRequire } from "node:module";
+const _require = createRequire(import.meta.url);
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -785,7 +787,7 @@ export async function registerRoutes(
 
   // Lazy-load multer to avoid Vite SSR hoisting issues in tests
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const multerLib = require("multer") as typeof import("multer").default;
+  const multerLib = _require("multer") as typeof import("multer").default;
   const upload = multerLib({
     storage: multerLib.memoryStorage(),
     limits: { fileSize: 20 * 1024 * 1024 },
@@ -804,10 +806,8 @@ export async function registerRoutes(
       let text = "";
 
       if (req.file.mimetype === "application/pdf") {
-        // pdf-parse ships both CJS and ESM builds; handle both
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const pdfMod: any = await import("pdf-parse");
-        const pdfParse = pdfMod.default ?? pdfMod;
+        // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
+        const pdfParse = _require("pdf-parse") as any;
         const parsed = await pdfParse(req.file.buffer);
         text = parsed.text;
       } else {

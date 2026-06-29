@@ -167,25 +167,6 @@ export default function InvoiceNew() {
     }
   }, [preselectedJobId, jobs, form]);
 
-  const { data: jobLineItems } = useQuery<LineItem[]>({
-    queryKey: ["/api/jobs", selectedJobId, "line-items"],
-    enabled: !!selectedJobId,
-  });
-
-  useEffect(() => {
-    if (jobLineItems && jobLineItems.length > 0 && lineItems.length === 0) {
-      const importedItems = jobLineItems.map((item) => ({
-        id: crypto.randomUUID(),
-        category: item.category as NewLineItem["category"],
-        description: item.description,
-        quantity: Number(item.quantity),
-        unit: item.unit,
-        rate: Number(item.rate),
-        amount: Number(item.amount),
-      }));
-      setLineItems(importedItems);
-    }
-  }, [jobLineItems, lineItems.length]);
 
   const filteredJobs = jobs?.filter((job) =>
     !selectedClientId || job.clientId === selectedClientId
