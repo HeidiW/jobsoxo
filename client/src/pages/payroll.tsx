@@ -222,7 +222,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
         <div className="grid grid-cols-2 gap-4">
           <FormField control={form.control} name="hourlyRate" render={({ field }) => (
             <FormItem><FormLabel>Hourly Rate ($) *</FormLabel><FormControl>
-              <Input type="number" step="0.01" placeholder="25.00" {...field} data-testid="input-employee-rate" />
+              <Input type="text" inputMode="decimal" placeholder="25.00" {...field} data-testid="input-employee-rate" />
             </FormControl><FormMessage /></FormItem>
           )} />
           <FormField control={form.control} name="position" render={({ field }) => (
