@@ -1,5 +1,6 @@
 export interface ParsedLineItem {
   description: string;
+  refs?: string;
   quantity: number;
   unit: string;
   rate: number;
@@ -152,18 +153,32 @@ function parsePaintingQuote(rawText: string): ParsedLineItem[] {
 
   const emitItem = (descParts: string[], amount: number) => {
     const raw = descParts.join(" ");
-    let desc = cleanText(raw).replace(/:$/, "").trim().slice(0, 160);
+    let desc = cleanText(raw).replace(/:$/, "").trim().slice(0, 200);
     if (desc.length < 3 || SKIP_RE.test(desc)) return;
     if (/^TOTAL\b/i.test(desc)) return;
     // Orphan items (no room colon) that start with a type-word inherit the last seen room
     if (lastRoom && !desc.includes(":") && ROOM_TYPE_RE.test(desc)) {
-      desc = `${lastRoom}: ${desc}`.slice(0, 160);
+      desc = `${lastRoom}: ${desc}`.slice(0, 200);
     }
-    // Update lastRoom whenever an item carries a "RoomName: ..." prefix
+    // Update lastRoom while ":" separator is still present
     const roomMatch = desc.match(/^([^:]{3,40}):/);
     if (roomMatch) lastRoom = roomMatch[1].trim();
+    // Extract PT/plan codes into a separate refs field
+    const ptCodes: string[] = [];
+    desc = desc.replace(/\bPT-\d+[A-Z]?\b/g, (m) => { ptCodes.push(m); return ""; });
+    const refs = ptCodes.length > 0 ? [...new Set(ptCodes)].join(" · ") : undefined;
+    // Tidy description after PT removal: collapse whitespace and stray punctuation
+    desc = desc
+      .replace(/\s*\.\s+/g, ". ")
+      .replace(/\s+/g, " ")
+      .replace(/^[\s.,;]+/, "")
+      .replace(/[\s.,;]+$/, "")
+      .trim()
+      .slice(0, 160);
+    // Convert first "RoomName: rest" colon separator → em dash
+    desc = desc.replace(/^([^—]{3,50}):\s*/, "$1 — ");
     const cat = guessCategory(desc);
-    items.push({ description: desc, quantity: 1, unit: "flat", rate: amount, amount, category: cat, section: currentSection || undefined });
+    items.push({ description: desc, refs, quantity: 1, unit: "flat", rate: amount, amount, category: cat, section: currentSection || undefined });
   };
 
   // Matches a known section keyword at the START of a line that also contains a price,

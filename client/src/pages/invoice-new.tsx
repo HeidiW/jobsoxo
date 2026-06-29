@@ -26,6 +26,7 @@ import { Link } from "wouter";
 
 interface ParsedLineItem {
   description: string;
+  refs?: string;
   quantity: number;
   unit: string;
   rate: number;
@@ -84,6 +85,8 @@ interface NewLineItem extends Omit<LineItemFormValues, "quantity" | "rate" | "am
   quantity: number;
   rate: number;
   amount: number;
+  refs?: string;
+  section?: string;
 }
 
 // ── Shared style helpers ─────────────────────────────────────────────────────
@@ -557,7 +560,7 @@ export default function InvoiceNew() {
 
   const addItemToSection = (sec: string) =>
     setLineItems(prev => [...prev, {
-      id: crypto.randomUUID(), description: "", quantity: 1, unit: "lump",
+      id: crypto.randomUUID(), description: "", refs: "", quantity: 1, unit: "lump",
       rate: 0, amount: 0, category: "labor" as const, section: sec || undefined,
     }]);
 
@@ -926,6 +929,18 @@ export default function InvoiceNew() {
                                       </div>
                                       {/* Fields grid */}
                                       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(92px,1fr))", gap: "8px", alignItems: "end" }}>
+                                        {item.refs !== undefined && (
+                                          <div style={{ gridColumn: "span 2", minWidth: 0 }}>
+                                            <label style={fLabel}>Reference codes</label>
+                                            <input
+                                              value={item.refs}
+                                              onChange={e => updateItem(item.id, { refs: e.target.value })}
+                                              placeholder="PT-01B · ID-202"
+                                              style={{ ...fInput, fontFamily: "ui-monospace,monospace", color: "#1d4ed8" }}
+                                              data-testid={`input-item-refs-${item.id}`}
+                                            />
+                                          </div>
+                                        )}
                                         <div>
                                           <label style={fLabel}>Qty</label>
                                           <input type="number" min="0" step="any" value={item.quantity}
