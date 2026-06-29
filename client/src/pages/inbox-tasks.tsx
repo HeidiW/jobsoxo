@@ -1026,7 +1026,7 @@ export default function InboxTasks() {
             <p
               className="text-xs text-muted-foreground mt-0.5"
               data-testid="text-last-synced"
-              title={syncInfo.lastSyncedAt ? format(new Date(syncInfo.lastSyncedAt), "PPpp") : undefined}
+              title={syncInfo.lastSyncedAt ? format(new Date(syncInfo.lastSyncedAt), "PPpp") : "Never synced"}
             >
               <Clock className="h-3 w-3 inline mr-1" />
               {syncInfo.lastSyncedAt ? (
