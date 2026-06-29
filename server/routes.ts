@@ -711,6 +711,8 @@ export async function registerRoutes(
         rate: z.coerce.number().positive(),
         isChangeOrder: z.boolean().optional().default(false),
         changeOrderReason: z.string().optional().nullable(),
+        section: z.string().optional().nullable(),
+        refs: z.string().optional().nullable(),
       });
       const parsed = bodySchema.safeParse(req.body);
       if (!parsed.success) return badRequest(res, parsed.error);
@@ -729,6 +731,8 @@ export async function registerRoutes(
         amount: String(amount),
         isChangeOrder: rest.isChangeOrder,
         changeOrderReason: rest.changeOrderReason ?? null,
+        section: rest.section ?? null,
+        refs: rest.refs ?? null,
       });
 
       // Recalculate invoice totals from all its line items
@@ -837,6 +841,8 @@ export async function registerRoutes(
         amount: z.union([z.string(), z.number()]).optional(),
         isChangeOrder: z.boolean().optional(),
         changeOrderReason: z.string().optional().nullable(),
+        section: z.string().optional().nullable(),
+        refs: z.string().optional().nullable(),
       }).superRefine((item, ctx) => {
         if (item.amount !== undefined) {
           const qty = parseFloat(String(item.quantity));
@@ -954,6 +960,8 @@ export async function registerRoutes(
             amount: String(amount),
             isChangeOrder: item.isChangeOrder || false,
             changeOrderReason: item.changeOrderReason || null,
+            section: item.section || null,
+            refs: item.refs || null,
             jobId: invoiceData.jobId || null,
             invoiceId: invoice.id,
           });
