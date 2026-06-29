@@ -941,18 +941,33 @@ export default function InvoiceNew() {
 
       {/* ── PDF Import Dialog ── */}
       <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle>Import line items from document</DialogTitle>
           </DialogHeader>
           {parsedDoc && (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                Found {parsedDoc.lineItems.length} line item{parsedDoc.lineItems.length !== 1 ? "s" : ""}. Select which to import:
-              </p>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Found <strong>{parsedDoc.lineItems.length}</strong> line item{parsedDoc.lineItems.length !== 1 ? "s" : ""}. Select which to import:
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="text-xs text-blue-600 hover:underline"
+                    onClick={() => setSelectedParsedItems(new Set(parsedDoc.lineItems.map((_, i) => i)))}
+                  >All</button>
+                  <span className="text-xs text-muted-foreground">·</span>
+                  <button
+                    type="button"
+                    className="text-xs text-blue-600 hover:underline"
+                    onClick={() => setSelectedParsedItems(new Set())}
+                  >None</button>
+                </div>
+              </div>
+              <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
                 {parsedDoc.lineItems.map((item, i) => (
-                  <div key={i} className="flex items-start gap-3 rounded-md border p-3">
+                  <div key={i} className="flex items-start gap-3 rounded-md border p-2.5 hover:bg-muted/40 transition-colors">
                     <Checkbox
                       id={`item-${i}`}
                       checked={selectedParsedItems.has(i)}
@@ -961,17 +976,19 @@ export default function InvoiceNew() {
                         if (checked) next.add(i); else next.delete(i);
                         setSelectedParsedItems(next);
                       }}
+                      className="mt-0.5"
                     />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">{item.description}</p>
-                      <p className="text-xs text-muted-foreground">{item.quantity} {item.unit} × {formatCurrency(item.rate)} = {formatCurrency(item.amount)}</p>
+                      <p className="text-sm font-medium leading-snug">{item.description}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{item.unit} · {formatCurrency(item.rate)}</p>
                     </div>
+                    <span className="text-sm font-semibold text-right shrink-0 pt-0.5">{formatCurrency(item.amount)}</span>
                   </div>
                 ))}
               </div>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="mt-1">
             <Button variant="outline" onClick={() => setShowImportDialog(false)}>Cancel</Button>
             <Button onClick={applyParsedItems} disabled={selectedParsedItems.size === 0}>
               Import {selectedParsedItems.size} item{selectedParsedItems.size !== 1 ? "s" : ""}

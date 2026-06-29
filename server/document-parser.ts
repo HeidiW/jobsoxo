@@ -15,27 +15,165 @@ export interface ParsedDocument {
   confidence: "high" | "medium" | "low";
 }
 
+// ── Category guesser ──────────────────────────────────────────────────────────
+
 function guessCategory(desc: string): ParsedLineItem["category"] {
-  if (/sq\s*ft|square\s*foot|sqft|m2|square\s*meter|area/i.test(desc)) return "square_footage";
+  if (/sq\s*ft|square\s*foot|sqft|m2|square\s*meter/i.test(desc)) return "square_footage";
   if (/tape|roller|brush|drop\s*cloth|material|supply|supplies|sheet|board|timber|lumber|nail|screw|hardware|putty|filler|plaster|drywall|equipment|tool|gallon|litre|liter/i.test(desc)) return "materials";
-  if (/paint|prime|primer|coat|labor|labour|work|hour|install|apply|prep|sand|finish|clean|strip|seal|repair|patch|decor|wallpaper|caulk|stain|skim|spray|rolled|satin|faux|beam/i.test(desc)) return "labor";
+  if (/paint|prime|primer|coat|labor|labour|work|hour|install|apply|prep|sand|finish|clean|strip|seal|repair|patch|decor|wallpaper|caulk|stain|skim|spray|rolled|satin|faux|beam|ceiling|wall|trim|door|floor|basetrim/i.test(desc)) return "labor";
   return "other";
 }
+
+// ── Text-cleaning helpers ────────────────────────────────────────────────────
+
+// Plan spec codes (PT-01A, RCP-102, ID-202, etc.)
+const PLAN_CODE_RE = /\b(PT-\d+[A-Z]?|RCP-?\d*|ID-\d+(?:[,\s\d]*\d)?)\b\.?/gi;
+// Parenthetical plan references like (RCP, ID-102. Elevations ID-202,203)
+const PAREN_REF_RE = /\s*[\(\[][^\)\]]{1,120}[\)\]]/g;
+// Summary/skip keywords
+const SKIP_RE = /^(total\b|sub[-\s]?total|grand\s*total|balance\s*due|amount\s*due|deposit\s*required|presented\s*to|breakdown\s*of|-- \d)/i;
+// Section headers: lines that are entirely uppercase (or close to it) like "BASEMENT:" "WALLS AND TRIM."
+const SECTION_HDR_RE = /^[A-Z][A-Z0-9\s\/&\-]{3,}[:.\s]*$/;
+
+function cleanText(s: string): string {
+  return s
+    .replace(PAREN_REF_RE, "")          // remove (plan refs)
+    .replace(PLAN_CODE_RE, "")           // remove PT-01B RCP-102 etc.
+    .replace(/([a-zA-Z])(PT-\d+[A-Z]?)/g, "$1 $2")  // insert space before PT code when directly joined
+    .replace(/\s*\/\s*(?=[A-Z\s]|$)/g, " ")  // clean lone slashes from "PT-01B/ PT-08" artifacts
+    .replace(/\s+/g, " ")
+    .replace(/^[\s.,;()\-–_\/]+/, "")    // strip leading punctuation
+    .replace(/[\-–_.,;()\/\s]+$/, "")    // strip trailing punctuation
+    .trim();
+}
+
+function isSectionHeader(line: string): boolean {
+  const trimmed = line.trim();
+  if (trimmed.length < 4) return false;
+  // Count uppercase letters vs total alpha characters
+  const alpha = trimmed.replace(/[^A-Za-z]/g, "");
+  if (alpha.length === 0) return false;
+  const upperRatio = (trimmed.match(/[A-Z]/g) || []).length / alpha.length;
+  return upperRatio >= 0.85 && /^[A-Z]/.test(trimmed);
+}
+
+// ── Painting-quote line-accumulation parser ──────────────────────────────────
+// Strategy: scan line by line, accumulating description text.
+// Each time a $ amount is found, emit an item using the accumulated text.
+// Handles multi-price lines (e.g. "walls $2,400. Trim $1,200.")
+
+function parsePaintingQuote(rawText: string): ParsedLineItem[] {
+  const PRICE_RE = /\$\s*([\d,]+(?:\.\d{0,2})?)/g;
+
+  const lines = rawText
+    .replace(/--\s*\d+\s*of\s*\d+\s*--/gi, "")  // remove PDF page markers
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
+
+  const items: ParsedLineItem[] = [];
+  let accumLines: string[] = [];
+  let pastPreamble = false;   // ignore company/address header before first section
+
+  const emitItem = (descParts: string[], amount: number) => {
+    const raw = descParts.join(" ");
+    const desc = cleanText(raw).replace(/:$/, "").trim().slice(0, 160);
+    if (desc.length < 3 || SKIP_RE.test(desc)) return;
+    if (/^TOTAL\b/i.test(desc)) return;
+    const cat = guessCategory(desc);
+    items.push({ description: desc, quantity: 1, unit: "flat", rate: amount, amount, category: cat });
+  };
+
+  for (const line of lines) {
+    // Section headers (BASEMENT:, GROUND FLOOR:, etc.) end the preamble & reset context
+    if (isSectionHeader(line)) {
+      pastPreamble = true;
+      accumLines = [];
+      continue;
+    }
+
+    // Skip preamble (address, date, company name before first section)
+    if (!pastPreamble) continue;
+
+    // Skip summary totals
+    if (SKIP_RE.test(line)) {
+      accumLines = [];
+      continue;
+    }
+
+    // Find all $ amounts on this line
+    const priceMatches: Array<{ amount: number; index: number; end: number }> = [];
+    let pm: RegExpExecArray | null;
+    const priceRe = new RegExp(PRICE_RE.source, "g");
+    while ((pm = priceRe.exec(line)) !== null) {
+      const amount = parseFloat(pm[1].replace(/,/g, ""));
+      if (!isNaN(amount) && amount >= 100) {
+        priceMatches.push({ amount, index: pm.index, end: pm.index + pm[0].length });
+      }
+    }
+
+    if (priceMatches.length === 0) {
+      // If line ends with a lone "$" (no valid amount), it's an unpriced entry — skip entirely
+      if (/\$\s*$/.test(line)) {
+        accumLines = [];
+        continue;
+      }
+      // No prices — accumulate cleaned text
+      const cleaned = cleanText(line);
+      if (cleaned.length > 2 && !SKIP_RE.test(cleaned)) {
+        accumLines.push(cleaned);
+      }
+      continue;
+    }
+
+    // One or more prices on this line
+    let scanFrom = 0;
+    for (let pi = 0; pi < priceMatches.length; pi++) {
+      const { amount, index, end } = priceMatches[pi];
+
+      // Text before this $ sign on the line
+      const beforeDollar = cleanText(line.slice(scanFrom, index));
+
+      if (pi === 0) {
+        // First price on line: combine previously accumulated lines + text before this $
+        const descParts = [
+          ...accumLines,
+          ...(beforeDollar.length > 2 ? [beforeDollar] : []),
+        ];
+        emitItem(descParts, amount);
+        accumLines = [];
+      } else {
+        // Subsequent prices on same line: use only text between previous price and this $
+        if (beforeDollar.length > 2) {
+          emitItem([beforeDollar], amount);
+        }
+      }
+
+      scanFrom = end;
+    }
+
+    // Text remaining after the last price on this line → start next accumulation
+    const remaining = cleanText(line.slice(priceMatches[priceMatches.length - 1].end));
+    accumLines = remaining.length > 2 ? [remaining] : [];
+  }
+
+  return items;
+}
+
+// ── Traditional table-format parser ─────────────────────────────────────────
+// For invoices with "Description | Qty | Rate | Amount" columns.
+
+const SKIP_LINE = /^(description|item\s*#?|qty|quantity|unit|rate|price|amount|total|subtotal|sub-?total|tax|gst|vat|hst|balance|invoice|date|number|bill\s*to|from|ship|company|address|phone|email|due|terms|notes?|payment|page|authoris|signature|thank)[\s:]*$/i;
+const SUMMARY_LINE = /^(subtotal|sub-total|total\s*(due)?|grand\s*total|balance\s*due|amount\s*due|tax|gst|vat|hst|discount|deposit)\s*[-–:$\d(]/i;
+const SEPARATOR = /^[-=_*#]{3,}$/;
 
 function stripAmount(s: string): number {
   return parseFloat(s.replace(/[$,\s]/g, "")) || 0;
 }
 
-// ─── Table-format parser ────────────────────────────────────────────────────
-// Works for traditional invoice tables: "Description   Qty   Rate   Amount"
-
-const SKIP_LINE = /^(description|item\s*#?|qty|quantity|unit|rate|price|amount|total|subtotal|sub-?total|tax|gst|vat|hst|balance|invoice|date|number|bill\s*to|from|ship|company|address|phone|email|due|terms|notes?|payment|page|authoris|signature|thank)[\s:]*$/i;
-const SUMMARY_LINE = /^(subtotal|sub-total|total\s*(due)?|grand\s*total|balance\s*due|amount\s*due|tax|gst|vat|hst|discount|deposit)\s*[-–:$\d(]/i;
-const SEPARATOR = /^[-=_*#]{3,}$/;
-const CURRENCY_RE = /\$?([\d,]+\.?\d{0,2})/g;
-
 function parseTableFormat(lines: string[]): ParsedLineItem[] {
   const items: ParsedLineItem[] = [];
+  const CURRENCY_RE = /\$?([\d,]+\.?\d{0,2})/g;
 
   for (const line of lines) {
     if (SKIP_LINE.test(line) || SEPARATOR.test(line) || SUMMARY_LINE.test(line)) continue;
@@ -85,112 +223,18 @@ function parseTableFormat(lines: string[]): ParsedLineItem[] {
   return items;
 }
 
-// ─── Narrative / quote-format parser ───────────────────────────────────────
-// Works for free-form construction quotes:
-//   "Description text spanning
-//    multiple lines - $35,000."
-//
-// Strategy: split into blank-line-delimited blocks, join wrapped lines,
-// then extract each "$amount" with its leading description text.
+// ── Main entry point ──────────────────────────────────────────────────────────
 
-const SKIP_BLOCK = /^(total|deposit\s*required|sub-?total|grand\s*total|balance|presented\s*to|breakdown\s*of)/i;
-const SECTION_HDR = /^[A-Z][A-Z\s\/&]+[:.]\s*$/; // e.g. "BASEMENT:", "WALLS AND TRIM."
-
-function parseNarrativeFormat(rawText: string): ParsedLineItem[] {
-  const items: ParsedLineItem[] = [];
-
-  // Split on blank lines → one "block" per logical paragraph
-  const blocks = rawText
-    .split(/\n(?:\s*\n)+/)
-    .map((b) =>
-      b
-        .split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean)
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim()
-    )
-    .filter(Boolean);
-
-  // Price pattern: optional leading "- " then "$" then digits
-  const PRICE_RE = /(?:[-–]\s*)?\$\s*([\d,]+(?:\.\d{0,2})?)/g;
-
-  for (const block of blocks) {
-    if (SKIP_BLOCK.test(block)) continue;
-    // Pure section headers with no prices → skip
-    if (SECTION_HDR.test(block) && !/\$/.test(block)) continue;
-
-    // Collect all prices in this block
-    const prices: Array<{ amount: number; start: number; end: number }> = [];
-    let m: RegExpExecArray | null;
-    const re = new RegExp(PRICE_RE.source, "g");
-    while ((m = re.exec(block)) !== null) {
-      const amount = parseFloat(m[1].replace(/,/g, ""));
-      // Ignore tiny amounts that look like reference numbers (< $100)
-      if (amount >= 100) {
-        prices.push({ amount, start: m.index, end: m.index + m[0].length });
-      }
-    }
-    if (prices.length === 0) continue;
-
-    if (prices.length === 1) {
-      // Single price: description = everything before it
-      let desc = block
-        .slice(0, prices[0].start)
-        .replace(/[-–_.]+\s*$/, "")
-        .replace(/\s+/g, " ")
-        .trim();
-
-      // If price leads the block, use text after it as context
-      if (desc.length < 5 && prices[0].end < block.length) {
-        desc = block
-          .slice(prices[0].end)
-          .replace(/^[\s.,)(]+/, "")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 120);
-      }
-
-      desc = desc.slice(0, 120).trim();
-      if (desc.length < 3 || SKIP_BLOCK.test(desc)) continue;
-
-      const cat = guessCategory(desc);
-      items.push({ description: desc, quantity: 1, unit: "flat", rate: prices[0].amount, amount: prices[0].amount, category: cat });
-    } else {
-      // Multiple prices in one block → split into separate items
-      for (let i = 0; i < prices.length; i++) {
-        const segStart = i === 0 ? 0 : prices[i - 1].end;
-        let desc = block
-          .slice(segStart, prices[i].start)
-          .replace(/^[.,\s)(]+/, "")
-          .replace(/[-–_.]+\s*$/, "")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 120);
-
-        if (desc.length < 3 || SKIP_BLOCK.test(desc)) continue;
-
-        const cat = guessCategory(desc);
-        items.push({ description: desc, quantity: 1, unit: "flat", rate: prices[i].amount, amount: prices[i].amount, category: cat });
-      }
-    }
-  }
-
-  return items;
-}
-
-// ─── Main entry point ───────────────────────────────────────────────────────
 export function parseDocumentText(rawText: string): ParsedDocument {
   const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const fullText = lines.join(" ");
 
-  // Try table format first
-  let lineItems = parseTableFormat(lines);
+  // 1. Try painting-quote line-accumulation parser (narrative quotes with $ prices)
+  let lineItems = parsePaintingQuote(rawText);
 
-  // Fall back to narrative format if table mode found nothing
+  // 2. If that found nothing, try traditional table format
   if (lineItems.length === 0) {
-    lineItems = parseNarrativeFormat(rawText);
+    lineItems = parseTableFormat(lines);
   }
 
   // ── Due date ──
