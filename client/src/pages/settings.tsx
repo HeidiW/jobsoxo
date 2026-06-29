@@ -314,11 +314,10 @@ export default function SettingsPage() {
     },
   });
 
-  function computeNextSyncTime(hour: number): Date {
-    const now = new Date();
-    const next = new Date(now);
+  function computeNextSyncTime(hour: number, fromDate: Date = new Date()): Date {
+    const next = new Date(fromDate);
     next.setHours(hour, 0, 0, 0);
-    if (next <= now) {
+    if (next <= fromDate) {
       next.setDate(next.getDate() + 1);
     }
     return next;
@@ -331,7 +330,7 @@ export default function SettingsPage() {
     const parsed = Number(watchedSyncHour);
     const hour = Number.isInteger(parsed) && parsed >= 0 && parsed <= 23 ? parsed : null;
     if (hour === null) return null;
-    return computeNextSyncTime(hour);
+    return computeNextSyncTime(hour, now);
   })();
 
   const onSubmit = (data: SettingsFormValues) => {
