@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   ArrowLeft,
   Briefcase,
   MapPin,
@@ -35,7 +45,10 @@ import {
   Mail,
   Edit,
   Plus,
+  Trash2,
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 import type { Job, Client, Invoice, LineItem, Employee } from "@shared/schema";
 import JobForm from "@/components/job-form";
@@ -97,6 +110,22 @@ export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteInvoiceId, setDeleteInvoiceId] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  const deleteInvoiceMutation = useMutation({
+    mutationFn: async (invoiceId: string) => {
+      await apiRequest("DELETE", `/api/invoices/${invoiceId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", id] });
+      toast({ title: "Invoice deleted" });
+      setDeleteInvoiceId(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to delete invoice", variant: "destructive" });
+    },
+  });
 
   const { data: job, isLoading } = useQuery<JobDetail>({
     queryKey: ["/api/jobs", id],
@@ -368,11 +397,22 @@ export default function JobDetail() {
                           </span>
                         </TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="sm" asChild>
-                            <Link href={`/invoices/${inv.id}`} data-testid={`button-view-invoice-${inv.id}`}>
-                              View
-                            </Link>
-                          </Button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link href={`/invoices/${inv.id}`} data-testid={`button-view-invoice-${inv.id}`}>
+                                View
+                              </Link>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => setDeleteInvoiceId(inv.id)}
+                              data-testid={`button-delete-invoice-${inv.id}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -474,6 +514,27 @@ export default function JobDetail() {
           </CardContent>
         </Card>
       </div>
+
+      <AlertDialog open={!!deleteInvoiceId} onOpenChange={(o) => { if (!o) setDeleteInvoiceId(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete invoice?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the invoice and all its line items. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => deleteInvoiceId && deleteInvoiceMutation.mutate(deleteInvoiceId)}
+              data-testid="button-confirm-delete-invoice"
+            >
+              {deleteInvoiceMutation.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

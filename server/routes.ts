@@ -926,6 +926,18 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/invoices/:id", async (req, res) => {
+    try {
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+      await storage.deleteInvoice(req.params.id);
+      res.status(204).end();
+    } catch (error) {
+      console.error("Delete invoice error:", error);
+      res.status(500).json({ error: "Failed to delete invoice" });
+    }
+  });
+
   app.post("/api/invoices/:id/send", async (req, res) => {
     try {
       const invoice = await storage.getInvoice(req.params.id);
