@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatPhone } from "@/lib/formatPhone";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -215,7 +216,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
           )} />
           <FormField control={form.control} name="phone" render={({ field }) => (
             <FormItem><FormLabel>Phone</FormLabel><FormControl>
-              <Input placeholder="(555) 123-4567" {...field} data-testid="input-employee-phone" />
+              <Input placeholder="(555) 123-4567" {...field} onChange={e => field.onChange(formatPhone(e.target.value))} data-testid="input-employee-phone" />
             </FormControl><FormMessage /></FormItem>
           )} />
         </div>

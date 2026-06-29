@@ -35,6 +35,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { changeOrderSchema, type ChangeOrderValues } from "@/lib/change-order-schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatPhone } from "@/lib/formatPhone";
 import {
   ArrowLeft,
   Mail,
@@ -172,7 +173,7 @@ function InvoiceDocument({
             </div>
           )}
           {invoice.client?.email && <div style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6 }}>{invoice.client.email}</div>}
-          {invoice.client?.phone && <div style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6 }}>{invoice.client.phone}</div>}
+          {invoice.client?.phone && <div style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6 }}>{formatPhone(invoice.client.phone)}</div>}
         </div>
         {invoice.job && (
           <div>

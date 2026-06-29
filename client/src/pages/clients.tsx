@@ -35,6 +35,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
+import { formatPhone } from "@/lib/formatPhone";
 import {
   Plus,
   Search,
@@ -196,7 +197,7 @@ function ClientForm({
               <FormItem>
                 <FormLabel>Phone</FormLabel>
                 <FormControl>
-                  <Input placeholder="(555) 123-4567" {...field} data-testid="input-client-phone" />
+                  <Input placeholder="(555) 123-4567" {...field} onChange={e => field.onChange(formatPhone(e.target.value))} data-testid="input-client-phone" />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -434,7 +435,7 @@ export default function Clients() {
                           {client.phone && (
                             <span className="flex items-center gap-1 text-muted-foreground">
                               <Phone className="h-3 w-3" />
-                              {client.phone}
+                              {formatPhone(client.phone)}
                             </span>
                           )}
                         </div>

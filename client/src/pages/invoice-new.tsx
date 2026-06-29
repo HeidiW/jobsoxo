@@ -17,6 +17,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
+import { formatPhone } from "@/lib/formatPhone";
 import { Plus, FileText, Save, Send } from "lucide-react";
 import { format, addDays } from "date-fns";
 import type { Client, Job, Settings } from "@shared/schema";
@@ -713,7 +714,7 @@ export default function InvoiceNew() {
                     <div>
                       <label style={labelStyle}>Phone</label>
                       <div style={{ ...inputStyle, background: "#f8fafc", color: settings?.companyPhone ? "#0f172a" : "#94a3b8" }}>
-                        {settings?.companyPhone || "—"}
+                        {settings?.companyPhone ? formatPhone(settings.companyPhone) : "—"}
                       </div>
                     </div>
                   </div>

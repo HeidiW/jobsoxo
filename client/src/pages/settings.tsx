@@ -1,4 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { formatPhone } from "@/lib/formatPhone";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -408,7 +409,7 @@ export default function SettingsPage() {
                       <FormControl>
                         <div className="relative">
                           <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                          <Input placeholder="(555) 123-4567" className="pl-9" {...field} data-testid="input-company-phone" />
+                          <Input placeholder="(555) 123-4567" className="pl-9" {...field} onChange={e => field.onChange(formatPhone(e.target.value))} data-testid="input-company-phone" />
                         </div>
                       </FormControl>
                       <FormMessage />
