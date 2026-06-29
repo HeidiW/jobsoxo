@@ -1,5 +1,11 @@
 import { createRequire } from "node:module";
-const _require = createRequire(import.meta.url);
+// import.meta.url is valid in ESM (dev/tsx) but undefined in CJS bundles (production).
+// Fall back to process.cwd() so createRequire can still resolve node_modules.
+const _require = createRequire(
+  (typeof import.meta !== "undefined" && import.meta.url)
+    ? import.meta.url
+    : `file://${process.cwd()}/server.js`
+);
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
