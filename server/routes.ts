@@ -817,11 +817,10 @@ export async function registerRoutes(
 
       if (req.file.mimetype === "application/pdf") {
         // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-explicit-any
-        const pdfParseLib = _require("pdf-parse") as any;
-        // In the production CJS bundle the default export may be wrapped — unwrap it.
-        const pdfParse: (buf: Buffer) => Promise<{ text: string }> =
-          typeof pdfParseLib === "function" ? pdfParseLib : pdfParseLib.default ?? pdfParseLib;
-        const parsed = await pdfParse(req.file.buffer);
+        // pdf-parse v2 API: new PDFParse({ data: buffer }) then .getText()
+        const { PDFParse } = _require("pdf-parse") as { PDFParse: new (opts: { data: Buffer }) => { getText: () => Promise<{ text: string }> } };
+        const parser = new PDFParse({ data: req.file.buffer });
+        const parsed = await parser.getText();
         text = parsed.text;
       } else {
         return res.status(400).json({ error: "Image OCR not yet supported. Please upload a PDF." });
