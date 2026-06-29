@@ -116,6 +116,7 @@ function InvoiceDocument({
 
   return (
     <div
+      id="invoice-printable"
       className="print:shadow-none print:rounded-none print:max-w-none"
       style={{
         fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
@@ -528,6 +529,42 @@ export default function InvoiceDetail() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [showChangeOrderForm, setShowChangeOrderForm] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    const element = document.getElementById("invoice-printable");
+    if (!element || !invoice) return;
+    setIsDownloading(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
+      const canvas = await html2canvas(element, { scale: 2, useCORS: true, logging: false });
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      if (pdfHeight <= pageHeight) {
+        pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, pdfHeight);
+      } else {
+        let yPos = 0;
+        let remaining = pdfHeight;
+        let first = true;
+        while (remaining > 0) {
+          if (!first) pdf.addPage();
+          pdf.addImage(imgData, "JPEG", 0, -yPos, pdfWidth, pdfHeight);
+          yPos += pageHeight;
+          remaining -= pageHeight;
+          first = false;
+        }
+      }
+      pdf.save(`Invoice-${invoice.invoiceNumber}.pdf`);
+    } catch {
+      toast({ title: "Failed to generate PDF", variant: "destructive" });
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const { data: invoice, isLoading } = useQuery<InvoiceDetail>({
     queryKey: ["/api/invoices", id],
@@ -660,9 +697,9 @@ export default function InvoiceDetail() {
               <Printer className="h-4 w-4 mr-2" />
               Print
             </Button>
-            <Button variant="outline" data-testid="button-download-invoice">
+            <Button variant="outline" onClick={handleDownloadPdf} disabled={isDownloading} data-testid="button-download-invoice">
               <Download className="h-4 w-4 mr-2" />
-              Download PDF
+              {isDownloading ? "Generating…" : "Download PDF"}
             </Button>
           </div>
         </div>
