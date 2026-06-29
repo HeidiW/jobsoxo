@@ -23,6 +23,8 @@ import { getLastInboxSyncTime, getNextInboxSyncTime, syncInboxForConnectedUsers 
 import { handleInboundSms, twimlReply } from "./sms";
 import { sendChangeOrderEmail } from "./email";
 import twilio from "twilio";
+import multer from "multer";
+import { parseDocumentText } from "./document-parser";
 
 function parseNumeric(value: unknown): number {
   if (typeof value === "number") return value;
@@ -781,6 +783,46 @@ export async function registerRoutes(
       })).optional(),
       send: z.boolean().optional(),
     });
+
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+      const ok = /^(application\/pdf|image\/(jpeg|png|webp|gif))$/.test(file.mimetype);
+      cb(null, ok);
+    },
+  });
+
+  app.post("/api/invoices/parse-document", upload.single("file"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded. Accepted types: PDF, JPEG, PNG, WebP." });
+      }
+
+      let text = "";
+
+      if (req.file.mimetype === "application/pdf") {
+        // pdf-parse ships both CJS and ESM builds; handle both
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pdfMod: any = await import("pdf-parse");
+        const pdfParse = pdfMod.default ?? pdfMod;
+        const parsed = await pdfParse(req.file.buffer);
+        text = parsed.text;
+      } else {
+        return res.status(400).json({ error: "Image OCR not yet supported. Please upload a PDF." });
+      }
+
+      if (!text.trim()) {
+        return res.json({ lineItems: [], confidence: "low", message: "No readable text found in document." });
+      }
+
+      const result = parseDocumentText(text);
+      res.json(result);
+    } catch (error) {
+      console.error("Document parse error:", error);
+      res.status(500).json({ error: "Failed to parse document" });
+    }
+  });
 
   app.post("/api/invoices", async (req, res) => {
     try {

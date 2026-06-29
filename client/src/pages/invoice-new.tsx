@@ -1,10 +1,18 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Form,
   FormControl,
@@ -34,9 +42,27 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
-import { Plus, Trash2, ArrowLeft, Save, Send } from "lucide-react";
+import { Plus, Trash2, ArrowLeft, Save, Send, Upload, FileText, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { format, addDays } from "date-fns";
 import type { Client, Job, LineItem } from "@shared/schema";
+
+interface ParsedLineItem {
+  description: string;
+  quantity: number;
+  unit: string;
+  rate: number;
+  amount: number;
+  category: "materials" | "labor" | "square_footage" | "other";
+}
+
+interface ParsedDocument {
+  lineItems: ParsedLineItem[];
+  dueDate?: string;
+  taxRate?: number;
+  notes?: string;
+  confidence: "high" | "medium" | "low";
+  message?: string;
+}
 
 function positiveNumericField(label: string) {
   return z
@@ -103,6 +129,10 @@ export default function InvoiceNew() {
   const { toast } = useToast();
   const [lineItems, setLineItems] = useState<NewLineItem[]>([]);
   const [showLineItemForm, setShowLineItemForm] = useState(false);
+  const [parsedDoc, setParsedDoc] = useState<ParsedDocument | null>(null);
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [selectedParsedItems, setSelectedParsedItems] = useState<Set<number>>(new Set());
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: clients } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
@@ -217,6 +247,63 @@ export default function InvoiceNew() {
       }
     },
   });
+
+  const parseDocumentMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/invoices/parse-document", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to parse document");
+      }
+      return res.json() as Promise<ParsedDocument>;
+    },
+    onSuccess: (data) => {
+      if (data.lineItems.length === 0) {
+        toast({
+          title: "No line items found",
+          description: data.message ?? "The document didn't contain recognisable line items. Try a different file.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setParsedDoc(data);
+      setSelectedParsedItems(new Set(data.lineItems.map((_, i) => i)));
+      setShowImportDialog(true);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Parse failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) parseDocumentMutation.mutate(file);
+    e.target.value = "";
+  };
+
+  const applyParsedItems = () => {
+    if (!parsedDoc) return;
+    const toAdd: NewLineItem[] = parsedDoc.lineItems
+      .filter((_, i) => selectedParsedItems.has(i))
+      .map((item) => ({
+        id: crypto.randomUUID(),
+        category: item.category,
+        description: item.description,
+        quantity: item.quantity,
+        unit: item.unit,
+        rate: item.rate,
+        amount: item.amount,
+      }));
+    setLineItems((prev) => [...prev, ...toAdd]);
+    if (parsedDoc.dueDate) form.setValue("dueDate", parsedDoc.dueDate);
+    if (parsedDoc.taxRate !== undefined) form.setValue("taxRate", String(parsedDoc.taxRate));
+    if (parsedDoc.notes) form.setValue("notes", parsedDoc.notes);
+    setShowImportDialog(false);
+    setParsedDoc(null);
+    toast({ title: `Imported ${toAdd.length} item${toAdd.length !== 1 ? "s" : ""}`, description: "Line items have been added to the invoice." });
+  };
 
   const addLineItem = (data: LineItemFormValues) => {
     const quantity = parseFloat(data.quantity);
@@ -396,10 +483,39 @@ export default function InvoiceNew() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-2">
               <CardTitle>Line Items</CardTitle>
-              <Button size="sm" onClick={() => setShowLineItemForm(true)} data-testid="button-add-line-item">
-                <Plus className="h-4 w-4 mr-1" />
-                Add Item
-              </Button>
+              <div className="flex gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                  onChange={handleFileChange}
+                  data-testid="input-document-upload"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={parseDocumentMutation.isPending}
+                  data-testid="button-import-document"
+                >
+                  {parseDocumentMutation.isPending ? (
+                    <>
+                      <FileText className="h-4 w-4 mr-1 animate-pulse" />
+                      Parsing…
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4 mr-1" />
+                      Import from Document
+                    </>
+                  )}
+                </Button>
+                <Button size="sm" onClick={() => setShowLineItemForm(true)} data-testid="button-add-line-item">
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Item
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {lineItems.length === 0 && !showLineItemForm ? (
@@ -517,6 +633,153 @@ export default function InvoiceNew() {
           </Card>
         </div>
       </div>
+
+      {/* Document Import Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col" data-testid="dialog-import-document">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Import from Document
+            </DialogTitle>
+          </DialogHeader>
+
+          {parsedDoc && (
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {/* Confidence banner */}
+              <div className={`flex items-center gap-2 text-sm px-3 py-2 rounded-md ${
+                parsedDoc.confidence === "high"
+                  ? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-400"
+                  : parsedDoc.confidence === "medium"
+                  ? "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+                  : "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-400"
+              }`}>
+                {parsedDoc.confidence === "high" ? (
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                )}
+                <span>
+                  {parsedDoc.confidence === "high"
+                    ? `Extracted ${parsedDoc.lineItems.length} line items with high confidence.`
+                    : parsedDoc.confidence === "medium"
+                    ? `Extracted ${parsedDoc.lineItems.length} line item${parsedDoc.lineItems.length !== 1 ? "s" : ""} — review and adjust quantities/rates before importing.`
+                    : "Low confidence extraction — please review all fields carefully."}
+                </span>
+              </div>
+
+              {/* Extra fields detected */}
+              {(parsedDoc.dueDate || parsedDoc.taxRate !== undefined || parsedDoc.notes) && (
+                <div className="rounded-md border px-4 py-3 space-y-1 text-sm">
+                  <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide mb-2">Also detected</p>
+                  {parsedDoc.dueDate && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Due Date</span>
+                      <span className="font-mono">{parsedDoc.dueDate}</span>
+                    </div>
+                  )}
+                  {parsedDoc.taxRate !== undefined && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Tax Rate</span>
+                      <span className="font-mono">{parsedDoc.taxRate}%</span>
+                    </div>
+                  )}
+                  {parsedDoc.notes && (
+                    <div className="flex justify-between gap-4">
+                      <span className="text-muted-foreground shrink-0">Notes</span>
+                      <span className="text-right truncate">{parsedDoc.notes}</span>
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground pt-1">These fields will be applied when you import.</p>
+                </div>
+              )}
+
+              {/* Line items selection */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">Select items to import</p>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="text-xs text-primary underline-offset-2 hover:underline"
+                      onClick={() => setSelectedParsedItems(new Set(parsedDoc.lineItems.map((_, i) => i)))}
+                    >
+                      All
+                    </button>
+                    <span className="text-xs text-muted-foreground">·</span>
+                    <button
+                      type="button"
+                      className="text-xs text-primary underline-offset-2 hover:underline"
+                      onClick={() => setSelectedParsedItems(new Set())}
+                    >
+                      None
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-md border divide-y">
+                  {parsedDoc.lineItems.map((item, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex items-start gap-3 px-4 py-3 transition-colors cursor-pointer ${
+                        selectedParsedItems.has(idx) ? "bg-muted/40" : ""
+                      }`}
+                      onClick={() =>
+                        setSelectedParsedItems((prev) => {
+                          const next = new Set(prev);
+                          next.has(idx) ? next.delete(idx) : next.add(idx);
+                          return next;
+                        })
+                      }
+                      data-testid={`import-item-${idx}`}
+                    >
+                      <Checkbox
+                        checked={selectedParsedItems.has(idx)}
+                        onCheckedChange={(checked) =>
+                          setSelectedParsedItems((prev) => {
+                            const next = new Set(prev);
+                            checked ? next.add(idx) : next.delete(idx);
+                            return next;
+                          })
+                        }
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-0.5"
+                        data-testid={`checkbox-import-item-${idx}`}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{item.description}</p>
+                        <div className="flex gap-3 mt-0.5 text-xs text-muted-foreground">
+                          <Badge variant="secondary" className="text-xs py-0">
+                            {item.category.replace("_", " ")}
+                          </Badge>
+                          <span>{item.quantity} {item.unit}</span>
+                          <span>@&nbsp;${item.rate.toFixed(2)}</span>
+                        </div>
+                      </div>
+                      <span className="font-mono text-sm font-medium shrink-0">
+                        ${item.amount.toFixed(2)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="border-t pt-4 mt-2">
+            <Button variant="outline" onClick={() => setShowImportDialog(false)} data-testid="button-cancel-import">
+              Cancel
+            </Button>
+            <Button
+              onClick={applyParsedItems}
+              disabled={selectedParsedItems.size === 0}
+              data-testid="button-apply-import"
+            >
+              Import {selectedParsedItems.size > 0 ? `${selectedParsedItems.size} item${selectedParsedItems.size !== 1 ? "s" : ""}` : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
