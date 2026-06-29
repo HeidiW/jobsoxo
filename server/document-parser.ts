@@ -38,10 +38,9 @@ const SECTION_HDR_RE = /^[A-Z][A-Z0-9\s\/&\-]{3,}[:.\s]*$/;
 
 function cleanText(s: string): string {
   return s
-    .replace(PAREN_REF_RE, "")          // remove (plan refs)
-    .replace(PLAN_CODE_RE, "")           // remove PT-01B RCP-102 etc.
-    .replace(/([a-zA-Z])(PT-\d+[A-Z]?)/g, "$1 $2")  // insert space before PT code when directly joined
-    .replace(/\s*\/\s*(?=[A-Z\s]|$)/g, " ")  // clean lone slashes from "PT-01B/ PT-08" artifacts
+    .replace(PAREN_REF_RE, "")           // remove parenthetical plan refs like (RCP, ID-102)
+    .replace(/([a-zA-Z])(PT-\d+[A-Z]?)/g, "$1 $2")  // insert space before PT code when directly joined e.g. "wallsPT-01B"
+    .replace(/\s*\/\s*(?=[A-Z\s]|$)/g, " ")   // clean lone slashes from "PT-01B/ PT-08" artifacts
     .replace(/\s+/g, " ")
     .replace(/^[\s.,;()\-–_\/]+/, "")    // strip leading punctuation
     .replace(/[\-–_.,;()\/\s]+$/, "")    // strip trailing punctuation
@@ -98,12 +97,23 @@ function parsePaintingQuote(rawText: string): ParsedLineItem[] {
   let accumLines: string[] = [];
   let pastPreamble = false;   // ignore company/address header before first section
   let currentSection = "";
+  let lastRoom = "";           // last "RoomName" seen, used to prefix orphan items like "Ceiling PT-06 Red Flat"
+
+  // Type-word prefixes that indicate an orphan item (no room prefix) that should inherit lastRoom
+  const ROOM_TYPE_RE = /^(Ceiling|Trim|Walls?|Floor|Door|Window|Entry|Restroom|Vestibule|Corridor|Lobby|Stairway|Kitchen|Dining|Bar|Bathroom)\b/i;
 
   const emitItem = (descParts: string[], amount: number) => {
     const raw = descParts.join(" ");
-    const desc = cleanText(raw).replace(/:$/, "").trim().slice(0, 160);
+    let desc = cleanText(raw).replace(/:$/, "").trim().slice(0, 160);
     if (desc.length < 3 || SKIP_RE.test(desc)) return;
     if (/^TOTAL\b/i.test(desc)) return;
+    // Orphan items (no room colon) that start with a type-word inherit the last seen room
+    if (lastRoom && !desc.includes(":") && ROOM_TYPE_RE.test(desc)) {
+      desc = `${lastRoom}: ${desc}`.slice(0, 160);
+    }
+    // Update lastRoom whenever an item carries a "RoomName: ..." prefix
+    const roomMatch = desc.match(/^([^:]{3,40}):/);
+    if (roomMatch) lastRoom = roomMatch[1].trim();
     const cat = guessCategory(desc);
     items.push({ description: desc, quantity: 1, unit: "flat", rate: amount, amount, category: cat, section: currentSection || undefined });
   };
@@ -164,6 +174,8 @@ function parsePaintingQuote(rawText: string): ParsedLineItem[] {
       if (/\b\d{3}\.\d\b/.test(cleaned)) continue;
       // Skip single-word sub-headers like "Ceilings." "Walls." that follow a section header
       if (/^[A-Z][a-z]+\.?$/.test(cleaned)) continue;
+      // Skip standalone plan/spec code lines like "PT-01C." or "PT-09. PT-01B."
+      if (/^([A-Z]{2,4}-\d+[A-Z]?\.?\s*)+$/.test(cleaned)) continue;
       if (cleaned.length > 2 && !SKIP_RE.test(cleaned)) {
         accumLines.push(cleaned);
       }
