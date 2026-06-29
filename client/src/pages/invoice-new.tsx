@@ -508,7 +508,7 @@ export default function InvoiceNew() {
     }
   }, [preselectedJobId, jobs, form]);
 
-  const filteredJobs = jobs?.filter((j) => !selectedClientId || j.clientId === selectedClientId);
+  const filteredJobs = jobs;
   const selectedClient = clients?.find((c) => c.id === selectedClientId);
   const selectedJob = selectedJobId ? jobs?.find((j) => j.id === selectedJobId) : null;
 
@@ -817,13 +817,27 @@ export default function InvoiceNew() {
                         <FormField control={form.control} name="jobId" render={({ field }) => (
                           <FormItem>
                             <FormControl>
-                              <Select onValueChange={(v) => field.onChange(v === "none" ? "" : v)} value={field.value || "none"}>
+                              <Select
+                                onValueChange={(v) => {
+                                  const jobId = v === "none" ? "" : v;
+                                  field.onChange(jobId);
+                                  if (jobId) {
+                                    const job = jobs?.find((j) => j.id === jobId);
+                                    if (job) form.setValue("clientId", job.clientId);
+                                  }
+                                }}
+                                value={field.value || "none"}
+                              >
                                 <SelectTrigger style={inputStyle} data-testid="select-invoice-job">
                                   <SelectValue placeholder="Link to job (optional)" />
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="none">No job</SelectItem>
-                                  {filteredJobs?.map((j) => <SelectItem key={j.id} value={j.id}>{j.title}</SelectItem>)}
+                                  {filteredJobs?.map((j) => (
+                                    <SelectItem key={j.id} value={j.id}>
+                                      {j.title}{j.client?.name ? ` — ${j.client.name}` : ""}
+                                    </SelectItem>
+                                  ))}
                                 </SelectContent>
                               </Select>
                             </FormControl>
