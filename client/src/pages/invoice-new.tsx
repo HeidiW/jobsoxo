@@ -399,7 +399,7 @@ function LineItemForm({ onSubmit, onCancel }: { onSubmit: (data: LineItemFormVal
             <FormField control={form.control} name="description" render={({ field }) => (
               <FormItem>
                 <FormControl>
-                  <input {...field} placeholder="e.g. Skim and paint feature wall" style={inputStyle} data-testid="input-li-description" />
+                  <input {...field} spellCheck={true} placeholder="e.g. Skim and paint feature wall" style={inputStyle} data-testid="input-li-description" />
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -900,7 +900,7 @@ export default function InvoiceNew() {
                     <FormField control={form.control} name="notes" render={({ field }) => (
                       <FormItem>
                         <FormControl>
-                          <textarea {...field} rows={2} placeholder="Summary line shown at the top of the invoice" style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} data-testid="input-invoice-notes" />
+                          <textarea {...field} spellCheck={true} rows={2} placeholder="Summary line shown at the top of the invoice" style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} data-testid="input-invoice-notes" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -939,6 +939,7 @@ export default function InvoiceNew() {
                                 <input
                                   value={sec}
                                   onChange={e => renameSection(sec, e.target.value)}
+                                  spellCheck={true}
                                   style={{ flex: 1, border: "1px solid transparent", background: "none", fontSize: "14px", fontWeight: 800, color: "#0f172a", padding: "5px 6px", borderRadius: "6px", fontFamily: "inherit" }}
                                   onFocus={e => { e.currentTarget.style.borderColor = "#cbd5e1"; e.currentTarget.style.background = "#fff"; e.currentTarget.style.outline = "none"; }}
                                   onBlur={e => { e.currentTarget.style.borderColor = "transparent"; e.currentTarget.style.background = "none"; }}
@@ -1103,7 +1104,7 @@ export default function InvoiceNew() {
                     <FormField control={form.control} name="termsAndConditions" render={({ field }) => (
                       <FormItem>
                         <FormControl>
-                          <textarea {...field} rows={3} placeholder="Payment terms and conditions" style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5, fontSize: "13px", color: "#475569", background: "#f8fafc" }} data-testid="input-invoice-terms" />
+                          <textarea {...field} spellCheck={true} rows={3} placeholder="Payment terms and conditions" style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5, fontSize: "13px", color: "#475569", background: "#f8fafc" }} data-testid="input-invoice-terms" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
