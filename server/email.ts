@@ -387,3 +387,185 @@ export async function sendPasswordResetEmail(
     return { success: false, error: String(error) };
   }
 }
+
+export async function sendChangeOrderEmail(
+  invoiceId: string,
+  toEmail: string,
+  config: EmailConfig
+): Promise<{ success: boolean; error?: string }> {
+  if (!config.apiKey) {
+    console.log(`[Email] Would send change order for ${invoiceId} to ${toEmail} (no API key)`);
+    return { success: true };
+  }
+
+  try {
+    const invoice = await storage.getInvoice(invoiceId);
+    if (!invoice) return { success: false, error: "Invoice not found" };
+
+    const client = await storage.getClient(invoice.clientId);
+    const settings = await storage.getSettings();
+    const { db } = await import("./db");
+    const { lineItems, jobs } = await import("@shared/schema");
+    const { eq } = await import("drizzle-orm");
+
+    const allLineItems = await db.select().from(lineItems).where(eq(lineItems.invoiceId, invoiceId));
+    const changeOrders = allLineItems.filter((li) => li.isChangeOrder);
+
+    const job = invoice.jobId
+      ? (await db.select().from(jobs).where(eq(jobs.id, invoice.jobId)))[0] ?? null
+      : null;
+
+    const companyName = settings?.companyName || "Your Painting Company";
+    const companyAddress = settings?.companyAddress || "";
+    const companyPhone = settings?.companyPhone || "";
+    const companyEmail = settings?.companyEmail || "";
+
+    const clientAddrParts = [client?.address, client?.city, client?.state, client?.zipCode].filter(Boolean);
+    const clientAddr = clientAddrParts.join(", ");
+
+    const fmtCurrency = (n: string | number | null | undefined) =>
+      new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(Number(n ?? 0));
+
+    const total = changeOrders.reduce((s, co) => s + Number(co.amount), 0);
+
+    const itemRows = changeOrders.map((co, i) => `
+      <tr>
+        <td style="padding:10px 14px;border-bottom:1px solid #eee;color:#888;font-size:12px;text-align:center;vertical-align:top;">${i + 1}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #eee;font-size:13px;vertical-align:top;">
+          ${co.description}
+          ${co.changeOrderReason ? `<br><span style="font-size:11px;color:#888;font-style:italic;">Reason: ${co.changeOrderReason}</span>` : ""}
+        </td>
+        <td style="padding:10px 14px;border-bottom:1px solid #eee;font-size:13px;font-weight:600;text-align:right;white-space:nowrap;vertical-align:top;">${fmtCurrency(co.amount)}</td>
+      </tr>`).join("");
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:6px;overflow:hidden;border:1px solid #e4e4e7;">
+
+  <!-- Header -->
+  <tr>
+    <td style="background:#1a1a1a;padding:28px 36px;">
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td>
+            <div style="color:#fff;font-size:18px;font-weight:700;">${companyName}</div>
+            ${companyAddress ? `<div style="color:#aaa;font-size:12px;margin-top:2px;">${companyAddress}</div>` : ""}
+            ${companyPhone ? `<div style="color:#aaa;font-size:12px;">${companyPhone}</div>` : ""}
+            ${companyEmail ? `<div style="color:#aaa;font-size:12px;">${companyEmail}</div>` : ""}
+          </td>
+          <td align="right">
+            <div style="color:#fff;font-size:24px;font-weight:800;text-transform:uppercase;letter-spacing:1px;">Change Order</div>
+            <div style="color:#aaa;font-size:12px;margin-top:4px;">Ref: ${invoice.invoiceNumber}</div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Info boxes -->
+  <tr>
+    <td style="padding:24px 36px 0;">
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td width="48%" style="border:1px solid #e4e4e7;border-radius:4px;padding:14px 16px;vertical-align:top;">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:6px;">Presented To</div>
+            <div style="font-size:14px;font-weight:700;">${client?.name ?? ""}</div>
+            ${clientAddr ? `<div style="font-size:12px;color:#555;margin-top:2px;">${clientAddr}</div>` : ""}
+            ${client?.email ? `<div style="font-size:12px;color:#555;">${client.email}</div>` : ""}
+          </td>
+          <td width="4%"></td>
+          <td width="48%" style="border:1px solid #e4e4e7;border-radius:4px;padding:14px 16px;vertical-align:top;">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:6px;">Project</div>
+            ${job?.title ? `<div style="font-size:14px;font-weight:700;">${job.title}</div>` : ""}
+            ${job?.address ? `<div style="font-size:12px;color:#555;margin-top:2px;">${job.address}</div>` : ""}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Items table -->
+  <tr>
+    <td style="padding:24px 36px 0;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e4e4e7;border-radius:4px;overflow:hidden;">
+        <tr style="background:#1a1a1a;">
+          <th style="padding:10px 14px;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;text-align:center;width:40px;">#</th>
+          <th style="padding:10px 14px;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;text-align:left;">Description</th>
+          <th style="padding:10px 14px;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:0.6px;text-align:right;width:120px;">Amount</th>
+        </tr>
+        ${itemRows}
+      </table>
+    </td>
+  </tr>
+
+  <!-- Total -->
+  <tr>
+    <td style="padding:0 36px 24px;">
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td align="right">
+            <table cellpadding="0" cellspacing="0">
+              <tr style="background:#1a1a1a;">
+                <td style="padding:12px 20px;color:#fff;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">Outstanding Total</td>
+                <td style="padding:12px 20px;color:#fff;font-size:15px;font-weight:800;text-align:right;white-space:nowrap;">${fmtCurrency(total)}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Footer -->
+  <tr>
+    <td style="padding:20px 36px 28px;border-top:1px solid #eee;">
+      <p style="margin:0;font-size:11px;color:#888;line-height:1.6;">
+        This change order amends the original contract and is subject to acceptance by all parties.<br>
+        Please reply to this email to confirm acceptance.
+      </p>
+    </td>
+  </tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+
+    const subject = `Change Order — ${invoice.invoiceNumber} | ${companyName}`;
+
+    if (config.provider === "resend" && config.apiKey) {
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: config.fromEmail || `${companyName} <noreply@resend.dev>`,
+          to: [toEmail],
+          subject,
+          html,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.text();
+        console.error("[ChangeOrder] Resend error:", err);
+        return { success: false, error: `Email failed: ${response.status}` };
+      }
+
+      return { success: true };
+    }
+
+    console.log(`[ChangeOrder] Would send to ${toEmail}: ${subject}`);
+    return { success: true };
+  } catch (error) {
+    console.error("[ChangeOrder] Send error:", error);
+    return { success: false, error: String(error) };
+  }
+}

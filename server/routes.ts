@@ -21,6 +21,7 @@ import {
 } from "./gmail";
 import { getLastInboxSyncTime, getNextInboxSyncTime, syncInboxForConnectedUsers } from "./scheduler";
 import { handleInboundSms, twimlReply } from "./sms";
+import { sendChangeOrderEmail } from "./email";
 import twilio from "twilio";
 
 function parseNumeric(value: unknown): number {
@@ -913,6 +914,35 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Send invoice error:", error);
       res.status(500).json({ error: "Failed to send invoice" });
+    }
+  });
+
+  app.post("/api/invoices/:id/send-change-order", async (req, res) => {
+    try {
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+
+      const client = await storage.getClient(invoice.clientId);
+      if (!client?.email) {
+        return res.status(400).json({ error: "Client has no email address on file" });
+      }
+      if (!process.env.RESEND_API_KEY) {
+        return res.status(500).json({ error: "Email service is not configured" });
+      }
+
+      const result = await sendChangeOrderEmail(req.params.id, client.email, {
+        apiKey: process.env.RESEND_API_KEY,
+        provider: "resend",
+      });
+
+      if (!result.success) {
+        return res.status(502).json({ error: result.error || "Failed to send email" });
+      }
+
+      res.json({ success: true, sentTo: client.email });
+    } catch (error) {
+      console.error("Send change order email error:", error);
+      res.status(500).json({ error: "Failed to send change order email" });
     }
   });
 
