@@ -179,7 +179,7 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
     mutationFn: async (data: EmployeeFormValues) => {
       const url = isEdit ? `/api/employees/${employee.id}` : "/api/employees";
       const method = isEdit ? "PATCH" : "POST";
-      const res = await apiRequest(method, url, { ...data, hourlyRate: parseFloat(data.hourlyRate) });
+      const res = await apiRequest(method, url, data);
       return res.json();
     },
     onSuccess: () => {
