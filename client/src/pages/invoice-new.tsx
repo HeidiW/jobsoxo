@@ -514,7 +514,7 @@ export default function InvoiceNew() {
     mutationFn: async (file: File) => {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await fetch("/api/invoices/parse-document", { method: "POST", body: fd });
+      const res = await fetch("/api/invoices/parse-document", { method: "POST", body: fd, credentials: "include" });
       if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || "Failed to parse document"); }
       return res.json() as Promise<ParsedDocument>;
     },
