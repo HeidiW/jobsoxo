@@ -227,7 +227,7 @@ function InvoiceDocument({
                     )}
                   </div>
                   <div style={{ width: "70px", textAlign: "right", fontSize: "11.5px", color: "#64748b", ...mono }}>
-                    {Number(item.quantity) === 0 ? "—" : `${Number(item.quantity)} ${item.unit}`}
+                    {!Number(item.quantity) ? "—" : `${Number(item.quantity)} ${item.unit}`}
                   </div>
                   <div style={{ width: "110px", textAlign: "right", fontSize: "12.5px", fontWeight: 600, color: "#0f172a", ...mono }}>
                     {formatCurrency(item.amount)}
@@ -256,7 +256,7 @@ function InvoiceDocument({
                   )}
                 </div>
                 <div style={{ width: "70px", textAlign: "right", fontSize: "11.5px", color: "#64748b", ...mono }}>
-                  {Number(item.quantity) === 0 ? "—" : `${Number(item.quantity)} ${item.unit}`}
+                  {!Number(item.quantity) ? "—" : `${Number(item.quantity)} ${item.unit}`}
                 </div>
                 <div style={{ width: "110px", textAlign: "right", fontSize: "12.5px", fontWeight: 600, color: "#b45309", ...mono }}>
                   +{formatCurrency(item.amount)}

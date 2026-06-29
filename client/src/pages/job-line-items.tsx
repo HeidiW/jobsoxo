@@ -647,7 +647,7 @@ export default function JobLineItems() {
                             </div>
                           </TableCell>
                           <TableCell className="font-mono text-sm">
-                            {Number(item.quantity)} {item.unit}
+                            {!Number(item.quantity) ? "—" : `${Number(item.quantity)} ${item.unit}`}
                           </TableCell>
                           <TableCell className="font-mono text-sm">
                             {formatCurrency(item.rate)}
