@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Form,
@@ -42,11 +41,7 @@ import {
   Download,
   DollarSign,
   CheckCircle,
-  Clock,
   FileText,
-  Building,
-  Phone,
-  MapPin,
   Printer,
   Plus,
   X,
@@ -61,6 +56,13 @@ interface InvoiceDetail extends Invoice {
   lineItems: LineItem[];
   payments: Payment[];
 }
+
+const formatCurrency = (amount: string | number | null | undefined) => {
+  if (amount === null || amount === undefined || amount === "") return "—";
+  const n = Number(amount);
+  if (isNaN(n)) return "—";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(n);
+};
 
 function InvoiceStatusBadge({ status }: { status: string }) {
   const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
@@ -84,15 +86,248 @@ function InvoiceDetailSkeleton() {
           <Skeleton className="h-4 w-32" />
         </div>
       </div>
-      <Card>
-        <CardContent className="pt-6">
-          <div className="space-y-4">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-20 w-full" />
-            ))}
+      <Skeleton className="h-[600px] w-full rounded-xl" />
+    </div>
+  );
+}
+
+function InvoiceDocument({
+  invoice,
+  settings,
+}: {
+  invoice: InvoiceDetail;
+  settings: Settings | undefined;
+}) {
+  const baseItems = invoice.lineItems?.filter((i) => !i.isChangeOrder) ?? [];
+  const changeOrders = invoice.lineItems?.filter((i) => i.isChangeOrder) ?? [];
+
+  const grouped = baseItems.reduce<Record<string, LineItem[]>>((acc, item) => {
+    const cat = item.category || "other";
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(item);
+    return acc;
+  }, {});
+
+  const categoryLabel = (cat: string) =>
+    cat.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  return (
+    <div
+      className="bg-white rounded-xl shadow-sm border border-slate-200 print:shadow-none print:border-none print:rounded-none"
+      style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", padding: "48px 56px" }}
+    >
+      {/* ── Header ── */}
+      <div className="flex justify-between items-start mb-8">
+        <div className="flex-1 min-w-0 pr-8">
+          <div className="text-xl font-bold text-slate-900 leading-tight">
+            {settings?.companyName || "Your Company"}
           </div>
-        </CardContent>
-      </Card>
+          {settings?.companyAddress && (
+            <div className="text-sm text-slate-500 mt-1 whitespace-pre-line">{settings.companyAddress}</div>
+          )}
+          {(settings?.companyEmail || settings?.companyPhone) && (
+            <div className="text-sm text-slate-400 mt-1">
+              {[settings?.companyEmail, settings?.companyPhone].filter(Boolean).join(" · ")}
+            </div>
+          )}
+        </div>
+        <div className="text-right flex-shrink-0">
+          <div
+            className="font-black text-blue-600 uppercase tracking-widest"
+            style={{ fontSize: "32px", letterSpacing: "0.08em" }}
+          >
+            Invoice
+          </div>
+          <div className="text-sm font-mono text-slate-500 mt-1">{invoice.invoiceNumber}</div>
+          <div className="text-sm text-slate-500 mt-3 space-y-0.5">
+            <div>
+              <span className="text-slate-400">Issued&nbsp;</span>
+              {format(new Date(invoice.issueDate), "MMMM d, yyyy")}
+            </div>
+            <div>
+              <span className="text-slate-400">Due&nbsp;</span>
+              {format(new Date(invoice.dueDate), "MMMM d, yyyy")}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Blue divider */}
+      <div className="h-0.5 bg-blue-600 mb-7" />
+
+      {/* ── Bill To / Project Site ── */}
+      <div className="grid grid-cols-2 gap-8 mb-7">
+        <div>
+          <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Bill To</div>
+          <div className="text-base font-bold text-slate-900">{invoice.client?.name}</div>
+          {invoice.client?.address && (
+            <div className="text-sm text-slate-500 mt-0.5">
+              {invoice.client.address}
+              {invoice.client.city && <>, {invoice.client.city}</>}
+              {invoice.client.state && <>, {invoice.client.state}</>}
+              {invoice.client.zipCode && <> {invoice.client.zipCode}</>}
+            </div>
+          )}
+          {invoice.client?.email && (
+            <div className="text-sm text-slate-500 mt-0.5">{invoice.client.email}</div>
+          )}
+          {invoice.client?.phone && (
+            <div className="text-sm text-slate-500 mt-0.5">{invoice.client.phone}</div>
+          )}
+        </div>
+        {invoice.job && (
+          <div>
+            <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">Project / Site</div>
+            <div className="text-base font-bold text-slate-900">{invoice.job.name}</div>
+            {(invoice.job as any).siteAddress && (
+              <div className="text-sm text-slate-500 mt-0.5">{(invoice.job as any).siteAddress}</div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Memo / Notes blockquote ── */}
+      {invoice.notes && (
+        <div className="border-l-4 border-blue-200 pl-4 py-1 mb-7">
+          <p className="text-sm text-slate-500 italic">{invoice.notes}</p>
+        </div>
+      )}
+
+      {/* ── Line items table ── */}
+      <table className="w-full text-sm mb-6" style={{ borderCollapse: "collapse" }}>
+        <thead>
+          <tr style={{ borderBottom: "1.5px solid #e2e8f0" }}>
+            <th className="text-left text-xs font-semibold text-slate-400 uppercase tracking-widest pb-3">
+              Description
+            </th>
+            <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-widest pb-3 w-24">
+              Qty
+            </th>
+            <th className="text-right text-xs font-semibold text-slate-400 uppercase tracking-widest pb-3 w-32">
+              Amount
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {Object.entries(grouped).map(([cat, items]) => {
+            const catTotal = items.reduce((s, i) => s + Number(i.amount), 0);
+            return (
+              <>
+                <tr key={`hdr-${cat}`}>
+                  <td
+                    className="font-bold text-slate-800 text-xs uppercase tracking-wide pt-5 pb-1"
+                    colSpan={2}
+                  >
+                    {categoryLabel(cat)}
+                  </td>
+                  <td className="text-right font-bold text-blue-600 pt-5 pb-1">
+                    {formatCurrency(catTotal)}
+                  </td>
+                </tr>
+                {items.map((item) => (
+                  <tr key={item.id}>
+                    <td className="py-1.5 pr-6 text-slate-600">{item.description}</td>
+                    <td className="py-1.5 text-right text-slate-400 font-mono text-xs">
+                      {Number(item.quantity) === 0 ? "—" : `${Number(item.quantity)} ${item.unit}`}
+                    </td>
+                    <td className="py-1.5 text-right text-slate-700 font-mono">
+                      {formatCurrency(item.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </>
+            );
+          })}
+
+          {changeOrders.length > 0 && (
+            <>
+              <tr key="hdr-co" style={{ borderTop: "1.5px solid #fef3c7" }}>
+                <td
+                  className="font-bold text-amber-700 text-xs uppercase tracking-wide pt-5 pb-1"
+                  colSpan={2}
+                >
+                  Change Orders
+                </td>
+                <td className="text-right font-bold text-amber-700 pt-5 pb-1">
+                  +{formatCurrency(changeOrders.reduce((s, i) => s + Number(i.amount), 0))}
+                </td>
+              </tr>
+              {changeOrders.map((item) => (
+                <tr key={item.id}>
+                  <td className="py-1.5 pr-6 text-slate-600">
+                    <div>{item.description}</div>
+                    {item.changeOrderReason && (
+                      <div className="text-xs text-slate-400 italic mt-0.5">{item.changeOrderReason}</div>
+                    )}
+                  </td>
+                  <td className="py-1.5 text-right text-slate-400 font-mono text-xs">
+                    {Number(item.quantity) === 0 ? "—" : `${Number(item.quantity)} ${item.unit}`}
+                  </td>
+                  <td className="py-1.5 text-right text-amber-700 font-mono">
+                    +{formatCurrency(item.amount)}
+                  </td>
+                </tr>
+              ))}
+            </>
+          )}
+        </tbody>
+      </table>
+
+      {/* ── Totals ── */}
+      <div className="flex justify-end">
+        <div className="w-64 space-y-2 text-sm">
+          {changeOrders.length > 0 && (
+            <div className="flex justify-between text-slate-500">
+              <span>Base subtotal</span>
+              <span className="font-mono">
+                {formatCurrency(baseItems.reduce((s, i) => s + Number(i.amount), 0))}
+              </span>
+            </div>
+          )}
+          <div className="flex justify-between text-slate-500">
+            <span>Subtotal</span>
+            <span className="font-mono">{formatCurrency(invoice.subtotal)}</span>
+          </div>
+          <div className="flex justify-between text-slate-500">
+            <span>Tax ({Number(invoice.taxRate)}%)</span>
+            <span className="font-mono">{formatCurrency(invoice.taxAmount)}</span>
+          </div>
+          <div className="h-px bg-slate-200" />
+          <div className="flex justify-between font-bold text-slate-900 text-base pt-0.5">
+            <span>Total</span>
+            <span className="font-mono">{formatCurrency(invoice.total)}</span>
+          </div>
+          {Number(invoice.amountPaid) > 0 && (
+            <>
+              <div className="flex justify-between text-green-600">
+                <span>Paid</span>
+                <span className="font-mono">−{formatCurrency(invoice.amountPaid)}</span>
+              </div>
+              <div className="h-px bg-slate-200" />
+              <div className="flex justify-between font-bold text-slate-900">
+                <span>Balance Due</span>
+                <span
+                  className={`font-mono ${
+                    Number(invoice.balance) > 0 ? "text-red-600" : "text-green-600"
+                  }`}
+                >
+                  {formatCurrency(invoice.balance)}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ── Terms ── */}
+      {invoice.termsAndConditions && (
+        <div className="mt-8 pt-6 border-t border-slate-100">
+          <div className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">
+            Terms &amp; Conditions
+          </div>
+          <p className="text-sm text-slate-500">{invoice.termsAndConditions}</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -152,9 +387,6 @@ function ChangeOrderForm({
       toast({ title: "Error adding change order", description: error.message, variant: "destructive" });
     },
   });
-
-  const formatCurrency = (n: number) =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(n);
 
   return (
     <div className="rounded-md border border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20 p-4">
@@ -248,7 +480,7 @@ function ChangeOrderForm({
               name="rate"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Rate (£)</FormLabel>
+                  <FormLabel>Rate</FormLabel>
                   <FormControl>
                     <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-co-rate" />
                   </FormControl>
@@ -269,10 +501,12 @@ function ChangeOrderForm({
             name="changeOrderReason"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Reason for Change Order <span className="text-destructive">*</span></FormLabel>
+                <FormLabel>
+                  Reason for Change Order <span className="text-destructive">*</span>
+                </FormLabel>
                 <FormControl>
                   <Textarea
-                    placeholder="Explain what changed and why (e.g. client requested additional feature wall, scope agreed on site)"
+                    placeholder="Explain what changed and why"
                     className="resize-none"
                     rows={2}
                     {...field}
@@ -297,7 +531,9 @@ function ChangeOrderForm({
               data-testid="button-save-co"
             >
               <Plus className="h-4 w-4 mr-1" />
-              {addMutation.isPending ? "Adding..." : `Add Change Order${previewAmount > 0 ? " · " + formatCurrency(previewAmount) : ""}`}
+              {addMutation.isPending
+                ? "Adding..."
+                : `Add Change Order${previewAmount > 0 ? " · " + formatCurrency(previewAmount) : ""}`}
             </Button>
           </div>
         </form>
@@ -365,14 +601,9 @@ export default function InvoiceDetail() {
     },
   });
 
-  const formatCurrency = (amount: string | number | null | undefined) => {
-    if (!amount) return "$0.00";
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(Number(amount));
-  };
-
   if (isLoading) {
     return (
-      <div className="p-6 max-w-5xl mx-auto">
+      <div className="p-6 max-w-4xl mx-auto">
         <InvoiceDetailSkeleton />
       </div>
     );
@@ -380,7 +611,7 @@ export default function InvoiceDetail() {
 
   if (!invoice) {
     return (
-      <div className="p-6 max-w-5xl mx-auto">
+      <div className="p-6 max-w-4xl mx-auto">
         <div className="text-center py-12">
           <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
           <h2 className="text-xl font-medium">Invoice not found</h2>
@@ -393,374 +624,151 @@ export default function InvoiceDetail() {
     );
   }
 
-  const baseItems = invoice.lineItems?.filter((i) => !i.isChangeOrder) ?? [];
   const changeOrders = invoice.lineItems?.filter((i) => i.isChangeOrder) ?? [];
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => setLocation("/invoices")} data-testid="button-back">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-semibold font-mono">{invoice.invoiceNumber}</h1>
+    <div className="min-h-screen bg-slate-100 dark:bg-slate-900 p-6">
+      <div className="max-w-4xl mx-auto">
+
+        {/* ── Top action bar ── */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => setLocation("/invoices")} data-testid="button-back">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-mono font-semibold text-slate-700 dark:text-slate-200">
+                {invoice.invoiceNumber}
+              </span>
               <InvoiceStatusBadge status={invoice.status} />
             </div>
-            <p className="text-muted-foreground mt-1">
-              Created on {format(new Date(invoice.createdAt), "MMMM d, yyyy")}
-            </p>
           </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {invoice.status !== "paid" && (
-            <>
+          <div className="flex flex-wrap gap-2">
+            {invoice.status !== "paid" && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => sendInvoiceMutation.mutate()}
+                  disabled={sendInvoiceMutation.isPending}
+                  data-testid="button-send-invoice"
+                >
+                  <Mail className="h-4 w-4 mr-2" />
+                  Send to Client
+                </Button>
+                <Button asChild>
+                  <Link href={`/invoices/${id}/payment`} data-testid="button-record-payment">
+                    <DollarSign className="h-4 w-4 mr-2" />
+                    Record Payment
+                  </Link>
+                </Button>
+              </>
+            )}
+            {changeOrders.length > 0 && (
               <Button
                 variant="outline"
-                onClick={() => sendInvoiceMutation.mutate()}
-                disabled={sendInvoiceMutation.isPending}
-                data-testid="button-send-invoice"
+                className="border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950"
+                onClick={() => sendChangeOrderMutation.mutate()}
+                disabled={sendChangeOrderMutation.isPending}
+                data-testid="button-email-change-order"
               >
                 <Mail className="h-4 w-4 mr-2" />
-                Send to Client
+                {sendChangeOrderMutation.isPending ? "Sending…" : "Email Change Order"}
               </Button>
-              <Button asChild>
-                <Link href={`/invoices/${id}/payment`} data-testid="button-record-payment">
-                  <DollarSign className="h-4 w-4 mr-2" />
-                  Record Payment
-                </Link>
-              </Button>
-            </>
-          )}
-          <Button variant="outline" data-testid="button-print-invoice">
-            <Printer className="h-4 w-4 mr-2" />
-            Print
-          </Button>
-          <Button variant="outline" data-testid="button-download-invoice">
-            <Download className="h-4 w-4 mr-2" />
-            Download PDF
-          </Button>
-          {changeOrders.length > 0 && (
-            <Button
-              variant="outline"
-              className="border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950"
-              onClick={() => sendChangeOrderMutation.mutate()}
-              disabled={sendChangeOrderMutation.isPending}
-              data-testid="button-email-change-order"
-            >
-              <Mail className="h-4 w-4 mr-2" />
-              {sendChangeOrderMutation.isPending ? "Sending…" : "Email Change Order"}
+            )}
+            <Button variant="outline" onClick={() => window.print()} data-testid="button-print-invoice">
+              <Printer className="h-4 w-4 mr-2" />
+              Print
             </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Client & Invoice Info */}
-      <Card className="mb-6">
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div>
-              <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-3">Bill To</h3>
-              <div className="space-y-2">
-                <p className="font-medium text-lg">{invoice.client?.name}</p>
-                {invoice.client?.address && (
-                  <p className="text-sm text-muted-foreground flex items-start gap-2">
-                    <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                    <span>
-                      {invoice.client.address}
-                      {invoice.client.city && <>, {invoice.client.city}</>}
-                      {invoice.client.state && <>, {invoice.client.state}</>}
-                      {invoice.client.zipCode && <> {invoice.client.zipCode}</>}
-                    </span>
-                  </p>
-                )}
-                {invoice.client?.email && (
-                  <p className="text-sm text-muted-foreground flex items-center gap-2">
-                    <Mail className="h-4 w-4" />
-                    {invoice.client.email}
-                  </p>
-                )}
-                {invoice.client?.phone && (
-                  <p className="text-sm text-muted-foreground flex items-center gap-2">
-                    <Phone className="h-4 w-4" />
-                    {invoice.client.phone}
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="md:text-right">
-              <div className="space-y-3">
-                <div>
-                  <p className="text-sm text-muted-foreground">Invoice Number</p>
-                  <p className="font-mono font-medium">{invoice.invoiceNumber}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Issue Date</p>
-                  <p className="font-medium">{format(new Date(invoice.issueDate), "MMMM d, yyyy")}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Due Date</p>
-                  <p className="font-medium">{format(new Date(invoice.dueDate), "MMMM d, yyyy")}</p>
-                </div>
-              </div>
-            </div>
+            <Button variant="outline" data-testid="button-download-invoice">
+              <Download className="h-4 w-4 mr-2" />
+              Download PDF
+            </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Line Items */}
-      <Card className="mb-6">
-        <CardHeader className="flex flex-row items-center justify-between gap-2">
-          <CardTitle>Line Items</CardTitle>
-          {invoice.status !== "paid" && !showChangeOrderForm && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950"
-              onClick={() => setShowChangeOrderForm(true)}
-              data-testid="button-add-change-order"
-            >
-              <AlertTriangle className="h-4 w-4 mr-1.5" />
-              Add Change Order
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Base line items */}
-          {baseItems.length > 0 && (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="w-24">Category</TableHead>
-                    <TableHead className="w-24 text-right">Qty</TableHead>
-                    <TableHead className="w-28 text-right">Rate</TableHead>
-                    <TableHead className="w-28 text-right">Amount</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {baseItems.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        <span className="font-medium">{item.description}</span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="text-xs">
-                          {item.category.replace("_", " ")}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {Number(item.quantity)} {item.unit}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-sm">
-                        {formatCurrency(item.rate)}
-                      </TableCell>
-                      <TableCell className="text-right font-mono font-medium">
-                        {formatCurrency(item.amount)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+        {/* ── Invoice document ── */}
+        <InvoiceDocument invoice={invoice} settings={settings} />
 
-          {/* Change orders section */}
-          {changeOrders.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">
-                  Change Orders ({changeOrders.length})
-                </span>
-              </div>
-              <div className="rounded-md border border-amber-200 dark:border-amber-800">
+        {/* ── Change order panel ── */}
+        {invoice.status !== "paid" && (
+          <div className="mt-4">
+            {showChangeOrderForm ? (
+              <ChangeOrderForm
+                invoiceId={invoice.id}
+                onSuccess={() => setShowChangeOrderForm(false)}
+                onCancel={() => setShowChangeOrderForm(false)}
+              />
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950"
+                onClick={() => setShowChangeOrderForm(true)}
+                data-testid="button-add-change-order"
+              >
+                <AlertTriangle className="h-4 w-4 mr-1.5" />
+                Add Change Order
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* ── Payment History ── */}
+        {invoice.payments && invoice.payments.length > 0 && (
+          <Card className="mt-4">
+            <CardHeader>
+              <CardTitle className="text-base">Payment History</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-amber-50/50 dark:bg-amber-950/20">
-                      <TableHead>Description &amp; Reason</TableHead>
-                      <TableHead className="w-24">Category</TableHead>
-                      <TableHead className="w-24 text-right">Qty</TableHead>
-                      <TableHead className="w-28 text-right">Rate</TableHead>
-                      <TableHead className="w-28 text-right">Amount</TableHead>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Method</TableHead>
+                      <TableHead>Reference</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {changeOrders.map((item) => (
-                      <TableRow key={item.id} className="bg-amber-50/30 dark:bg-amber-950/10">
+                    {invoice.payments.map((payment) => (
+                      <TableRow key={payment.id}>
                         <TableCell>
-                          <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{item.description}</span>
-                              <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900 dark:text-amber-200 dark:border-amber-700">
-                                Change Order
-                              </Badge>
-                            </div>
-                            {item.changeOrderReason && (
-                              <span className="text-xs text-muted-foreground italic">
-                                Reason: {item.changeOrderReason}
-                              </span>
-                            )}
-                          </div>
+                          {format(new Date(payment.paymentDate), "MMM d, yyyy")}
                         </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary" className="text-xs">
-                            {item.category.replace("_", " ")}
-                          </Badge>
+                        <TableCell className="capitalize">
+                          {payment.paymentMethod.replace("_", " ")}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          {Number(item.quantity)} {item.unit}
+                        <TableCell className="font-mono text-sm">
+                          {payment.referenceNumber || "—"}
                         </TableCell>
-                        <TableCell className="text-right font-mono text-sm">
-                          {formatCurrency(item.rate)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono font-medium text-amber-700 dark:text-amber-400">
-                          +{formatCurrency(item.amount)}
+                        <TableCell className="text-right font-mono font-medium text-green-600 dark:text-green-400">
+                          {formatCurrency(payment.amount)}
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
-            </div>
-          )}
+            </CardContent>
+          </Card>
+        )}
 
-          {/* Change order form */}
-          {showChangeOrderForm && (
-            <ChangeOrderForm
-              invoiceId={invoice.id}
-              onSuccess={() => setShowChangeOrderForm(false)}
-              onCancel={() => setShowChangeOrderForm(false)}
-            />
-          )}
-
-          {/* Totals */}
-          <div className="mt-2 flex justify-end">
-            <div className="w-72 space-y-2">
-              {changeOrders.length > 0 && (
-                <>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Base subtotal</span>
-                    <span className="font-mono">
-                      {formatCurrency(baseItems.reduce((s, i) => s + Number(i.amount), 0))}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm text-amber-700 dark:text-amber-400">
-                    <span>Change orders</span>
-                    <span className="font-mono">
-                      +{formatCurrency(changeOrders.reduce((s, i) => s + Number(i.amount), 0))}
-                    </span>
-                  </div>
-                </>
-              )}
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-mono">{formatCurrency(invoice.subtotal)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Tax ({Number(invoice.taxRate)}%)</span>
-                <span className="font-mono">{formatCurrency(invoice.taxAmount)}</span>
-              </div>
-              <Separator />
-              <div className="flex justify-between font-medium text-lg">
-                <span>Total</span>
-                <span className="font-mono">{formatCurrency(invoice.total)}</span>
-              </div>
-              {Number(invoice.amountPaid) > 0 && (
-                <>
-                  <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
-                    <span>Paid</span>
-                    <span className="font-mono">-{formatCurrency(invoice.amountPaid)}</span>
-                  </div>
-                  <Separator />
-                  <div className="flex justify-between font-medium">
-                    <span>Balance Due</span>
-                    <span className={`font-mono ${Number(invoice.balance) > 0 ? "text-destructive" : "text-green-600 dark:text-green-400"}`}>
-                      {formatCurrency(invoice.balance)}
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
+        {/* ── Mark as Paid ── */}
+        {invoice.status !== "paid" && (
+          <div className="mt-4 flex justify-end">
+            <Button
+              onClick={() => markPaidMutation.mutate()}
+              disabled={markPaidMutation.isPending}
+              data-testid="button-mark-paid"
+            >
+              <CheckCircle className="h-4 w-4 mr-2" />
+              Mark as Paid
+            </Button>
           </div>
-        </CardContent>
-      </Card>
+        )}
 
-      {/* Payment History */}
-      {invoice.payments && invoice.payments.length > 0 && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>Payment History</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead>Reference</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {invoice.payments.map((payment) => (
-                    <TableRow key={payment.id}>
-                      <TableCell>
-                        {format(new Date(payment.paymentDate), "MMM d, yyyy")}
-                      </TableCell>
-                      <TableCell className="capitalize">
-                        {payment.paymentMethod.replace("_", " ")}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">
-                        {payment.referenceNumber || "—"}
-                      </TableCell>
-                      <TableCell className="text-right font-mono font-medium text-green-600 dark:text-green-400">
-                        {formatCurrency(payment.amount)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Notes / Terms */}
-      {(invoice.notes || invoice.termsAndConditions) && (
-        <Card className="mb-6">
-          <CardContent className="pt-6">
-            {invoice.notes && (
-              <div className="mb-4">
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">Notes</h3>
-                <p className="text-sm">{invoice.notes}</p>
-              </div>
-            )}
-            {invoice.termsAndConditions && (
-              <div>
-                <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">Terms & Conditions</h3>
-                <p className="text-sm">{invoice.termsAndConditions}</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {invoice.status !== "paid" && (
-        <div className="mt-6 flex justify-end">
-          <Button
-            onClick={() => markPaidMutation.mutate()}
-            disabled={markPaidMutation.isPending}
-            data-testid="button-mark-paid"
-          >
-            <CheckCircle className="h-4 w-4 mr-2" />
-            Mark as Paid
-          </Button>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
