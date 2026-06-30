@@ -58,7 +58,7 @@ export default function ChangeOrders() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
 
-  const { data: changeOrders, isLoading } = useQuery<ChangeOrder[]>({
+  const { data: changeOrders, isLoading, error } = useQuery<ChangeOrder[]>({
     queryKey: ["/api/change-orders"],
   });
 
@@ -90,6 +90,23 @@ export default function ChangeOrders() {
   });
 
   const totalValue = filtered?.reduce((s, co) => s + Number(co.amount), 0) ?? 0;
+
+  if (error) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-3xl font-semibold flex items-center gap-3">
+            <AlertTriangle className="h-7 w-7 text-amber-600 dark:text-amber-400" />
+            Change Orders
+          </h1>
+        </div>
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
+          <p className="text-destructive font-medium">Failed to load change orders</p>
+          <p className="text-muted-foreground text-sm mt-1">Please refresh the page or try again later.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto">

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+*{box-sizing:border-box;}
+body{margin:0;font-family:'Inter',sans-serif;}
+.mono{font-family:'IBM Plex Mono',monospace;}
+input,select,textarea{font-family:inherit;}
+textarea{resize:vertical;}
+.navitem:hover{background:var(--navhover) !important;}
+.btnghost:hover{background:var(--navhover) !important;}
+.inp{width:100%;padding:9px 11px;border:1px solid var(--ipbd);border-radius:8px;font-size:13.5px;color:var(--fg);background:var(--ipbg);line-height:1.5;}
+.inp:focus{border-color:var(--primary);box-shadow:0 0 0 3px var(--ring);outline:none;}
+.lbl{display:block;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;}
+.darkmode{
+  --app-bg:#0f1729 !important; --sidebar:#1a2336 !important; --border:#243049 !important; --panel:#141d30 !important; --panel-bd:#243049 !important;
+  --fg:#f1f5f9 !important; --muted:#9aa6bd !important; --faint:#7c8aa3 !important; --primary:#3b82f6 !important; --soft:#1c2a44 !important;
+  --track:#1a2336 !important; --rowhover:#1b2740 !important; --navhover:#222e4a !important; --topbar:rgba(20,29,48,.72) !important;
+  --activeitem:#222e4a !important; --activeshadow:rgba(0,0,0,.3) !important; --ipbg:#0f1729 !important; --ipbd:#2c3a55 !important; --ring:rgba(59,130,246,.25) !important;
+  --b-green-bg:rgba(21,163,90,.2) !important; --b-green-fg:#6cd49d !important;
+}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-thumb{background:#9aa3b266;border-radius:8px;border:3px solid transparent;background-clip:padding-box;}
+</style>
+</helmet>
+
+<div class="{{ themeClass }}" style="--app-bg:#f8f9fb;--sidebar:#f3f4f6;--border:#e4e7ec;--panel:#ffffff;--panel-bd:#e4e7ec;--fg:#0f1729;--muted:#6b7686;--faint:#8a93a3;--primary:#2563eb;--soft:#eef2fe;--track:#eef0f3;--rowhover:#f8fafc;--navhover:#e7e9ee;--topbar:rgba(255,255,255,.7);--activeitem:#ffffff;--activeshadow:rgba(15,23,41,.08);--ipbg:#ffffff;--ipbd:#cbd5e1;--ring:rgba(37,99,235,.12);--b-green-bg:#e7f7ee;--b-green-fg:#15a35a;height:100vh;display:flex;background:var(--app-bg);color:var(--fg);">
+
+  <aside style="width:248px;flex-shrink:0;background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;">
+    <div style="padding:18px 16px;display:flex;align-items:center;gap:11px;">
+      <div style="width:36px;height:36px;border-radius:8px;background:var(--primary);display:flex;align-items:center;justify-content:center;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 11h2a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-2"></path><path d="M3 6h16v5H3z"></path><path d="M11 11v3a4 4 0 0 1-4 4H6a2 2 0 0 0-2 2v1"></path></svg>
+      </div>
+      <div style="display:flex;flex-direction:column;">
+        <span style="font-size:17px;font-weight:700;letter-spacing:-.01em;">JobsOxo</span>
+        <span style="font-size:11px;color:var(--faint);">Invoicing</span>
+      </div>
+    </div>
+    <div style="padding:6px 12px;">
+      <div style="font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);padding:10px 10px 6px;">Main Menu</div>
+      <a href="JobsOxo Dashboard.dc.html" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;margin-bottom:2px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+        Dashboard
+      </a>
+      <a href="JobsOxo Clients.dc.html" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;margin-bottom:2px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        Clients
+      </a>
+      <a href="JobsOxo Jobs.dc.html" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;margin-bottom:2px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+        Jobs
+      </a>
+      <a href="JobsOxo Invoices.dc.html" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;margin-bottom:2px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+        Invoices
+      </a>
+      <a href="#" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;margin-bottom:2px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        Change Orders
+      </a>
+      <a href="#" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;margin-bottom:2px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        Scheduling
+      </a>
+      <a href="#" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;margin-bottom:2px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+        Payroll
+      </a>
+      <a href="#" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+        Inbox Tasks
+        <span class="mono" style="margin-left:auto;background:var(--primary);color:#fff;font-size:10px;font-weight:600;padding:1px 6px;border-radius:6px;">3</span>
+      </a>
+      <a href="JobsOxo Settings.dc.html" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;background:var(--activeitem);color:var(--fg);font-size:13.5px;font-weight:600;text-decoration:none;box-shadow:0 1px 2px var(--activeshadow);margin-top:6px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        Settings
+      </a>
+    </div>
+    <div style="margin-top:auto;padding:14px 16px;border-top:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--soft);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;">CF</div>
+        <div style="display:flex;flex-direction:column;min-width:0;">
+          <span style="font-size:13px;font-weight:600;">Conor Foy</span>
+          <span style="font-size:11px;color:var(--faint);">Signed in</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div data-screen-label="Settings" style="flex:1;display:flex;flex-direction:column;min-width:0;">
+    <header style="height:54px;flex-shrink:0;border-bottom:1px solid var(--border);background:var(--topbar);backdrop-filter:blur(8px);display:flex;align-items:center;gap:14px;padding:0 22px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--faint);"><span>JobsOxo</span><span>/</span><span style="color:var(--fg);font-weight:600;">Settings</span></div>
+      <button onClick="{{ toggleTheme }}" title="Toggle theme" style="margin-left:auto;width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--panel);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path></svg>
+      </button>
+    </header>
+
+    <div style="flex:1;overflow-y:auto;padding:24px 26px 60px;">
+      <div style="max-width:860px;margin:0 auto;">
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:20px;">
+          <div>
+            <h2 style="margin:0;font-size:26px;font-weight:700;letter-spacing:-.02em;">Settings</h2>
+            <p style="margin:5px 0 0;font-size:13.5px;color:var(--muted);">These details appear on every invoice and set your defaults.</p>
+          </div>
+          <button style="background:var(--primary);color:#fff;border:none;border-radius:9px;padding:10px 18px;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit;box-shadow:0 1px 2px rgba(37,99,235,.3);">Save changes</button>
+        </div>
+
+        <div style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:20px;">
+          <sc-for list="{{ tabs }}" as="tab" hint-placeholder-count="3">
+            <button onClick="{{ tab.onClick }}" style="{{ tab.style }}">{{ tab.label }}</button>
+          </sc-for>
+        </div>
+
+        <!-- BUSINESS -->
+        <sc-if value="{{ showBusiness }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <section style="background:var(--panel);border:1px solid var(--panel-bd);border-radius:13px;padding:20px 22px;">
+              <h3 style="margin:0 0 4px;font-size:15px;font-weight:700;">Business identity</h3>
+              <p style="margin:0 0 16px;font-size:12.5px;color:var(--muted);">Shown in the header of every invoice you send.</p>
+              <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">
+                <div style="width:60px;height:60px;border-radius:13px;background:var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 11h2a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-2"></path><path d="M3 6h16v5H3z"></path><path d="M11 11v3a4 4 0 0 1-4 4H6a2 2 0 0 0-2 2v1"></path></svg>
+                </div>
+                <button class="btnghost" style="background:var(--panel);color:var(--fg);border:1px solid var(--border);border-radius:9px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;">Upload logo</button>
+                <span style="font-size:12px;color:var(--faint);">PNG or SVG, at least 240×240px</span>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                <div style="grid-column:1/-1;"><label class="lbl">Business name</label><input class="inp" value="Conor Foy Painting" /></div>
+                <div style="grid-column:1/-1;"><label class="lbl">Address</label><textarea class="inp" rows="2">416 Wilson Avenue, Brooklyn, NY 11221</textarea></div>
+                <div><label class="lbl">Email</label><input class="inp" value="conor@conorfoypainting.com" /></div>
+                <div><label class="lbl">Phone</label><input class="inp" value="(347) 555-0142" /></div>
+                <div style="grid-column:1/-1;"><label class="lbl">Business notes (license, insurance)</label><textarea class="inp" rows="2">Licensed &amp; insured commercial painting and plastering.</textarea></div>
+              </div>
+            </section>
+            <section style="background:var(--panel);border:1px solid var(--panel-bd);border-radius:13px;padding:20px 22px;">
+              <h3 style="margin:0 0 16px;font-size:15px;font-weight:700;">Tax &amp; registration</h3>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                <div><label class="lbl">EIN / Tax ID</label><input class="inp mono" value="46-•••••89" /></div>
+                <div><label class="lbl">Default tax rate (%)</label><input class="inp" type="number" value="0" /></div>
+              </div>
+            </section>
+          </div>
+        </sc-if>
+
+        <!-- INVOICE DEFAULTS -->
+        <sc-if value="{{ showDefaults }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <section style="background:var(--panel);border:1px solid var(--panel-bd);border-radius:13px;padding:20px 22px;">
+              <h3 style="margin:0 0 16px;font-size:15px;font-weight:700;">Numbering &amp; terms</h3>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                <div><label class="lbl">Invoice prefix</label><input class="inp mono" value="JOX-" /></div>
+                <div><label class="lbl">Next number</label><input class="inp mono" value="1043" /></div>
+                <div><label class="lbl">Default due (days)</label><input class="inp" type="number" value="30" /></div>
+                <div><label class="lbl">Currency</label><select class="inp"><option>USD ($)</option><option>GBP (£)</option><option>EUR (€)</option></select></div>
+                <div style="grid-column:1/-1;"><label class="lbl">Default payment terms</label><textarea class="inp" rows="2">20% deposit due on acceptance. Balance billed by floor on completion, net 30.</textarea></div>
+              </div>
+            </section>
+            <section style="background:var(--panel);border:1px solid var(--panel-bd);border-radius:13px;padding:20px 22px;">
+              <h3 style="margin:0 0 4px;font-size:15px;font-weight:700;">Default deposit</h3>
+              <p style="margin:0 0 16px;font-size:12.5px;color:var(--muted);">Applied automatically to new invoices — editable per invoice.</p>
+              <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;">
+                <div style="flex:1;min-width:160px;"><label class="lbl">Deposit type</label>
+                  <div style="display:flex;gap:3px;background:var(--track);border:1px solid var(--border);border-radius:8px;padding:3px;">
+                    <button onClick="{{ onDepPct }}" style="{{ depPctStyle }}">% of total</button>
+                    <button onClick="{{ onDepFixed }}" style="{{ depFixedStyle }}">Fixed</button>
+                  </div>
+                </div>
+                <div style="flex:1;min-width:160px;"><label class="lbl">{{ depLabel }}</label><input class="inp" type="number" value="{{ depValue }}" onChange="{{ onDepValue }}" /></div>
+              </div>
+            </section>
+            <section style="background:var(--panel);border:1px solid var(--panel-bd);border-radius:13px;padding:20px 22px;">
+              <h3 style="margin:0 0 14px;font-size:15px;font-weight:700;">Line-item options</h3>
+              <div style="display:flex;flex-direction:column;gap:2px;">
+                <sc-for list="{{ toggles }}" as="t" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid var(--border);">
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-size:13.5px;font-weight:600;">{{ t.title }}</div>
+                      <div style="font-size:12px;color:var(--faint);margin-top:1px;">{{ t.desc }}</div>
+                    </div>
+                    <button onClick="{{ t.onToggle }}" style="{{ t.track }}"><span style="{{ t.knob }}"></span></button>
+                  </div>
+                </sc-for>
+              </div>
+            </section>
+          </div>
+        </sc-if>
+
+        <!-- PAYMENT METHODS -->
+        <sc-if value="{{ showPayments }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <section style="background:var(--panel);border:1px solid var(--panel-bd);border-radius:13px;padding:20px 22px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+                <div>
+                  <h3 style="margin:0 0 3px;font-size:15px;font-weight:700;">Accepted payment methods</h3>
+                  <p style="margin:0;font-size:12.5px;color:var(--muted);">Shown to clients on the invoice and payment page.</p>
+                </div>
+                <button class="btnghost" style="background:var(--panel);color:var(--fg);border:1px solid var(--border);border-radius:9px;padding:8px 13px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;">+ Add method</button>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:10px;">
+                <sc-for list="{{ methods }}" as="m" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:14px;border:1px solid var(--border);border-radius:11px;padding:13px 16px;">
+                    <div style="width:38px;height:38px;border-radius:9px;background:var(--soft);color:var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0;">{{ m.icon }}</div>
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-size:13.5px;font-weight:600;">{{ m.name }}</div>
+                      <div class="mono" style="font-size:12px;color:var(--faint);">{{ m.detail }}</div>
+                    </div>
+                    <sc-if value="{{ m.primary }}" hint-placeholder-val="{{ false }}"><span style="background:var(--b-green-bg);color:var(--b-green-fg);font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:6px;">Primary</span></sc-if>
+                    <button onClick="{{ m.onToggle }}" style="{{ m.track }}"><span style="{{ m.knob }}"></span></button>
+                  </div>
+                </sc-for>
+              </div>
+            </section>
+            <section style="background:var(--panel);border:1px solid var(--panel-bd);border-radius:13px;padding:20px 22px;">
+              <h3 style="margin:0 0 16px;font-size:15px;font-weight:700;">Remittance details</h3>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                <div><label class="lbl">Make checks payable to</label><input class="inp" value="Conor Foy Painting LLC" /></div>
+                <div><label class="lbl">Bank name</label><input class="inp" value="Chase Business" /></div>
+                <div><label class="lbl">Routing number</label><input class="inp mono" value="021•••••8" /></div>
+                <div><label class="lbl">Account number</label><input class="inp mono" value="•••••••4021" /></div>
+              </div>
+            </section>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </div>
+
+  <template id="__bundler_thumbnail">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#2563eb"/><circle cx="50" cy="50" r="13" fill="none" stroke="#fff" stroke-width="6"/><g stroke="#fff" stroke-width="6" stroke-linecap="round"><line x1="50" y1="20" x2="50" y2="30"/><line x1="50" y1="70" x2="50" y2="80"/><line x1="20" y1="50" x2="30" y2="50"/><line x1="70" y1="50" x2="80" y2="50"/></g></svg>
+  </template>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: { &quot;width&quot;: 1280, &quot;height&quot;: 800 },
+  &quot;theme&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;light&quot;, &quot;dark&quot;], &quot;default&quot;: &quot;light&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Appearance&quot; }
+}">
+class Component extends DCLogic {
+  state = {
+    theme: null, tab: 'business', depMode: 'percent', depPct: 20, depAmt: 5000,
+    toggles: {
+      refs: { title: 'Show reference codes', desc: 'Display spec/drawing codes (PT-01B, ID-202) on line items', on: true },
+      sections: { title: 'Group line items into sections', desc: 'Organize work into collapsible sections with subtotals', on: true },
+      autosend: { title: 'Email a copy to myself on send', desc: 'Receive a PDF copy whenever an invoice is sent', on: false }
+    },
+    methods: {
+      ach: { name: 'ACH bank transfer', detail: 'Chase Business ••4021', icon: '🏦', primary: true, on: true },
+      check: { name: 'Check', detail: 'Payable to Conor Foy Painting LLC', icon: '✓', primary: false, on: true },
+      card: { name: 'Credit card', detail: '2.9% + 30¢ processing fee', icon: '💳', primary: false, on: false }
+    }
+  };
+  componentDidMount() {
+    try { const t = localStorage.getItem('jobsoxo-theme'); if (t) this.setState({ theme: t }); } catch (e) {}
+  }
+  switchStyle(on) {
+    return {
+      track: { position: 'relative', width: '40px', height: '23px', borderRadius: '12px', border: 'none', cursor: 'pointer', flexShrink: 0, padding: 0, transition: 'background .15s', background: on ? 'var(--primary)' : 'var(--border)' },
+      knob: { position: 'absolute', top: '3px', left: on ? '20px' : '3px', width: '17px', height: '17px', borderRadius: '50%', background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,.25)' }
+    };
+  }
+  renderVals() {
+    const s = this.state;
+    const theme = s.theme ?? this.props.theme ?? 'light';
+    const tab = s.tab;
+    const tabDefs = [
+      { key: 'business', label: 'Business details' },
+      { key: 'defaults', label: 'Invoice defaults' },
+      { key: 'payments', label: 'Payment methods' }
+    ];
+    const tabs = tabDefs.map((t) => {
+      const active = tab === t.key;
+      return {
+        label: t.label, onClick: () => this.setState({ tab: t.key }),
+        style: {
+          border: 'none', background: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: '13.5px', fontWeight: 600,
+          padding: '10px 14px', marginBottom: '-1px',
+          borderBottom: active ? '2px solid var(--primary)' : '2px solid transparent',
+          color: active ? 'var(--fg)' : 'var(--muted)'
+        }
+      };
+    });
+
+    const toggles = Object.keys(s.toggles).map((k) => {
+      const t = s.toggles[k]; const sw = this.switchStyle(t.on);
+      return { title: t.title, desc: t.desc, track: sw.track, knob: sw.knob, onToggle: () => this.setState((p) => ({ toggles: { ...p.toggles, [k]: { ...p.toggles[k], on: !p.toggles[k].on } } })) };
+    });
+
+    const methods = Object.keys(s.methods).map((k) => {
+      const m = s.methods[k]; const sw = this.switchStyle(m.on);
+      return { name: m.name, detail: m.detail, icon: m.icon, primary: m.primary, track: sw.track, knob: sw.knob, onToggle: () => this.setState((p) => ({ methods: { ...p.methods, [k]: { ...p.methods[k], on: !p.methods[k].on } } })) };
+    });
+
+    const miniStyle = (active) => ({ flex: 1, padding: '6px 8px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: 700, fontFamily: 'inherit', background: active ? 'var(--panel)' : 'transparent', color: active ? 'var(--primary)' : 'var(--muted)', boxShadow: active ? '0 1px 2px rgba(15,23,41,.1)' : 'none' });
+
+    return {
+      themeClass: theme === 'dark' ? 'darkmode' : '',
+      toggleTheme: () => {
+        const next = (s.theme ?? this.props.theme ?? 'light') === 'dark' ? 'light' : 'dark';
+        try { localStorage.setItem('jobsoxo-theme', next); } catch (e) {}
+        this.setState({ theme: next });
+      },
+      tabs, toggles, methods,
+      showBusiness: tab === 'business', showDefaults: tab === 'defaults', showPayments: tab === 'payments',
+      depPctStyle: miniStyle(s.depMode === 'percent'),
+      depFixedStyle: miniStyle(s.depMode === 'fixed'),
+      onDepPct: () => this.setState({ depMode: 'percent' }),
+      onDepFixed: () => this.setState({ depMode: 'fixed' }),
+      depLabel: s.depMode === 'percent' ? 'Deposit (%)' : 'Deposit amount ($)',
+      depValue: s.depMode === 'percent' ? s.depPct : s.depAmt,
+      onDepValue: (e) => { const v = e.target.value; this.setState((p) => (p.depMode === 'percent' ? { depPct: v } : { depAmt: v })); }
+    };
+  }
+}
+</script>
+</body>
+</html>

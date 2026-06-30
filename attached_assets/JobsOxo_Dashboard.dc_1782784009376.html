@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+*{box-sizing:border-box;}
+body{margin:0;font-family:'Inter',sans-serif;}
+.mono{font-family:'IBM Plex Mono',monospace;}
+.navitem:hover{background:var(--navhover) !important;}
+.rowhover:hover{background:var(--rowhover) !important;}
+.darkmode{
+  --app-bg:#0f1729 !important; --sidebar:#1a2336 !important; --border:#243049 !important; --panel:#141d30 !important; --panel-bd:#243049 !important;
+  --fg:#f1f5f9 !important; --muted:#9aa6bd !important; --faint:#7c8aa3 !important; --primary:#3b82f6 !important; --soft:#1c2a44 !important;
+  --track:#1a2336 !important; --rowhover:#1b2740 !important; --navhover:#222e4a !important; --topbar:rgba(20,29,48,.72) !important; --searchbg:#1a2336 !important;
+  --activeitem:#222e4a !important; --activeshadow:rgba(0,0,0,.3) !important;
+  --b-blue-bg:rgba(59,130,246,.18) !important; --b-blue-fg:#93b4fb !important;
+  --b-red-bg:rgba(220,59,31,.2) !important; --b-red-fg:#f1937f !important;
+  --b-amber-bg:rgba(224,160,32,.2) !important; --b-amber-fg:#e7be73 !important;
+  --b-green-bg:rgba(21,163,90,.2) !important; --b-green-fg:#6cd49d !important;
+  --b-purple-bg:rgba(124,58,237,.22) !important; --b-purple-fg:#b794f4 !important;
+  --b-gray-bg:rgba(148,163,184,.18) !important; --b-gray-fg:#aab4c6 !important;
+}
+::-webkit-scrollbar{width:10px;height:10px;}
+::-webkit-scrollbar-thumb{background:#9aa3b266;border-radius:8px;border:3px solid transparent;background-clip:padding-box;}
+</style>
+</helmet>
+
+<div class="{{ themeClass }}" style="--app-bg:#f8f9fb;--sidebar:#f3f4f6;--border:#e4e7ec;--panel:#ffffff;--panel-bd:#e4e7ec;--fg:#0f1729;--muted:#6b7686;--faint:#8a93a3;--primary:#2563eb;--soft:#eef2fe;--track:#eef0f3;--rowhover:#f8fafc;--navhover:#e7e9ee;--topbar:rgba(255,255,255,.7);--searchbg:#eef0f3;--activeitem:#ffffff;--activeshadow:rgba(15,23,41,.08);--b-blue-bg:#eef2fe;--b-blue-fg:#2563eb;--b-red-bg:#fdeeec;--b-red-fg:#d23b1f;--b-amber-bg:#fef5e7;--b-amber-fg:#b6731a;--b-green-bg:#e7f7ee;--b-green-fg:#15a35a;--b-purple-bg:#f3eafe;--b-purple-fg:#7c3aed;--b-gray-bg:#eef0f3;--b-gray-fg:#6b7686;height:100vh;display:flex;background:var(--app-bg);color:var(--fg);">
+
+  <!-- SIDEBAR -->
+  <aside style="width:248px;flex-shrink:0;background:var(--sidebar);border-right:1px solid var(--border);display:flex;flex-direction:column;">
+    <div style="padding:18px 16px;display:flex;align-items:center;gap:11px;">
+      <div style="width:36px;height:36px;border-radius:8px;background:var(--primary);display:flex;align-items:center;justify-content:center;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 11h2a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-2"></path><path d="M3 6h16v5H3z"></path><path d="M11 11v3a4 4 0 0 1-4 4H6a2 2 0 0 0-2 2v1"></path></svg>
+      </div>
+      <div style="display:flex;flex-direction:column;">
+        <span style="font-size:17px;font-weight:700;letter-spacing:-.01em;">JobsOxo</span>
+        <span style="font-size:11px;color:var(--faint);">Invoicing</span>
+      </div>
+    </div>
+
+    <div style="padding:6px 12px;">
+      <div style="font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);padding:10px 10px 6px;">Main Menu</div>
+      <a href="#" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;background:var(--activeitem);color:var(--fg);font-size:13.5px;font-weight:600;text-decoration:none;box-shadow:0 1px 2px var(--activeshadow);margin-bottom:2px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+        Dashboard
+      </a>
+      <a href="#" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;margin-bottom:2px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+        Clients
+      </a>
+      <a href="JobsOxo Jobs.dc.html" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;margin-bottom:2px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+        Jobs
+      </a>
+      <a href="JobsOxo Invoices.dc.html" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;margin-bottom:2px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+        Invoices
+      </a>
+      <a href="#" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;margin-bottom:2px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        Change Orders
+      </a>
+      <a href="#" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;margin-bottom:2px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        Scheduling
+      </a>
+      <a href="#" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;margin-bottom:2px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+        Payroll
+      </a>
+      <a href="#" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+        Inbox Tasks
+        <span class="mono" style="margin-left:auto;background:var(--primary);color:#fff;font-size:10px;font-weight:600;padding:1px 6px;border-radius:6px;">3</span>
+      </a>
+      <a href="JobsOxo Settings.dc.html" class="navitem" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--muted);font-size:13.5px;font-weight:500;text-decoration:none;margin-top:6px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        Settings
+      </a>
+    </div>
+
+    <div style="margin-top:auto;padding:14px 16px;border-top:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--soft);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;">CF</div>
+        <div style="display:flex;flex-direction:column;min-width:0;">
+          <span style="font-size:13px;font-weight:600;">Conor Foy</span>
+          <span style="font-size:11px;color:var(--faint);">Signed in</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div data-screen-label="Dashboard" style="flex:1;display:flex;flex-direction:column;min-width:0;">
+    <header style="height:54px;flex-shrink:0;border-bottom:1px solid var(--border);background:var(--topbar);backdrop-filter:blur(8px);display:flex;align-items:center;gap:14px;padding:0 22px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--faint);"><span>JobsOxo</span><span>/</span><span style="color:var(--fg);font-weight:600;">Dashboard</span></div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px;background:var(--searchbg);border:1px solid var(--border);border-radius:8px;padding:6px 11px;width:240px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <span style="font-size:12.5px;color:var(--faint);">Search invoices, clients…</span>
+      </div>
+      <button onClick="{{ toggleTheme }}" title="Toggle theme" style="width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--panel);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"></circle><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path></svg>
+      </button>
+    </header>
+
+    <div style="flex:1;overflow-y:auto;padding:24px 26px 40px;">
+      <div style="max-width:1280px;margin:0 auto;">
+        <h2 style="margin:0 0 18px;font-size:26px;font-weight:700;letter-spacing:-.02em;">Good morning, Conor</h2>
+
+        <!-- HERO CASHFLOW -->
+        <div style="display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-bottom:18px;">
+          <div style="background:var(--primary);border-radius:13px;padding:22px 24px;color:#fff;">
+            <div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#cfddfb;">Total outstanding</div>
+            <div class="mono" style="font-size:42px;font-weight:600;letter-spacing:-.03em;margin:6px 0 2px;">$128,400</div>
+            <div style="font-size:13px;color:#cfddfb;margin-bottom:18px;">across 9 open invoices · 4 clients</div>
+            <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:20px;">
+              <div style="background:rgba(255,255,255,.14);border-radius:9px;padding:9px 13px;flex:1;min-width:108px;">
+                <div style="font-size:11px;color:#cfddfb;margin-bottom:3px;">Overdue</div>
+                <div class="mono" style="font-size:16px;font-weight:600;">$18,600</div>
+              </div>
+              <div style="background:rgba(255,255,255,.14);border-radius:9px;padding:9px 13px;flex:1;min-width:108px;">
+                <div style="font-size:11px;color:#cfddfb;margin-bottom:3px;">Due soon</div>
+                <div class="mono" style="font-size:16px;font-weight:600;">$94,000</div>
+              </div>
+              <div style="background:rgba(255,255,255,.14);border-radius:9px;padding:9px 13px;flex:1;min-width:108px;">
+                <div style="font-size:11px;color:#cfddfb;margin-bottom:3px;">Draft</div>
+                <div class="mono" style="font-size:16px;font-weight:600;">$15,800</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:10px;">
+              <button style="background:#fff;color:var(--primary);border:none;border-radius:9px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;">Send reminders</button>
+              <a href="JobsOxo Create Invoice.dc.html" style="background:rgba(255,255,255,.16);color:#fff;border-radius:9px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-decoration:none;display:inline-flex;align-items:center;">New invoice</a>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <div style="background:var(--panel);border:1px solid var(--panel-bd);border-radius:11px;padding:15px 17px;flex:1;display:flex;flex-direction:column;justify-content:center;">
+              <div style="display:flex;align-items:center;justify-content:space-between;"><span style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);">Collected this month</span><span style="font-size:12px;color:#15a35a;font-weight:700;">▲18%</span></div>
+              <div class="mono" style="font-size:24px;font-weight:600;margin-top:8px;">$86,250</div>
+            </div>
+            <div style="background:var(--panel);border:1px solid var(--panel-bd);border-radius:11px;padding:15px 17px;flex:1;display:flex;flex-direction:column;justify-content:center;">
+              <span style="font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);">Active jobs</span>
+              <div style="display:flex;align-items:baseline;gap:10px;margin-top:8px;"><span class="mono" style="font-size:24px;font-weight:600;">7</span><span style="font-size:12px;color:var(--faint);">· 4 crews · 38 hrs logged today</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- NEEDS ATTENTION -->
+        <div style="background:var(--panel);border:1px solid var(--panel-bd);border-radius:11px;overflow:hidden;margin-bottom:18px;">
+          <div style="display:flex;align-items:center;gap:9px;padding:14px 18px;border-bottom:1px solid var(--border);">
+            <span style="width:7px;height:7px;border-radius:50%;background:#d23b1f;"></span>
+            <span style="font-size:14.5px;font-weight:600;">Needs attention</span>
+            <span style="font-size:12px;color:var(--faint);">3 invoices past due or due today</span>
+            <a href="JobsOxo Invoices.dc.html" style="margin-left:auto;font-size:12.5px;color:var(--primary);font-weight:600;text-decoration:none;">View all →</a>
+          </div>
+          <div class="rowhover" style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--border);">
+            <a href="JobsOxo Invoice Detail.dc.html" style="flex:1;min-width:0;text-decoration:none;color:inherit;"><div style="font-size:13px;font-weight:600;">The Vale Hotel — Lobby <span class="mono" style="color:var(--faint);font-weight:400;">· JOX-1041</span></div><div style="font-size:11.5px;color:#d23b1f;font-weight:600;">12 days overdue</div></a>
+            <span class="mono" style="font-size:13.5px;font-weight:600;">$18,600</span>
+            <button style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;color:var(--primary);cursor:pointer;font-family:inherit;">Remind</button>
+          </div>
+          <div class="rowhover" style="display:flex;align-items:center;gap:14px;padding:12px 18px;border-bottom:1px solid var(--border);">
+            <a href="JobsOxo Invoice Detail.dc.html" style="flex:1;min-width:0;text-decoration:none;color:inherit;"><div style="font-size:13px;font-weight:600;">Café Luxembourg <span class="mono" style="color:var(--faint);font-weight:400;">· JOX-1040</span></div><div style="font-size:11.5px;color:#b6731a;font-weight:600;">Balance due today · partially paid</div></a>
+            <span class="mono" style="font-size:13.5px;font-weight:600;">$12,000</span>
+            <button style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;color:var(--primary);cursor:pointer;font-family:inherit;">Remind</button>
+          </div>
+          <div class="rowhover" style="display:flex;align-items:center;gap:14px;padding:12px 18px;">
+            <a href="JobsOxo Invoice Detail.dc.html" style="flex:1;min-width:0;text-decoration:none;color:inherit;"><div style="font-size:13px;font-weight:600;">Boulud — 1900 Broadway <span class="mono" style="color:var(--faint);font-weight:400;">· JOX-1042</span></div><div style="font-size:11.5px;color:var(--faint);">Deposit due in 3 days</div></a>
+            <span class="mono" style="font-size:13.5px;font-weight:600;">$62,480</span>
+            <button style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:7px 13px;font-size:12px;font-weight:600;color:var(--primary);cursor:pointer;font-family:inherit;">Remind</button>
+          </div>
+        </div>
+
+        <!-- THIS WEEK -->
+        <div style="background:var(--panel);border:1px solid var(--panel-bd);border-radius:11px;padding:16px 18px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <span style="font-size:14.5px;font-weight:600;">This week on site</span>
+            <a href="#" style="font-size:12.5px;color:var(--primary);font-weight:600;text-decoration:none;">Scheduling →</a>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;">
+            <div style="border:1px solid var(--border);border-radius:9px;padding:10px;background:var(--track);">
+              <div style="font-size:11px;font-weight:700;color:var(--faint);margin-bottom:8px;">MON 2</div>
+              <a href="JobsOxo Job Detail.dc.html" style="display:block;background:var(--b-blue-bg);color:var(--b-blue-fg);border-radius:6px;padding:6px 8px;font-size:11px;font-weight:600;margin-bottom:5px;text-decoration:none;">Boulud · Basement</a>
+              <div style="font-size:10.5px;color:var(--faint);">Crew of 4</div>
+            </div>
+            <div style="border:1px solid var(--border);border-radius:9px;padding:10px;background:var(--track);">
+              <div style="font-size:11px;font-weight:700;color:var(--faint);margin-bottom:8px;">TUE 3</div>
+              <a href="JobsOxo Job Detail.dc.html" style="display:block;background:var(--b-blue-bg);color:var(--b-blue-fg);border-radius:6px;padding:6px 8px;font-size:11px;font-weight:600;margin-bottom:5px;text-decoration:none;">Boulud · Basement</a>
+              <div style="font-size:10.5px;color:var(--faint);">Crew of 4</div>
+            </div>
+            <div style="border:1px solid var(--border);border-radius:9px;padding:10px;background:var(--track);">
+              <div style="font-size:11px;font-weight:700;color:var(--faint);margin-bottom:8px;">WED 4</div>
+              <a href="JobsOxo Job Detail.dc.html" style="display:block;background:var(--b-green-bg);color:var(--b-green-fg);border-radius:6px;padding:6px 8px;font-size:11px;font-weight:600;margin-bottom:5px;text-decoration:none;">Vale · Lobby</a>
+              <div style="font-size:10.5px;color:var(--faint);">Crew of 2</div>
+            </div>
+            <div style="border:1px solid var(--border);border-radius:9px;padding:10px;background:var(--track);">
+              <div style="font-size:11px;font-weight:700;color:var(--faint);margin-bottom:8px;">THU 5</div>
+              <a href="JobsOxo Job Detail.dc.html" style="display:block;background:var(--b-purple-bg);color:var(--b-purple-fg);border-radius:6px;padding:6px 8px;font-size:11px;font-weight:600;margin-bottom:5px;text-decoration:none;">Maison · Touch-up</a>
+              <div style="font-size:10.5px;color:var(--faint);">Crew of 1</div>
+            </div>
+            <div style="border:1px solid var(--border);border-radius:9px;padding:10px;background:var(--track);">
+              <div style="font-size:11px;font-weight:700;color:var(--faint);margin-bottom:8px;">FRI 6</div>
+              <div style="font-size:10.5px;color:var(--faint);opacity:.7;padding:6px 2px;">No jobs</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <template id="__bundler_thumbnail">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#2563eb"/><rect x="22" y="30" width="38" height="14" rx="3" fill="#fff"/><rect x="22" y="50" width="56" height="6" rx="3" fill="#bcd0fb"/><rect x="22" y="62" width="56" height="6" rx="3" fill="#bcd0fb"/></svg>
+  </template>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: { &quot;width&quot;: 1280, &quot;height&quot;: 800 },
+  &quot;theme&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;light&quot;, &quot;dark&quot;], &quot;default&quot;: &quot;light&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Appearance&quot; }
+}">
+class Component extends DCLogic {
+  state = { theme: null };
+  componentDidMount() {
+    try { const t = localStorage.getItem('jobsoxo-theme'); if (t) this.setState({ theme: t }); } catch (e) {}
+  }
+  renderVals() {
+    const theme = this.state.theme ?? this.props.theme ?? 'light';
+    return {
+      themeClass: theme === 'dark' ? 'darkmode' : '',
+      toggleTheme: () => {
+        const next = (this.state.theme ?? this.props.theme ?? 'light') === 'dark' ? 'light' : 'dark';
+        try { localStorage.setItem('jobsoxo-theme', next); } catch (e) {}
+        this.setState({ theme: next });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -82,7 +82,7 @@ export default function Scheduling() {
   const [view, setView] = useState<"month" | "week">("month");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  const { data: jobs, isLoading } = useQuery<JobWithRelations[]>({
+  const { data: jobs, isLoading, error } = useQuery<JobWithRelations[]>({
     queryKey: ["/api/jobs"],
   });
 
@@ -127,6 +127,21 @@ export default function Scheduling() {
       .sort((a, b) => new Date(a.startDate!).getTime() - new Date(b.startDate!).getTime())
       .slice(0, 5);
   }, [jobs]);
+
+  if (error) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-3xl font-semibold">Scheduling</h1>
+          <p className="text-muted-foreground mt-1">View and manage job schedules</p>
+        </div>
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
+          <p className="text-destructive font-medium">Failed to load scheduling data</p>
+          <p className="text-muted-foreground text-sm mt-1">Please refresh the page or try again later.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto">

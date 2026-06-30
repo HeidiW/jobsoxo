@@ -139,9 +139,23 @@ function EmptyState({ title, description, action }: { title: string; description
 }
 
 export default function Dashboard() {
-  const { data, isLoading } = useQuery<DashboardData>({
+  const { data, isLoading, error } = useQuery<DashboardData>({
     queryKey: ["/api/dashboard"],
   });
+
+  if (error) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-3xl font-semibold">Dashboard</h1>
+        </div>
+        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-6 text-center">
+          <p className="text-destructive font-medium">Failed to load dashboard data</p>
+          <p className="text-muted-foreground text-sm mt-1">Please refresh the page or try again later.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

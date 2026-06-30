@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<template id="__bundler_thumbnail">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect width="100" height="100" fill="#2563eb"/>
+  <rect x="30" y="22" width="40" height="56" rx="4" fill="#ffffff"/>
+  <rect x="36" y="30" width="18" height="4" rx="2" fill="#2563eb"/>
+  <rect x="36" y="40" width="28" height="2.5" rx="1.25" fill="#cbd5e1"/>
+  <rect x="36" y="46" width="28" height="2.5" rx="1.25" fill="#cbd5e1"/>
+  <rect x="36" y="52" width="28" height="2.5" rx="1.25" fill="#cbd5e1"/>
+  <rect x="36" y="62" width="28" height="6" rx="2" fill="#2563eb"/>
+</svg>
+</template>
+<helmet>
+<style>
+*{box-sizing:border-box;}
+body{margin:0;}
+input,select,textarea{font-family:inherit;}
+textarea{resize:vertical;}
+::-webkit-scrollbar{width:11px;height:11px;}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px;border:3px solid transparent;background-clip:padding-box;}
+input[type=number]::-webkit-inner-spin-button{opacity:.35;}
+</style>
+</helmet>
+
+<div style="display:flex;flex-direction:column;height:100vh;background:#f1f5f9;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#0f172a;">
+
+  <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px 22px;background:#ffffff;border-bottom:1px solid #e2e8f0;flex-shrink:0;z-index:20;">
+    <div style="display:flex;align-items:center;gap:11px;min-width:170px;">
+      <div style="width:34px;height:34px;border-radius:9px;background:#2563eb;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:17px;">J</div>
+      <div>
+        <div style="font-size:15px;font-weight:800;letter-spacing:-.01em;">JobsOxo</div>
+        <div style="font-size:11px;color:#94a3b8;font-weight:600;margin-top:1px;">Create Invoice</div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:3px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:11px;padding:4px;">
+      <button onClick="{{ onSplit }}" style="{{ splitBtnStyle }}">Split view</button>
+      <button onClick="{{ onTabbed }}" style="{{ tabbedBtnStyle }}">Tabbed</button>
+      <button onClick="{{ onBuilder }}" style="{{ builderBtnStyle }}">Builder</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:9px;min-width:170px;justify-content:flex-end;">
+      <button style="padding:8px 14px;border:1px solid #cbd5e1;background:#fff;border-radius:9px;font-size:13px;font-weight:700;color:#475569;cursor:pointer;font-family:inherit;">Save draft</button>
+      <button style="padding:8px 16px;border:none;background:#2563eb;border-radius:9px;font-size:13px;font-weight:700;color:#fff;cursor:pointer;font-family:inherit;" style-hover="background:#1d4ed8;">Send invoice</button>
+    </div>
+  </header>
+
+  <div style="display:flex;align-items:center;gap:12px;padding:9px 22px;background:#eff6ff;border-bottom:1px solid #dbeafe;flex-shrink:0;">
+    <span style="width:8px;height:8px;border-radius:2px;background:#2563eb;flex-shrink:0;"></span>
+    <span style="font-size:12.5px;color:#1e40af;font-weight:600;">Import a PDF quote or invoice to auto-fill parties, sections and line items.</span>
+    <button style="margin-left:auto;padding:6px 13px;border:1px solid #93c5fd;background:#fff;border-radius:8px;font-size:12.5px;font-weight:700;color:#1d4ed8;cursor:pointer;font-family:inherit;">Choose PDF</button>
+  </div>
+
+  <div style="{{ bodyGridStyle }}">
+
+    <div style="overflow-y:auto;padding:20px 22px 70px;border-right:1px solid #e2e8f0;">
+
+      <sc-if value="{{ isTabbed }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;gap:4px;background:#fff;border:1px solid #e2e8f0;border-radius:11px;padding:4px;margin-bottom:16px;position:sticky;top:-20px;z-index:8;">
+          <button onClick="{{ onSubDetails }}" style="{{ subDetailsStyle }}">1 &middot; Details</button>
+          <button onClick="{{ onSubItems }}" style="{{ subItemsStyle }}">2 &middot; Line items</button>
+          <button onClick="{{ onSubTotals }}" style="{{ subTotalsStyle }}">3 &middot; Totals &amp; deposit</button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ showDetails }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:16px;margin-bottom:16px;">
+
+          <section style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+              <span style="width:6px;height:16px;border-radius:3px;background:#2563eb;"></span>
+              <h3 style="margin:0;font-size:14px;font-weight:800;letter-spacing:-.01em;">From &mdash; your business</h3>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px 14px;">
+              <div style="grid-column:1/-1;">
+                <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Business name</label>
+                <input value="{{ from.name }}" onChange="{{ onFromName }}" placeholder="Your company" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;font-weight:700;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+              </div>
+              <div style="grid-column:1/-1;">
+                <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Address</label>
+                <textarea rows="2" value="{{ from.address }}" onChange="{{ onFromAddress }}" placeholder="Street, city, state, ZIP" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;color:#0f172a;background:#fff;line-height:1.5;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;"></textarea>
+              </div>
+              <div>
+                <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Email</label>
+                <input value="{{ from.email }}" onChange="{{ onFromEmail }}" placeholder="you@business.com" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+              </div>
+              <div>
+                <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Phone</label>
+                <input value="{{ from.phone }}" onChange="{{ onFromPhone }}" placeholder="(000) 000-0000" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+              </div>
+              <div style="grid-column:1/-1;">
+                <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Business notes</label>
+                <textarea rows="2" value="{{ fromNotes }}" onChange="{{ onFromNotes }}" placeholder="License #, insurance, certifications shown under your name" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;color:#475569;background:#f8fafc;line-height:1.5;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;background:#fff;"></textarea>
+              </div>
+            </div>
+          </section>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
+            <section style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+                <span style="width:6px;height:16px;border-radius:3px;background:#0ea5e9;"></span>
+                <h3 style="margin:0;font-size:14px;font-weight:800;letter-spacing:-.01em;">Bill to &mdash; client</h3>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:12px;">
+                <div>
+                  <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Client / company</label>
+                  <input value="{{ billTo.name }}" onChange="{{ onBillName }}" placeholder="Client name" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;font-weight:600;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+                </div>
+                <div>
+                  <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Attention to</label>
+                  <input value="{{ billTo.attn }}" onChange="{{ onBillAttn }}" placeholder="Contact name" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+                </div>
+                <div>
+                  <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Billing address</label>
+                  <textarea rows="2" value="{{ billTo.address }}" onChange="{{ onBillAddress }}" placeholder="Street, city, state, ZIP" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;color:#0f172a;background:#fff;line-height:1.5;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;"></textarea>
+                </div>
+              </div>
+            </section>
+
+            <section style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+                <span style="width:6px;height:16px;border-radius:3px;background:#14b8a6;"></span>
+                <h3 style="margin:0;font-size:14px;font-weight:800;letter-spacing:-.01em;">Project / site</h3>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:12px;">
+                <div>
+                  <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Project / job name</label>
+                  <input value="{{ project.name }}" onChange="{{ onProjName }}" placeholder="Job name" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;font-weight:600;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+                </div>
+                <div>
+                  <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Site location</label>
+                  <textarea rows="2" value="{{ project.location }}" onChange="{{ onProjLocation }}" placeholder="Where the work happens" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;color:#0f172a;background:#fff;line-height:1.5;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;"></textarea>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <section style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+              <span style="width:6px;height:16px;border-radius:3px;background:#6366f1;"></span>
+              <h3 style="margin:0;font-size:14px;font-weight:800;letter-spacing:-.01em;">Invoice details</h3>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 14px;">
+              <div>
+                <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Invoice #</label>
+                <input value="{{ invoiceNumber }}" onChange="{{ onInvNum }}" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;font-family:ui-monospace,Menlo,monospace;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+              </div>
+              <div>
+                <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Invoice date</label>
+                <input type="date" value="{{ invoiceDate }}" onChange="{{ onInvDate }}" style="width:100%;padding:8px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+              </div>
+              <div>
+                <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Due date</label>
+                <input type="date" value="{{ dueDate }}" onChange="{{ onDueDate }}" style="width:100%;padding:8px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+              </div>
+            </div>
+            <div style="margin-top:14px;">
+              <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Scope summary / notes</label>
+              <textarea rows="2" value="{{ notes }}" onChange="{{ onNotes }}" placeholder="Summary line shown at the top of the invoice" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;color:#0f172a;background:#fff;line-height:1.5;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;"></textarea>
+            </div>
+            <div style="margin-top:14px;">
+              <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Presented to / recipients</label>
+              <input value="{{ presentedTo }}" onChange="{{ onPresented }}" placeholder="Names and company the invoice is presented to" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+            </div>
+          </section>
+
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ showItems }}" hint-placeholder-val="{{ true }}">
+        <section style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.04);margin-bottom:16px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span style="width:6px;height:16px;border-radius:3px;background:#2563eb;"></span>
+            <h3 style="margin:0;font-size:14px;font-weight:800;letter-spacing:-.01em;">Line items</h3>
+            <span style="margin-left:auto;font-size:12px;color:#94a3b8;font-weight:600;">Grouped by section &middot; subtotals update live</span>
+          </div>
+
+          <sc-for list="{{ secs }}" as="sec" hint-placeholder-count="4">
+            <div style="border-top:1px solid #f1f5f9;padding-top:6px;margin-top:6px;">
+              <div style="display:flex;align-items:center;gap:8px;padding:8px 2px;">
+                <button onClick="{{ sec.onToggle }}" style="border:none;background:none;cursor:pointer;font-size:12px;color:#64748b;width:18px;padding:0;">{{ sec.chevron }}</button>
+                <input value="{{ sec.title }}" onChange="{{ sec.onTitle }}" style="flex:1;border:1px solid transparent;background:none;font-size:14px;font-weight:800;color:#0f172a;padding:5px 6px;border-radius:6px;" style-focus="border-color:#cbd5e1;background:#fff;outline:none;" />
+                <span style="font-size:13px;color:#0f172a;font-weight:700;font-family:ui-monospace,Menlo,monospace;">{{ sec.subtotalFmt }}</span>
+                <button onClick="{{ sec.onDel }}" title="Remove section" style="border:none;background:#f8fafc;color:#94a3b8;cursor:pointer;width:26px;height:26px;border-radius:7px;font-size:13px;" style-hover="background:#fee2e2;color:#dc2626;">&times;</button>
+              </div>
+
+              <sc-if value="{{ sec.open }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex;flex-direction:column;gap:10px;padding:2px 2px 10px;">
+                  <sc-for list="{{ sec.items }}" as="it" hint-placeholder-count="3">
+                    <div style="border:1px solid #e2e8f0;border-radius:10px;padding:11px 12px;background:#fbfcfe;display:flex;flex-direction:column;gap:9px;">
+                      <div style="display:flex;gap:8px;align-items:flex-start;">
+                        <input value="{{ it.description }}" onChange="{{ it.onDesc }}" placeholder="Description of work" style="flex:1;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:13.5px;font-weight:600;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+                        <button onClick="{{ it.onDel }}" title="Remove line" style="border:none;background:#fff;border:1px solid #e2e8f0;color:#94a3b8;cursor:pointer;width:32px;height:32px;border-radius:7px;font-size:14px;flex-shrink:0;" style-hover="background:#fee2e2;color:#dc2626;border-color:#fecaca;">&times;</button>
+                      </div>
+                      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px;align-items:end;">
+                        <sc-if value="{{ showRefs }}" hint-placeholder-val="{{ true }}">
+                          <div style="grid-column:span 2;min-width:0;">
+                            <label style="display:block;font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">Reference codes</label>
+                            <input value="{{ it.refs }}" onChange="{{ it.onRefs }}" placeholder="PT-01B &middot; ID-202" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;font-family:ui-monospace,Menlo,monospace;color:#1d4ed8;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+                          </div>
+                        </sc-if>
+                        <div>
+                          <label style="display:block;font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">Qty</label>
+                          <input type="number" value="{{ it.qty }}" onChange="{{ it.onQty }}" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:7px;font-size:12.5px;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+                        </div>
+                        <div>
+                          <label style="display:block;font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">Unit</label>
+                          <select value="{{ it.unit }}" onChange="{{ it.onUnit }}" style="width:100%;padding:7px 7px;border:1px solid #cbd5e1;border-radius:7px;font-size:12.5px;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;">
+                            <option value="lump">Lump sum</option>
+                            <option value="hours">hours</option>
+                            <option value="sqft">sq ft</option>
+                            <option value="each">each</option>
+                            <option value="day">days</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label style="display:block;font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">Rate</label>
+                          <input type="number" value="{{ it.rate }}" onChange="{{ it.onRate }}" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:7px;font-size:12.5px;font-family:ui-monospace,Menlo,monospace;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+                        </div>
+                        <div>
+                          <label style="display:block;font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;">Amount</label>
+                          <div style="width:100%;padding:7px 9px;border:1px solid #e2e8f0;border-radius:7px;font-size:12.5px;font-weight:700;font-family:ui-monospace,Menlo,monospace;color:#0f172a;background:#f1f5f9;text-align:right;">{{ it.amountFmt }}</div>
+                        </div>
+                      </div>
+                      <input value="{{ it.notes }}" onChange="{{ it.onNotes }}" placeholder="Note for this line (optional)" style="width:100%;padding:6px 9px;border:1px solid #eef2f7;border-radius:7px;font-size:12px;color:#64748b;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+                    </div>
+                  </sc-for>
+                  <button onClick="{{ sec.onAdd }}" style="border:1.5px dashed #cbd5e1;background:#fff;color:#2563eb;cursor:pointer;padding:9px;border-radius:8px;font-size:12.5px;font-weight:700;font-family:inherit;" style-hover="border-color:#2563eb;background:#eff6ff;">+ Add line item</button>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+
+          <button onClick="{{ onAddSection }}" style="width:100%;margin-top:12px;border:1.5px dashed #94a3b8;background:#f8fafc;color:#334155;cursor:pointer;padding:11px;border-radius:9px;font-size:13px;font-weight:700;font-family:inherit;" style-hover="border-color:#2563eb;color:#2563eb;background:#eff6ff;">+ Add section</button>
+        </section>
+      </sc-if>
+
+      <sc-if value="{{ showTotals }}" hint-placeholder-val="{{ true }}">
+        <section style="background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+            <span style="width:6px;height:16px;border-radius:3px;background:#16a34a;"></span>
+            <h3 style="margin:0;font-size:14px;font-weight:800;letter-spacing:-.01em;">Totals &amp; deposit</h3>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 14px;margin-bottom:16px;">
+            <div>
+              <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Tax rate (%)</label>
+              <input type="number" value="{{ taxRate }}" onChange="{{ onTax }}" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+            </div>
+            <div>
+              <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Deposit type</label>
+              <div style="display:flex;gap:3px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:8px;padding:3px;">
+                <button onClick="{{ onModePct }}" style="{{ modePctStyle }}">% of total</button>
+                <button onClick="{{ onModeFixed }}" style="{{ modeFixedStyle }}">Fixed</button>
+              </div>
+            </div>
+            <div>
+              <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">{{ depositInputLabel }}</label>
+              <input type="number" value="{{ depositInputValue }}" onChange="{{ onDepChange }}" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;font-weight:700;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+            </div>
+          </div>
+
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:11px;padding:14px 16px;display:flex;flex-direction:column;gap:9px;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;color:#475569;">
+              <span>Subtotal</span><span style="font-family:ui-monospace,Menlo,monospace;font-weight:600;color:#0f172a;">{{ subtotalFmt }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;color:#475569;">
+              <span>Tax {{ taxLabel }}</span><span style="font-family:ui-monospace,Menlo,monospace;font-weight:600;color:#0f172a;">{{ taxFmt }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:800;padding-top:9px;border-top:1px solid #e2e8f0;">
+              <span>Grand total</span><span style="font-family:ui-monospace,Menlo,monospace;">{{ totalFmt }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#1d4ed8;font-weight:700;background:#eff6ff;margin:4px -6px 0;padding:9px 10px;border-radius:8px;">
+              <span>Deposit due {{ depositPctLabel }}</span><span style="font-family:ui-monospace,Menlo,monospace;">{{ depositFmt }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;color:#475569;">
+              <span>Balance remaining</span><span style="font-family:ui-monospace,Menlo,monospace;font-weight:600;color:#0f172a;">{{ balanceFmt }}</span>
+            </div>
+          </div>
+
+          <div style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px 14px;">
+            <div>
+              <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Payment terms</label>
+              <textarea rows="2" value="{{ paymentTerms }}" onChange="{{ onTerms }}" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;color:#0f172a;background:#fff;line-height:1.5;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;"></textarea>
+            </div>
+            <div>
+              <label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;">Payment method</label>
+              <input value="{{ paymentMethod }}" onChange="{{ onMethod }}" style="width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:13.5px;color:#0f172a;background:#fff;" style-focus="border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12);outline:none;" />
+            </div>
+          </div>
+        </section>
+      </sc-if>
+
+    </div>
+
+    <div style="overflow-y:auto;padding:26px 22px 60px;background:#e2e8f0;">
+      <div style="width:100%;max-width:720px;margin:0 auto;background:#fff;border-radius:6px;box-shadow:0 8px 30px rgba(15,23,42,.13);padding:42px 44px;">
+
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:24px;">
+          <div style="max-width:60%;">
+            <div style="font-size:19px;font-weight:800;letter-spacing:-.01em;color:#0f172a;">{{ from.name }}</div>
+            <div style="font-size:12px;color:#475569;line-height:1.6;margin-top:6px;white-space:pre-line;">{{ from.address }}</div>
+            <div style="font-size:12px;color:#475569;line-height:1.6;">{{ from.email }} &middot; {{ from.phone }}</div>
+            <div style="font-size:11px;color:#94a3b8;line-height:1.5;margin-top:6px;white-space:pre-line;">{{ fromNotes }}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;">
+            <div style="font-size:26px;font-weight:800;letter-spacing:.06em;color:#2563eb;">INVOICE</div>
+            <div style="font-size:13px;font-family:ui-monospace,Menlo,monospace;color:#0f172a;margin-top:6px;">{{ invoiceNumber }}</div>
+            <div style="font-size:11.5px;color:#64748b;margin-top:8px;">Issued&nbsp;&nbsp;<span style="color:#0f172a;font-weight:600;">{{ invoiceDateFmt }}</span></div>
+            <div style="font-size:11.5px;color:#64748b;">Due&nbsp;&nbsp;<span style="color:#0f172a;font-weight:600;">{{ dueDateFmt }}</span></div>
+          </div>
+        </div>
+
+        <div style="height:1px;background:#e2e8f0;margin:22px 0;"></div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
+          <div>
+            <div style="font-size:10px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Bill to</div>
+            <div style="font-size:13.5px;font-weight:700;color:#0f172a;">{{ billTo.name }}</div>
+            <div style="font-size:12px;color:#475569;line-height:1.6;">Attn: {{ billTo.attn }}</div>
+            <div style="font-size:12px;color:#475569;line-height:1.6;white-space:pre-line;">{{ billTo.address }}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">Project / site</div>
+            <div style="font-size:13.5px;font-weight:700;color:#0f172a;">{{ project.name }}</div>
+            <div style="font-size:12px;color:#475569;line-height:1.6;white-space:pre-line;">{{ project.location }}</div>
+          </div>
+        </div>
+
+        <sc-if value="{{ hasNotes }}" hint-placeholder-val="{{ true }}">
+          <div style="margin-top:18px;font-size:12.5px;color:#475569;font-style:italic;line-height:1.6;border-left:3px solid #dbeafe;padding-left:12px;">{{ notes }}</div>
+        </sc-if>
+
+        <div style="margin-top:24px;">
+          <div style="display:flex;font-size:10px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;padding:0 0 8px;border-bottom:2px solid #0f172a;">
+            <span style="flex:1;">Description</span>
+            <span style="width:70px;text-align:right;">Qty</span>
+            <span style="width:110px;text-align:right;">Amount</span>
+          </div>
+
+          <sc-for list="{{ secs }}" as="sec" hint-placeholder-count="4">
+            <div>
+              <div style="display:flex;align-items:baseline;justify-content:space-between;padding:13px 0 6px;border-bottom:1px solid #f1f5f9;">
+                <span style="font-size:12px;font-weight:800;color:#0f172a;text-transform:uppercase;letter-spacing:.03em;">{{ sec.title }}</span>
+                <span style="font-size:11.5px;font-weight:700;color:#64748b;font-family:ui-monospace,Menlo,monospace;">{{ sec.subtotalFmt }}</span>
+              </div>
+              <sc-for list="{{ sec.items }}" as="it" hint-placeholder-count="3">
+                <div style="display:flex;align-items:flex-start;padding:9px 0;border-bottom:1px solid #f8fafc;">
+                  <div style="flex:1;padding-right:12px;">
+                    <div style="font-size:12.5px;color:#0f172a;line-height:1.45;">{{ it.description }}</div>
+                    <sc-if value="{{ it.showRefsLine }}" hint-placeholder-val="{{ false }}">
+                      <div style="font-size:10.5px;color:#2563eb;font-family:ui-monospace,Menlo,monospace;margin-top:2px;">{{ it.refs }}</div>
+                    </sc-if>
+                    <sc-if value="{{ it.hasNotes }}" hint-placeholder-val="{{ false }}">
+                      <div style="font-size:11px;color:#94a3b8;font-style:italic;margin-top:2px;">{{ it.notes }}</div>
+                    </sc-if>
+                  </div>
+                  <div style="width:70px;text-align:right;font-size:11.5px;color:#64748b;font-family:ui-monospace,Menlo,monospace;">{{ it.qtyLabel }}</div>
+                  <div style="width:110px;text-align:right;font-size:12.5px;font-weight:600;color:#0f172a;font-family:ui-monospace,Menlo,monospace;">{{ it.amountFmt }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display:flex;justify-content:flex-end;margin-top:22px;">
+          <div style="width:300px;display:flex;flex-direction:column;gap:8px;">
+            <div style="display:flex;justify-content:space-between;font-size:12.5px;color:#475569;">
+              <span>Subtotal</span><span style="font-family:ui-monospace,Menlo,monospace;color:#0f172a;">{{ subtotalFmt }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:12.5px;color:#475569;">
+              <span>Tax {{ taxLabel }}</span><span style="font-family:ui-monospace,Menlo,monospace;color:#0f172a;">{{ taxFmt }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:800;color:#0f172a;padding-top:9px;border-top:2px solid #0f172a;">
+              <span>Total</span><span style="font-family:ui-monospace,Menlo,monospace;">{{ totalFmt }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;color:#fff;background:#2563eb;padding:11px 13px;border-radius:8px;margin-top:6px;">
+              <span>Deposit due {{ depositPctLabel }}</span><span style="font-family:ui-monospace,Menlo,monospace;">{{ depositFmt }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:12.5px;color:#475569;">
+              <span>Balance remaining</span><span style="font-family:ui-monospace,Menlo,monospace;color:#0f172a;">{{ balanceFmt }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="height:1px;background:#e2e8f0;margin:24px 0 18px;"></div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+          <div>
+            <div style="font-size:10px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;">Payment terms</div>
+            <div style="font-size:11.5px;color:#475569;line-height:1.6;">{{ paymentTerms }}</div>
+            <div style="font-size:11.5px;color:#475569;line-height:1.6;margin-top:6px;"><span style="color:#94a3b8;">Method:</span> {{ paymentMethod }}</div>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px;">Presented to</div>
+            <div style="font-size:11.5px;color:#475569;line-height:1.6;">{{ presentedTo }}</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;defaultView&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;split&quot;, &quot;tabbed&quot;, &quot;builder&quot;], &quot;default&quot;: &quot;split&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Layout&quot; },
+  &quot;currency&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;$&quot;, &quot;£&quot;, &quot;€&quot;], &quot;default&quot;: &quot;$&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Formatting&quot; },
+  &quot;showReferenceCodes&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Formatting&quot; }
+}">
+class Component extends DCLogic {
+  state = {
+    activeOption: null,
+    subTab: 'details',
+    depositMode: 'fixed',
+    depositPct: 20,
+    depositAmt: 60000,
+    taxRate: 0,
+    from: {
+      name: 'Conor Foy Painting',
+      address: '416 Wilson Avenue\nBrooklyn, NY 11221',
+      email: 'conor@conorfoypainting.com',
+      phone: '(347) 555-0142'
+    },
+    fromNotes: 'Licensed & insured commercial painting and plastering.',
+    billTo: {
+      name: 'MG and Company',
+      attn: 'Selma Norghauer',
+      address: '350 7th Ave, Suite 1205\nNew York, NY 10001'
+    },
+    project: {
+      name: 'Boulud — Lincoln Center',
+      location: '1900 Broadway\nNew York, NY 10023'
+    },
+    invoiceNumber: 'JOX-1042',
+    invoiceDate: '2026-01-15',
+    dueDate: '2026-02-14',
+    presentedTo: 'Kevin Cassidy & Selma Norghauer — MG and Company',
+    paymentTerms: '20% deposit due on acceptance. Balance billed by floor on completion, net 30.',
+    paymentMethod: 'Check or ACH bank transfer',
+    notes: 'Breakdown of pricing as discussed with Selma Norghauer (MG and Company) and Joyce Zhang (CPW).',
+    sections: [
+      { id: 's1', title: 'Basement', collapsed: false, items: [
+        { id: 'i1', description: 'Skim levelling over existing stucco — walls & ceiling', refs: 'RCP ID-102 · ID-202,203', qty: 1, unit: 'lump', rate: 35000, notes: '' },
+        { id: 'i2', description: 'Sprayed priming & satin paint — walls, trim, doors (taped paint lines)', refs: 'PT-09 · PT-01B · PT-1', qty: 1, unit: 'lump', rate: 48500, notes: '' },
+        { id: 'i3', description: 'Rolled primer & paint — skimmed ceilings', refs: 'PT-01A · RCP-102', qty: 1, unit: 'lump', rate: 13200, notes: '' },
+        { id: 'i4', description: 'Faux beams — sand, prime & 2 finish coats throughout', refs: 'PT-01A · ID-202,203', qty: 1, unit: 'lump', rate: 14000, notes: '' }
+      ] },
+      { id: 's2', title: 'Ground floor — ceilings', collapsed: false, items: [
+        { id: 'i5', description: 'Ceilings, crown & GWB — Bar, Dining, Épicerie, Entry/Lobby (crown prepped, filled & caulked at GWB joins)', refs: 'PT-01C', qty: 1, unit: 'lump', rate: 56000, notes: '' }
+      ] },
+      { id: 's3', title: 'Ground floor — walls & trim', collapsed: false, items: [
+        { id: 'i6', description: 'Speakeasy — walls, trim, base, door casings, picture rails', refs: 'PT-05 · PT-07', qty: 1, unit: 'lump', rate: 25000, notes: '' },
+        { id: 'i7', description: 'Speakeasy ceiling — red flat', refs: 'PT-06', qty: 1, unit: 'lump', rate: 4000, notes: '' },
+        { id: 'i8', description: 'Stairway walls', refs: 'PT-01C', qty: 1, unit: 'lump', rate: 4800, notes: '' },
+        { id: 'i9', description: 'Coat room — spray walls, ceiling, trim & door', refs: 'PT-03', qty: 1, unit: 'lump', rate: 8400, notes: '' },
+        { id: 'i10', description: 'Bar walls (skim)', refs: 'PT-01B · PT-08', qty: 1, unit: 'lump', rate: 12000, notes: '' },
+        { id: 'i11', description: 'ADA bathroom — walls, ceiling & trim (spray)', refs: '—', qty: 1, unit: 'lump', rate: 9600, notes: '' },
+        { id: 'i12', description: 'Elevator corridor — walls & trim', refs: 'PT-01B · PT-02', qty: 1, unit: 'lump', rate: 10600, notes: '' },
+        { id: 'i13', description: 'Open kitchen — walls & trim', refs: 'PT-01B · PT-02', qty: 1, unit: 'lump', rate: 6800, notes: '' }
+      ] },
+      { id: 's4', title: 'Exterior', collapsed: false, items: [
+        { id: 'i14', description: 'Exterior — sprayed semi-gloss', refs: 'PT-08', qty: 1, unit: 'lump', rate: 9000, notes: '' }
+      ] }
+    ]
+  };
+  _sid = 100;
+  _iid = 1000;
+
+  num(v) { return Number(v) || 0; }
+
+  setTop(key) { return (e) => this.setState({ [key]: e.target.value }); }
+  setObj(obj, key) { return (e) => { const v = e.target.value; this.setState((s) => ({ [obj]: { ...s[obj], [key]: v } })); }; }
+
+  updItem(sid, iid, field) {
+    return (e) => {
+      const val = e.target.value;
+      this.setState((s) => ({
+        sections: s.sections.map((sec) => sec.id !== sid ? sec : {
+          ...sec, items: sec.items.map((it) => it.id !== iid ? it : { ...it, [field]: val })
+        })
+      }));
+    };
+  }
+  addItem(sid) {
+    return () => this.setState((s) => ({
+      sections: s.sections.map((sec) => sec.id !== sid ? sec : {
+        ...sec, collapsed: false,
+        items: [...sec.items, { id: 'i' + (this._iid++), description: '', refs: '', qty: 1, unit: 'lump', rate: 0, notes: '' }]
+      })
+    }));
+  }
+  delItem(sid, iid) {
+    return () => this.setState((s) => ({
+      sections: s.sections.map((sec) => sec.id !== sid ? sec : { ...sec, items: sec.items.filter((it) => it.id !== iid) })
+    }));
+  }
+  setSecTitle(sid) { return (e) => { const v = e.target.value; this.setState((s) => ({ sections: s.sections.map((sec) => sec.id !== sid ? sec : { ...sec, title: v }) })); }; }
+  toggleSec(sid) { return () => this.setState((s) => ({ sections: s.sections.map((sec) => sec.id !== sid ? sec : { ...sec, collapsed: !sec.collapsed }) })); }
+  delSec(sid) { return () => this.setState((s) => ({ sections: s.sections.filter((sec) => sec.id !== sid) })); }
+  addSection() { this.setState((s) => ({ sections: [...s.sections, { id: 's' + (this._sid++), title: 'New section', collapsed: false, items: [] }] })); }
+
+  segStyle(active, color) {
+    return {
+      padding: '7px 15px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+      fontSize: '13px', fontWeight: 700, fontFamily: 'inherit', whiteSpace: 'nowrap',
+      transition: 'all .15s',
+      background: active ? (color || '#2563eb') : 'transparent',
+      color: active ? '#ffffff' : '#475569',
+      boxShadow: active ? '0 1px 2px rgba(15,23,42,.12)' : 'none'
+    };
+  }
+  subStyle(active) {
+    return {
+      flex: 1, padding: '8px 10px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+      fontSize: '12.5px', fontWeight: 700, fontFamily: 'inherit',
+      background: active ? '#2563eb' : 'transparent',
+      color: active ? '#ffffff' : '#64748b'
+    };
+  }
+  miniStyle(active) {
+    return {
+      flex: 1, padding: '6px 8px', borderRadius: '6px', border: 'none', cursor: 'pointer',
+      fontSize: '12px', fontWeight: 700, fontFamily: 'inherit',
+      background: active ? '#ffffff' : 'transparent',
+      color: active ? '#2563eb' : '#64748b',
+      boxShadow: active ? '0 1px 2px rgba(15,23,42,.1)' : 'none'
+    };
+  }
+
+  fmtDate(d) {
+    if (!d) return '—';
+    const dt = new Date(d + 'T00:00:00');
+    if (isNaN(dt.getTime())) return d;
+    return dt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  }
+
+  renderVals() {
+    const s = this.state;
+    const cur = this.props.currency ?? '$';
+    const showRefs = this.props.showReferenceCodes ?? true;
+    const opt = s.activeOption ?? this.props.defaultView ?? 'split';
+    const isTabbed = opt === 'tabbed';
+
+    const fmt = (n) => cur + (Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+    let subtotal = 0;
+    const secs = s.sections.map((sec) => {
+      let st = 0;
+      const items = sec.items.map((it) => {
+        const amt = this.num(it.qty) * this.num(it.rate);
+        st += amt;
+        return {
+          ...it,
+          amountFmt: fmt(amt),
+          qtyLabel: it.unit === 'lump' ? '—' : (it.qty + ' ' + it.unit),
+          hasNotes: !!(it.notes && String(it.notes).trim()),
+          showRefsLine: showRefs && !!(it.refs && String(it.refs).trim() && it.refs !== '—'),
+          onDesc: this.updItem(sec.id, it.id, 'description'),
+          onRefs: this.updItem(sec.id, it.id, 'refs'),
+          onQty: this.updItem(sec.id, it.id, 'qty'),
+          onUnit: this.updItem(sec.id, it.id, 'unit'),
+          onRate: this.updItem(sec.id, it.id, 'rate'),
+          onNotes: this.updItem(sec.id, it.id, 'notes'),
+          onDel: this.delItem(sec.id, it.id)
+        };
+      });
+      subtotal += st;
+      return {
+        ...sec,
+        open: !sec.collapsed,
+        chevron: sec.collapsed ? '▸' : '▾',
+        subtotalFmt: fmt(st),
+        items,
+        onTitle: this.setSecTitle(sec.id),
+        onAdd: this.addItem(sec.id),
+        onToggle: this.toggleSec(sec.id),
+        onDel: this.delSec(sec.id)
+      };
+    });
+
+    const taxPct = this.num(s.taxRate);
+    const tax = subtotal * taxPct / 100;
+    const total = subtotal + tax;
+    const deposit = s.depositMode === 'percent' ? total * this.num(s.depositPct) / 100 : this.num(s.depositAmt);
+    const balance = total - deposit;
+    const depPctOfTotal = total > 0 ? Math.round(deposit / total * 1000) / 10 : 0;
+
+    return {
+      opt, isTabbed,
+      showDetails: !isTabbed || s.subTab === 'details',
+      showItems: !isTabbed || s.subTab === 'items',
+      showTotals: !isTabbed || s.subTab === 'totals',
+      showRefs,
+
+      bodyGridStyle: {
+        display: 'grid',
+        gridTemplateColumns: opt === 'builder' ? '1.55fr 1fr' : '1fr 1fr',
+        flex: 1, minHeight: 0
+      },
+
+      splitBtnStyle: this.segStyle(opt === 'split'),
+      tabbedBtnStyle: this.segStyle(opt === 'tabbed'),
+      builderBtnStyle: this.segStyle(opt === 'builder'),
+      onSplit: () => this.setState({ activeOption: 'split' }),
+      onTabbed: () => this.setState({ activeOption: 'tabbed' }),
+      onBuilder: () => this.setState({ activeOption: 'builder' }),
+
+      subDetailsStyle: this.subStyle(s.subTab === 'details'),
+      subItemsStyle: this.subStyle(s.subTab === 'items'),
+      subTotalsStyle: this.subStyle(s.subTab === 'totals'),
+      onSubDetails: () => this.setState({ subTab: 'details' }),
+      onSubItems: () => this.setState({ subTab: 'items' }),
+      onSubTotals: () => this.setState({ subTab: 'totals' }),
+
+      from: s.from, fromNotes: s.fromNotes, billTo: s.billTo, project: s.project,
+      invoiceNumber: s.invoiceNumber, invoiceDate: s.invoiceDate, dueDate: s.dueDate,
+      invoiceDateFmt: this.fmtDate(s.invoiceDate), dueDateFmt: this.fmtDate(s.dueDate),
+      presentedTo: s.presentedTo, paymentTerms: s.paymentTerms, paymentMethod: s.paymentMethod,
+      notes: s.notes, hasNotes: !!(s.notes && s.notes.trim()), taxRate: s.taxRate,
+
+      onFromName: this.setObj('from', 'name'),
+      onFromAddress: this.setObj('from', 'address'),
+      onFromEmail: this.setObj('from', 'email'),
+      onFromPhone: this.setObj('from', 'phone'),
+      onFromNotes: this.setTop('fromNotes'),
+      onBillName: this.setObj('billTo', 'name'),
+      onBillAttn: this.setObj('billTo', 'attn'),
+      onBillAddress: this.setObj('billTo', 'address'),
+      onProjName: this.setObj('project', 'name'),
+      onProjLocation: this.setObj('project', 'location'),
+      onInvNum: this.setTop('invoiceNumber'),
+      onInvDate: this.setTop('invoiceDate'),
+      onDueDate: this.setTop('dueDate'),
+      onPresented: this.setTop('presentedTo'),
+      onTerms: this.setTop('paymentTerms'),
+      onMethod: this.setTop('paymentMethod'),
+      onNotes: this.setTop('notes'),
+      onTax: this.setTop('taxRate'),
+
+      secs,
+      onAddSection: () => this.addSection(),
+
+      subtotalFmt: fmt(subtotal),
+      taxLabel: taxPct > 0 ? '(' + taxPct + '%)' : '',
+      taxFmt: fmt(tax),
+      totalFmt: fmt(total),
+      depositFmt: fmt(deposit),
+      balanceFmt: fmt(balance),
+      depositPctLabel: '(' + depPctOfTotal + '%)',
+
+      modePctStyle: this.miniStyle(s.depositMode === 'percent'),
+      modeFixedStyle: this.miniStyle(s.depositMode === 'fixed'),
+      onModePct: () => this.setState({ depositMode: 'percent' }),
+      onModeFixed: () => this.setState({ depositMode: 'fixed' }),
+      depositInputLabel: s.depositMode === 'percent' ? 'Deposit (%)' : 'Deposit amount',
+      depositInputValue: s.depositMode === 'percent' ? s.depositPct : s.depositAmt,
+      onDepChange: s.depositMode === 'percent' ? this.setTop('depositPct') : this.setTop('depositAmt')
+    };
+  }
+}
+</script>
+</body>
+</html>
