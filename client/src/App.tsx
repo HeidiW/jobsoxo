@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -8,7 +8,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { useAuth } from "@/hooks/use-auth";
-import { Loader2 } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Clients from "@/pages/clients";
@@ -51,6 +51,46 @@ function Router() {
   );
 }
 
+const ROUTE_LABELS: Record<string, string> = {
+  "/": "Dashboard",
+  "/clients": "Clients",
+  "/jobs": "Jobs",
+  "/invoices": "Invoices",
+  "/invoices/new": "New Invoice",
+  "/change-orders": "Change Orders",
+  "/scheduling": "Scheduling",
+  "/payroll": "Payroll",
+  "/inbox-tasks": "Inbox Tasks",
+  "/settings": "Settings",
+};
+
+function AppTopbar() {
+  const [location] = useLocation();
+  const label =
+    ROUTE_LABELS[location] ??
+    (location.startsWith("/invoices/") ? "Invoice" :
+     location.startsWith("/jobs/") ? "Job" :
+     location.startsWith("/clients/") ? "Client" : "");
+
+  return (
+    <header className="h-[54px] flex-shrink-0 flex items-center gap-3 px-[22px] border-b bg-background/70 backdrop-blur-md">
+      <SidebarTrigger data-testid="button-sidebar-toggle" className="text-muted-foreground" />
+      <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
+        <span>JobsOxo</span>
+        <span>/</span>
+        <span className="text-foreground font-semibold">{label}</span>
+      </div>
+      <div className="ml-auto flex items-center gap-2">
+        <div className="flex items-center gap-2 bg-muted border border-border rounded-lg px-3 py-1.5 w-[240px]">
+          <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <span className="text-[12.5px] text-muted-foreground">Search invoices, clients…</span>
+        </div>
+        <ThemeToggle />
+      </div>
+    </header>
+  );
+}
+
 function AuthenticatedApp() {
   const style = {
     "--sidebar-width": "16rem",
@@ -62,10 +102,7 @@ function AuthenticatedApp() {
       <div className="flex h-screen w-full">
         <AppSidebar />
         <div className="flex flex-col flex-1 overflow-hidden">
-          <header className="flex items-center justify-between gap-2 px-4 py-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <SidebarTrigger data-testid="button-sidebar-toggle" />
-            <ThemeToggle />
-          </header>
+          <AppTopbar />
           <main className="flex-1 overflow-y-auto">
             <Router />
           </main>
@@ -107,7 +144,7 @@ function AppContent() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="light" storageKey="paintpro-theme">
+      <ThemeProvider defaultTheme="light" storageKey="jobsoxo-theme">
         <TooltipProvider>
           <AppContent />
           <Toaster />

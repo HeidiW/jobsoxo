@@ -43,6 +43,8 @@
   --chart-3: 262 83% 58%;
   --chart-4: 32 95% 44%;
   --chart-5: 340 82% 52%;
+  --track: #eef0f3;
+  --row-hover: #f8fafc;
   --font-sans: 'Inter', sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: 'IBM Plex Mono', monospace;
@@ -122,6 +124,8 @@
   --destructive-foreground: 210 40% 98%;
   --input: 217 50% 65%;
   --ring: 217 91% 60%;
+  --track: #1a2336;
+  --row-hover: #1b2740;
   --chart-1: 217 91% 70%;
   --chart-2: 142 76% 65%;
   --chart-3: 262 83% 75%;
