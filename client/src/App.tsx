@@ -23,6 +23,7 @@ import InvoicePayment from "@/pages/invoice-payment";
 import Scheduling from "@/pages/scheduling";
 import Payroll from "@/pages/payroll";
 import InboxTasks from "@/pages/inbox-tasks";
+import GmailTodos from "@/pages/gmail-todos";
 import Settings from "@/pages/settings";
 import Login from "@/pages/login";
 import ResetPassword from "@/pages/reset-password";
@@ -45,6 +46,7 @@ function Router() {
       <Route path="/scheduling" component={Scheduling} />
       <Route path="/payroll" component={Payroll} />
       <Route path="/inbox-tasks" component={InboxTasks} />
+      <Route path="/gmail-todos" component={GmailTodos} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
@@ -61,6 +63,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "/scheduling": "Scheduling",
   "/payroll": "Payroll",
   "/inbox-tasks": "Inbox Tasks",
+  "/gmail-todos": "Gmail Todos",
   "/settings": "Settings",
 };
 

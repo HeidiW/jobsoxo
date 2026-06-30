@@ -11,6 +11,7 @@ import {
   PaintBucket,
   LogOut,
   Inbox,
+  Mail,
 } from "lucide-react";
 import {
   Sidebar,
@@ -98,16 +99,26 @@ export function AppSidebar() {
                 );
               })}
 
-              {/* Inbox Tasks with badge */}
+              {/* Inbox Tasks — business action inbox (no badge) */}
               <SidebarMenuItem>
                 <SidebarMenuButton asChild isActive={isInboxActive}>
                   <Link href="/inbox-tasks" data-testid="nav-inbox-tasks">
                     <Inbox className="h-4 w-4" />
                     <span>Inbox Tasks</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* Gmail Todos — Gmail-connected inbox with unread badge */}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={location === "/gmail-todos"}>
+                  <Link href="/gmail-todos" data-testid="nav-gmail-todos">
+                    <Mail className="h-4 w-4" />
+                    <span>Gmail Todos</span>
                     {inboxBadge > 0 && (
                       <Badge
                         className="ml-auto h-4 min-w-4 px-1 text-[10px] bg-primary text-primary-foreground leading-none"
-                        data-testid="badge-inbox-count"
+                        data-testid="badge-gmail-count"
                       >
                         {inboxBadge}
                       </Badge>
