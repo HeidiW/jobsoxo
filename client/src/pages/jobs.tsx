@@ -63,20 +63,10 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import JobForm from "@/components/job-form";
 import type { Job, Client } from "@shared/schema";
+import { JobStatusBadge } from "@/components/status-badge";
 
 interface JobWithClient extends Job {
   client: Client;
-}
-
-function JobStatusBadge({ status }: { status: string }) {
-  const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
-    quoted: { variant: "secondary", label: "Quoted" },
-    scheduled: { variant: "outline", label: "Scheduled" },
-    in_progress: { variant: "default", label: "In Progress" },
-    completed: { variant: "default", label: "Completed" },
-  };
-  const config = variants[status] || { variant: "secondary", label: status };
-  return <Badge variant={config.variant}>{config.label}</Badge>;
 }
 
 function JobsTableSkeleton() {

@@ -61,6 +61,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import type { Invoice, Client, LineItem, Payment, Job, Settings } from "@shared/schema";
+import { InvoiceStatusBadge } from "@/components/status-badge";
 
 interface InvoiceDetail extends Invoice {
   client: Client;
@@ -75,18 +76,6 @@ const formatCurrency = (amount: string | number | null | undefined) => {
   if (isNaN(n)) return "—";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(n);
 };
-
-function InvoiceStatusBadge({ status }: { status: string }) {
-  const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
-    draft: { variant: "secondary", label: "Draft" },
-    sent: { variant: "outline", label: "Sent" },
-    paid: { variant: "default", label: "Paid" },
-    overdue: { variant: "destructive", label: "Overdue" },
-    partial: { variant: "outline", label: "Partial" },
-  };
-  const config = variants[status] || { variant: "secondary", label: status };
-  return <Badge variant={config.variant}>{config.label}</Badge>;
-}
 
 function InvoiceDetailSkeleton() {
   return (

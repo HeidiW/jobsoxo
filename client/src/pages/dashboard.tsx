@@ -1,6 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "wouter";
@@ -15,6 +14,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import type { Invoice, Job, Client } from "@shared/schema";
+import { InvoiceStatusBadge, JobStatusBadge } from "@/components/status-badge";
 
 interface DashboardStats {
   outstandingAmount: number;
@@ -65,29 +65,6 @@ function StatCard({
       </CardContent>
     </Card>
   );
-}
-
-function InvoiceStatusBadge({ status }: { status: string }) {
-  const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
-    draft: { variant: "secondary", label: "Draft" },
-    sent: { variant: "outline", label: "Sent" },
-    paid: { variant: "default", label: "Paid" },
-    overdue: { variant: "destructive", label: "Overdue" },
-    partial: { variant: "outline", label: "Partial" },
-  };
-  const config = variants[status] || { variant: "secondary", label: status };
-  return <Badge variant={config.variant}>{config.label}</Badge>;
-}
-
-function JobStatusBadge({ status }: { status: string }) {
-  const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
-    quoted: { variant: "secondary", label: "Quoted" },
-    scheduled: { variant: "outline", label: "Scheduled" },
-    in_progress: { variant: "default", label: "In Progress" },
-    completed: { variant: "default", label: "Completed" },
-  };
-  const config = variants[status] || { variant: "secondary", label: status };
-  return <Badge variant={config.variant}>{config.label}</Badge>;
 }
 
 function DashboardSkeleton() {

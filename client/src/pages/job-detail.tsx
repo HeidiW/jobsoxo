@@ -53,6 +53,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 import type { Job, Client, Invoice, LineItem, Employee, JobDocument } from "@shared/schema";
 import JobForm from "@/components/job-form";
+import { InvoiceStatusBadge, JobStatusBadge } from "@/components/status-badge";
 
 interface InvoiceWithItems extends Invoice {
   lineItems: LineItem[];
@@ -65,28 +66,6 @@ interface JobDetail extends Job {
   outstandingBalance: string;
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
-    quoted: { variant: "secondary", label: "Quoted" },
-    scheduled: { variant: "outline", label: "Scheduled" },
-    in_progress: { variant: "default", label: "In Progress" },
-    completed: { variant: "default", label: "Completed" },
-  };
-  const cfg = map[status] || { variant: "secondary", label: status };
-  return <Badge variant={cfg.variant}>{cfg.label}</Badge>;
-}
-
-function InvoiceStatusBadge({ status }: { status: string }) {
-  const map: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
-    draft: { variant: "secondary", label: "Draft" },
-    sent: { variant: "outline", label: "Sent" },
-    paid: { variant: "default", label: "Paid" },
-    overdue: { variant: "destructive", label: "Overdue" },
-    partial: { variant: "outline", label: "Partial" },
-  };
-  const cfg = map[status] || { variant: "secondary", label: status };
-  return <Badge variant={cfg.variant}>{cfg.label}</Badge>;
-}
 
 function SkeletonPage() {
   return (
@@ -255,7 +234,7 @@ export default function JobDetail() {
             <div>
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-3xl font-semibold">{job.title}</h1>
-                <StatusBadge status={job.status} />
+                <JobStatusBadge status={job.status} showIcon={true} />
               </div>
               <p className="text-muted-foreground mt-1">{job.client?.name}</p>
             </div>

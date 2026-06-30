@@ -66,6 +66,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import type { Invoice, Client, Job } from "@shared/schema";
+import { InvoiceStatusBadge } from "@/components/status-badge";
 
 const PAYMENT_METHODS = [
   { value: "cash", label: "Cash", icon: Banknote },
@@ -77,24 +78,6 @@ const PAYMENT_METHODS = [
 interface InvoiceWithRelations extends Invoice {
   client: Client;
   job?: Job;
-}
-
-function InvoiceStatusBadge({ status }: { status: string }) {
-  const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string; icon: React.ElementType }> = {
-    draft: { variant: "secondary", label: "Draft", icon: FileText },
-    sent: { variant: "outline", label: "Sent", icon: Mail },
-    paid: { variant: "default", label: "Paid", icon: CheckCircle },
-    overdue: { variant: "destructive", label: "Overdue", icon: Clock },
-    partial: { variant: "outline", label: "Partial", icon: DollarSign },
-  };
-  const config = variants[status] || { variant: "secondary", label: status, icon: FileText };
-  const Icon = config.icon;
-  return (
-    <Badge variant={config.variant} className="gap-1">
-      <Icon className="h-3 w-3" />
-      {config.label}
-    </Badge>
-  );
 }
 
 function InvoicesTableSkeleton() {
