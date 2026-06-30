@@ -897,24 +897,24 @@ export async function registerRoutes(
 
   app.get("/api/change-orders", async (req, res) => {
     try {
-      const allItems = await db
-        .select()
-        .from(lineItems)
-        .where(eq(lineItems.isChangeOrder, true));
-
-      const enriched = await Promise.all(
-        allItems.map(async (item) => {
-          const invoice = item.invoiceId ? await storage.getInvoice(item.invoiceId) : null;
-          const job = item.jobId ? await storage.getJob(item.jobId) : (invoice?.jobId ? await storage.getJob(invoice.jobId) : null);
-          const client = job ? await storage.getClient(job.clientId) : null;
-          return { ...item, invoice, job, client };
-        })
-      );
-
-      res.json(enriched);
+      const orders = await storage.getAllChangeOrders();
+      res.json(orders);
     } catch (error) {
       console.error("Get change orders error:", error);
       res.status(500).json({ error: "Failed to get change orders" });
+    }
+  });
+
+  app.post("/api/change-orders", async (req, res) => {
+    try {
+      const parsed = insertChangeOrderSchema.safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const invoice = await storage.getInvoice(parsed.data.invoiceId);
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+      const order = await storage.createChangeOrder(parsed.data);
+      res.status(201).json(order);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to create change order" });
     }
   });
 

@@ -290,8 +290,8 @@ export const changeOrdersRelations = relations(changeOrders, ({ one }) => ({
 export const insertChangeOrderSchema = createInsertSchema(changeOrders)
   .omit({ id: true, createdAt: true })
   .extend({
-    amount: nonNegativeNumericString("Amount"),
-    status: z.enum(["pending", "approved", "rejected"]).optional(),
+    amount: numericString("Amount"),
+    status: z.enum(["draft", "pending", "approved", "rejected", "invoiced"]).optional(),
   });
 export type InsertChangeOrder = z.infer<typeof insertChangeOrderSchema>;
 export type ChangeOrder = typeof changeOrders.$inferSelect;

@@ -157,6 +157,7 @@ export interface IStorage {
   deleteAllInboxTasks(): Promise<void>;
 
   // Change Orders
+  getAllChangeOrders(): Promise<(ChangeOrder & { invoice: Invoice | null; job: Job | null; client: Client | null })[]>;
   getChangeOrdersByInvoice(invoiceId: string): Promise<ChangeOrder[]>;
   getChangeOrder(id: string): Promise<ChangeOrder | undefined>;
   createChangeOrder(order: InsertChangeOrder): Promise<ChangeOrder>;
@@ -726,6 +727,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Change Orders
+  async getAllChangeOrders(): Promise<(ChangeOrder & { invoice: Invoice | null; job: Job | null; client: Client | null })[]> {
+    const orders = await db.select().from(changeOrders).orderBy(desc(changeOrders.createdAt));
+    return Promise.all(orders.map(async (order) => {
+      const invoice = await this.getInvoice(order.invoiceId) ?? null;
+      const job = invoice?.jobId ? await this.getJob(invoice.jobId) ?? null : null;
+      const client = invoice ? await this.getClient(invoice.clientId) ?? null : null;
+      return { ...order, invoice, job, client };
+    }));
+  }
+
   async getChangeOrdersByInvoice(invoiceId: string): Promise<ChangeOrder[]> {
     return db.select().from(changeOrders).where(eq(changeOrders.invoiceId, invoiceId)).orderBy(changeOrders.createdAt);
   }
