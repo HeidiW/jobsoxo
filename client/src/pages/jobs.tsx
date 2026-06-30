@@ -1,40 +1,12 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -45,59 +17,79 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { format } from "date-fns";
 import {
-  Plus,
-  Search,
-  Briefcase,
-  Calendar,
-  MapPin,
-  Edit,
-  Eye,
-  FileText,
-  MoreHorizontal,
-  Ruler,
-  Trash2,
-} from "lucide-react";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Plus, Eye, Edit, Ruler, FileText, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import JobForm from "@/components/job-form";
 import type { Job, Client } from "@shared/schema";
-import { JobStatusBadge } from "@/components/status-badge";
 
 interface JobWithClient extends Job {
   client: Client;
 }
 
-function JobsTableSkeleton() {
-  return (
-    <div className="space-y-4">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <div key={i} className="flex items-center gap-4 p-4">
-          <Skeleton className="h-10 w-10 rounded" />
-          <div className="flex-1 space-y-2">
-            <Skeleton className="h-4 w-48" />
-            <Skeleton className="h-3 w-32" />
-          </div>
-          <Skeleton className="h-6 w-20" />
-          <Skeleton className="h-8 w-24" />
-        </div>
-      ))}
-    </div>
-  );
+// ── Design tokens ─────────────────────────────────────────────────────────────
+type JobStatus = "quoted" | "scheduled" | "in_progress" | "completed" | string;
+
+const STATUS_BADGE: Record<string, { bg: string; fg: string; label: string }> = {
+  quoted:      { bg: "var(--b-gray-bg)",  fg: "var(--b-gray-fg)",  label: "Quoted" },
+  scheduled:   { bg: "var(--b-blue-bg)",  fg: "var(--b-blue-fg)",  label: "Scheduled" },
+  in_progress: { bg: "var(--b-amber-bg)", fg: "var(--b-amber-fg)", label: "In progress" },
+  completed:   { bg: "var(--b-green-bg)", fg: "var(--b-green-fg)", label: "Completed" },
+  on_hold:     { bg: "var(--b-gray-bg)",  fg: "var(--b-gray-fg)",  label: "On hold" },
+};
+
+const AV_BG = ["--av1", "--av2", "--av3", "--av4"];
+const AV_FG = ["--av1f", "--av2f", "--av3f", "--av4f"];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function progressFromStatus(status: JobStatus): number {
+  if (status === "completed") return 100;
+  if (status === "in_progress") return 50;
+  if (status === "scheduled") return 0;
+  return 0; // quoted
 }
 
+function progressColor(pct: number, status: JobStatus): string {
+  if (status === "completed") return "#15a35a";
+  if (pct === 0) return "var(--faint)";
+  return "var(--jox-primary)";
+}
+
+function fmtCurrency(v: string | number | null | undefined) {
+  if (!v) return "$0";
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(Number(v));
+}
+
+function initials(name: string) {
+  return name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+}
+
+// ── Filter defs ───────────────────────────────────────────────────────────────
+type Filter = "all" | "in_progress" | "scheduled" | "completed";
+const FILTER_DEFS: { key: Filter; label: string }[] = [
+  { key: "all",         label: "All jobs" },
+  { key: "in_progress", label: "In progress" },
+  { key: "scheduled",   label: "Scheduled" },
+  { key: "completed",   label: "Completed" },
+];
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function Jobs() {
+  const [activeFilter, setActiveFilter] = useState<Filter>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
-  const [deletingJob, setDeletingJob] = useState<Job | null>(null);
+  const [deletingJob, setDeletingJob] = useState<JobWithClient | null>(null);
   const { toast } = useToast();
 
-  const { data: jobs, isLoading } = useQuery<JobWithClient[]>({
-    queryKey: ["/api/jobs"],
-  });
+  const { data: jobs, isLoading } = useQuery<JobWithClient[]>({ queryKey: ["/api/jobs"] });
 
   const deleteJobMutation = useMutation({
     mutationFn: async (jobId: string) => {
@@ -109,246 +101,67 @@ export default function Jobs() {
       toast({ title: "Job deleted", description: `"${deletingJob?.title}" has been deleted.` });
       setDeletingJob(null);
     },
-    onError: () => {
-      toast({ title: "Failed to delete job", variant: "destructive" });
-    },
+    onError: () => toast({ title: "Failed to delete job", variant: "destructive" }),
   });
 
-  const filteredJobs = jobs?.filter((job) => {
-    const matchesSearch =
-      job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      job.client?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      job.address?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === "all" || job.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
-
-  const formatCurrency = (amount: string | number | null | undefined) => {
-    if (!amount) return "$0";
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-    }).format(Number(amount));
+  // ── Counts ──────────────────────────────────────────────────────────────────
+  const all = jobs ?? [];
+  const counts: Record<Filter, number> = {
+    all:         all.length,
+    in_progress: all.filter(j => j.status === "in_progress").length,
+    scheduled:   all.filter(j => j.status === "scheduled").length,
+    completed:   all.filter(j => j.status === "completed").length,
   };
 
+  // ── Subtitle ──────────────────────────────────────────────────────────────────
+  const activeCount    = counts.in_progress;
+  const scheduledCount = counts.scheduled;
+  const completedCount = counts.completed;
+  const subtitle = isLoading
+    ? "Loading jobs…"
+    : `${activeCount} active · ${scheduledCount} scheduled · ${completedCount} completed`;
+
+  // ── Filtered + searched ────────────────────────────────────────────────────
+  const filtered = all
+    .filter(j => activeFilter === "all" || j.status === activeFilter)
+    .filter(j => {
+      if (!searchQuery) return true;
+      const q = searchQuery.toLowerCase();
+      return j.title.toLowerCase().includes(q)
+        || j.client?.name?.toLowerCase().includes(q)
+        || j.address?.toLowerCase().includes(q);
+    });
+
+  // ── Open new or edit dialog ────────────────────────────────────────────────
+  function openNew() { setEditingJob(null); setIsDialogOpen(true); }
+  function openEdit(job: Job) { setEditingJob(job); setIsDialogOpen(true); }
+  function closeDialog() { setIsDialogOpen(false); setEditingJob(null); }
+
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <div>
-          <h1 className="text-3xl font-semibold">Jobs</h1>
-          <p className="text-muted-foreground mt-1">Manage painting and decorating projects</p>
-        </div>
-        <Dialog open={isDialogOpen} onOpenChange={(open) => {
-          setIsDialogOpen(open);
-          if (!open) setEditingJob(null);
-        }}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-add-job">
-              <Plus className="h-4 w-4 mr-2" />
-              Add Job
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{editingJob ? "Edit Job" : "Add New Job"}</DialogTitle>
-            </DialogHeader>
-            <JobForm
-              job={editingJob || undefined}
-              onSuccess={() => {}}
-              onClose={() => {
-                setIsDialogOpen(false);
-                setEditingJob(null);
-              }}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
+    <>
+      {/* ── New/Edit Job dialog ── */}
+      <Dialog open={isDialogOpen} onOpenChange={open => { if (!open) closeDialog(); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>
+              {editingJob ? "Edit job" : "New job"}
+            </DialogTitle>
+          </DialogHeader>
+          <JobForm
+            job={editingJob || undefined}
+            onSuccess={() => {}}
+            onClose={closeDialog}
+          />
+        </DialogContent>
+      </Dialog>
 
-      <Card>
-        <CardHeader className="pb-4">
-          <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <Briefcase className="h-5 w-5" />
-              All Jobs
-              {jobs && (
-                <Badge variant="secondary" className="ml-2">
-                  {jobs.length}
-                </Badge>
-              )}
-            </CardTitle>
-            <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
-              <div className="relative w-full sm:w-72">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search jobs..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
-                  data-testid="input-search-jobs"
-                />
-              </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full sm:w-40" data-testid="select-filter-status">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="quoted">Quoted</SelectItem>
-                  <SelectItem value="scheduled">Scheduled</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <JobsTableSkeleton />
-          ) : !filteredJobs || filteredJobs.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Briefcase className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="font-medium text-lg">No jobs found</h3>
-              <p className="text-muted-foreground mt-1 mb-4">
-                {searchQuery || statusFilter !== "all" ? "Try different filters" : "Create your first job to get started"}
-              </p>
-              {!searchQuery && statusFilter === "all" && (
-                <Button onClick={() => setIsDialogOpen(true)} data-testid="button-add-first-job">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Job
-                </Button>
-              )}
-            </div>
-          ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Job</TableHead>
-                    <TableHead className="hidden md:table-cell">Client</TableHead>
-                    <TableHead className="hidden lg:table-cell">Schedule</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="hidden lg:table-cell text-right">Estimate</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredJobs.map((job) => (
-                    <TableRow key={job.id} className="hover-elevate">
-                      <TableCell>
-                        <div className="flex flex-col gap-0.5">
-                          <Link
-                            href={`/jobs/${job.id}`}
-                            className="font-medium hover:text-primary hover:underline transition-colors"
-                            data-testid={`link-job-title-${job.id}`}
-                          >
-                            {job.title}
-                          </Link>
-                          {job.address && (
-                            <span className="text-sm text-muted-foreground flex items-center gap-1">
-                              <MapPin className="h-3 w-3" />
-                              {job.address}
-                            </span>
-                          )}
-                          {job.squareFootage && (
-                            <span className="text-sm text-muted-foreground flex items-center gap-1">
-                              <Ruler className="h-3 w-3" />
-                              {Number(job.squareFootage).toLocaleString()} sq ft
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell">
-                        <span className="text-sm">{job.client?.name || "—"}</span>
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell">
-                        <div className="flex flex-col gap-0.5 text-sm">
-                          {job.startDate && (
-                            <span className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3 text-muted-foreground" />
-                              {format(new Date(job.startDate), "MMM d, yyyy")}
-                            </span>
-                          )}
-                          {job.endDate && (
-                            <span className="text-muted-foreground">
-                              to {format(new Date(job.endDate), "MMM d, yyyy")}
-                            </span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <JobStatusBadge status={job.status} />
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell text-right">
-                        <span className="font-mono text-sm">
-                          {formatCurrency(job.estimatedTotal)}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" data-testid={`button-job-actions-${job.id}`}>
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" sideOffset={4} collisionPadding={12}>
-                            <DropdownMenuItem asChild>
-                              <Link href={`/jobs/${job.id}`} data-testid={`button-view-job-${job.id}`}>
-                                <Eye className="h-4 w-4 mr-2" />
-                                View Details
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setEditingJob(job);
-                                setIsDialogOpen(true);
-                              }}
-                              data-testid={`button-edit-job-${job.id}`}
-                            >
-                              <Edit className="h-4 w-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem asChild>
-                              <Link href={`/jobs/${job.id}/line-items`} data-testid={`button-line-items-${job.id}`}>
-                                <Ruler className="h-4 w-4 mr-2" />
-                                Line Items
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem asChild>
-                              <Link href={`/invoices/new?jobId=${job.id}`} data-testid={`button-create-invoice-job-${job.id}`}>
-                                <FileText className="h-4 w-4 mr-2" />
-                                Create Invoice
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive focus:text-destructive"
-                              onClick={() => setDeletingJob(job)}
-                              data-testid={`button-delete-job-${job.id}`}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <AlertDialog open={!!deletingJob} onOpenChange={(o) => { if (!o) setDeletingJob(null); }}>
+      {/* ── Delete confirm ── */}
+      <AlertDialog open={!!deletingJob} onOpenChange={o => { if (!o) setDeletingJob(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete job?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete <strong>"{deletingJob?.title}"</strong> and all its associated data including invoices, line items, and documents. This cannot be undone.
+              This will permanently delete <strong>"{deletingJob?.title}"</strong> and all associated invoices, line items, and documents. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -356,6 +169,7 @@ export default function Jobs() {
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => deletingJob && deleteJobMutation.mutate(deletingJob.id)}
+              disabled={deleteJobMutation.isPending}
               data-testid="button-confirm-delete-job"
             >
               {deleteJobMutation.isPending ? "Deleting…" : "Delete"}
@@ -363,6 +177,241 @@ export default function Jobs() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+
+      {/* ── Page body ── */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "24px 26px 40px" }}>
+        <div style={{ maxWidth: "1280px", margin: "0 auto" }}>
+
+          {/* ── Title row ── */}
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "16px", marginBottom: "20px" }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: "26px", fontWeight: 700, letterSpacing: "-.02em" }}>Jobs</h2>
+              <p style={{ margin: "5px 0 0", fontSize: "13.5px", color: "var(--muted)" }}>{subtitle}</p>
+            </div>
+            <button
+              onClick={openNew}
+              style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 16px", fontSize: "13.5px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 1px 2px rgba(37,99,235,.3)" }}
+              data-testid="button-add-job"
+            >
+              <Plus style={{ width: "16px", height: "16px" }} />
+              New job
+            </button>
+          </div>
+
+          {/* ── Filter tabs ── */}
+          <div style={{ display: "flex", gap: "4px", marginBottom: "16px", flexWrap: "wrap" }}>
+            {FILTER_DEFS.map(f => {
+              const active = activeFilter === f.key;
+              return (
+                <button
+                  key={f.key}
+                  onClick={() => setActiveFilter(f.key)}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: "7px", cursor: "pointer",
+                    fontFamily: "inherit", fontSize: "13px", fontWeight: 600, padding: "7px 13px", borderRadius: "8px",
+                    border: "1px solid " + (active ? "transparent" : "var(--panel-bd)"),
+                    background: active ? "var(--jox-primary)" : "var(--panel)",
+                    color: active ? "#fff" : "var(--muted)",
+                  }}
+                  data-testid={`filter-tab-${f.key}`}
+                >
+                  {f.label}
+                  <span
+                    className="font-mono"
+                    style={{
+                      fontSize: "11px", fontWeight: 600, padding: "0 6px", borderRadius: "5px",
+                      background: active ? "rgba(255,255,255,.22)" : "var(--track)",
+                      color: active ? "#fff" : "var(--faint)",
+                    }}
+                  >
+                    {counts[f.key]}
+                  </span>
+                </button>
+              );
+            })}
+            {/* Inline search — faint, right-aligned */}
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "7px", background: "var(--track)", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "6px 11px", minWidth: "200px" }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search jobs…"
+                style={{ border: "none", background: "none", outline: "none", fontSize: "12.5px", color: "var(--fg)", fontFamily: "inherit", width: "100%" }}
+                data-testid="input-search-jobs"
+              />
+            </div>
+          </div>
+
+          {/* ── Table card ── */}
+          <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
+
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", fontSize: "10.5px", fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" as const, color: "var(--faint)", padding: "11px 18px", background: "var(--track)", borderBottom: "1px solid var(--panel-bd)" }}>
+              <span style={{ flex: 1, minWidth: 0 }}>Job / client</span>
+              <span style={{ width: "116px", flexShrink: 0 }}>Progress</span>
+              <span style={{ width: "92px", flexShrink: 0 }}>Crew</span>
+              <span style={{ width: "100px", flexShrink: 0, textAlign: "right" as const }}>Value</span>
+              <span style={{ width: "96px", flexShrink: 0, textAlign: "center" as const }}>Status</span>
+              <span style={{ width: "24px", flexShrink: 0 }}></span>
+            </div>
+
+            {/* Loading skeleton */}
+            {isLoading && (
+              <div style={{ padding: "40px", textAlign: "center" as const, color: "var(--faint)", fontSize: "13px" }}>
+                Loading jobs…
+              </div>
+            )}
+
+            {/* Empty state */}
+            {!isLoading && filtered.length === 0 && (
+              <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
+                <div style={{ fontSize: "32px", marginBottom: "10px" }}>💼</div>
+                <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--fg)", marginBottom: "4px" }}>
+                  {searchQuery || activeFilter !== "all" ? "No jobs found" : "No jobs yet"}
+                </div>
+                <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>
+                  {searchQuery ? `No results for "${searchQuery}"` : activeFilter !== "all" ? "Try a different filter." : "Create your first job to get started."}
+                </div>
+                {!searchQuery && activeFilter === "all" && (
+                  <button
+                    onClick={openNew}
+                    style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 18px", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                    data-testid="button-add-first-job"
+                  >
+                    <Plus style={{ width: "15px", height: "15px" }} /> New job
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Rows */}
+            {!isLoading && filtered.map((job, i) => {
+              const badge = STATUS_BADGE[job.status] ?? STATUS_BADGE.on_hold;
+              const pct = progressFromStatus(job.status);
+              const pColor = progressColor(pct, job.status);
+              const avBg = `var(${AV_BG[i % 4]})`;
+              const avFg = `var(${AV_FG[i % 4]})`;
+              const clientName = job.client?.name ?? "Unknown";
+              const location = job.address ?? "";
+
+              return (
+                <div
+                  key={job.id}
+                  className="rowhover"
+                  style={{ display: "flex", alignItems: "center", padding: "13px 18px", borderBottom: "1px solid var(--panel-bd)" }}
+                  data-testid={`row-job-${job.id}`}
+                >
+                  {/* Job / client */}
+                  <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "12px", paddingRight: "12px" }}>
+                    {/* Avatar icon */}
+                    <div style={{ width: "38px", height: "38px", borderRadius: "9px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: avBg, color: avFg }}>
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="2" y="7" width="20" height="14" rx="2"/>
+                        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
+                      </svg>
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: "13.5px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        <Link href={`/jobs/${job.id}`} style={{ color: "inherit", textDecoration: "none" }} data-testid={`link-job-title-${job.id}`}>
+                          {job.title}
+                        </Link>
+                      </div>
+                      <div style={{ fontSize: "11.5px", color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {clientName}{location ? ` · ${location}` : ""}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Progress */}
+                  <div style={{ width: "116px", flexShrink: 0, paddingRight: "14px" }}>
+                    <div style={{ height: "7px", borderRadius: "4px", background: "var(--track)", overflow: "hidden" }}>
+                      <div style={{ width: `${pct}%`, height: "100%", background: pColor, transition: "width .3s" }} />
+                    </div>
+                    <div className="font-mono" style={{ fontSize: "10.5px", color: "var(--faint)", marginTop: "4px" }}>{pct}%</div>
+                  </div>
+
+                  {/* Crew — not in DB, show dash */}
+                  <div style={{ width: "92px", flexShrink: 0, fontSize: "12.5px", color: "var(--muted)" }}>
+                    —
+                  </div>
+
+                  {/* Value */}
+                  <span className="font-mono" style={{ width: "100px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 600 }} data-testid={`value-job-${job.id}`}>
+                    {fmtCurrency(job.estimatedTotal)}
+                  </span>
+
+                  {/* Status badge */}
+                  <div style={{ width: "96px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
+                    <span style={{ background: badge.bg, color: badge.fg, fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px", textTransform: "capitalize", whiteSpace: "nowrap" }}>
+                      {badge.label}
+                    </span>
+                  </div>
+
+                  {/* Actions chevron → dropdown */}
+                  <span style={{ width: "24px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          style={{ border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "2px 0", display: "flex", alignItems: "center" }}
+                          data-testid={`button-job-actions-${job.id}`}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" sideOffset={4}>
+                        <DropdownMenuItem asChild>
+                          <Link href={`/jobs/${job.id}`} data-testid={`button-view-job-${job.id}`}>
+                            <Eye className="h-4 w-4 mr-2" />View details
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => openEdit(job)} data-testid={`button-edit-job-${job.id}`}>
+                          <Edit className="h-4 w-4 mr-2" />Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href={`/jobs/${job.id}/line-items`} data-testid={`button-line-items-${job.id}`}>
+                            <Ruler className="h-4 w-4 mr-2" />Line items
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href={`/invoices/new?jobId=${job.id}`} data-testid={`button-create-invoice-job-${job.id}`}>
+                            <FileText className="h-4 w-4 mr-2" />Create invoice
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => setDeletingJob(job)}
+                          data-testid={`button-delete-job-${job.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </span>
+                </div>
+              );
+            })}
+
+            {/* Footer */}
+            {!isLoading && filtered.length > 0 && (
+              <div style={{ padding: "13px 18px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: "12.5px", color: "var(--faint)" }}>
+                  {filtered.length} job{filtered.length !== 1 ? "s" : ""}
+                  {activeFilter !== "all" ? ` · ${FILTER_DEFS.find(f => f.key === activeFilter)?.label}` : ""}
+                </span>
+                <button
+                  onClick={openNew}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "6px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--jox-primary)", borderRadius: "8px", padding: "6px 14px", fontSize: "12.5px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                  data-testid="button-new-job-footer"
+                >
+                  <Plus style={{ width: "13px", height: "13px" }} />New job
+                </button>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </div>
+    </>
   );
 }
