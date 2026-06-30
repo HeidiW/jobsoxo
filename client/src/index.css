@@ -72,6 +72,14 @@
   --b-gray-bg: #eef0f3;
   --b-gray-fg: #6b7686;
 
+  /* ── Avatar palette (light) ── */
+  --av1: #eef2fe; --av1f: #2563eb;
+  --av2: #e6f6fb; --av2f: #0e7faf;
+  --av3: #f3eafe; --av3f: #7c3aed;
+  --av4: #e7f7ee; --av4f: #15a35a;
+  --av5: #fdf4ff; --av5f: #9d174d;
+  --av6: #fefce8; --av6f: #b45309;
+
   --font-sans: 'Inter', sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: 'IBM Plex Mono', monospace;
@@ -179,6 +187,15 @@
   --b-purple-fg: #b794f4;
   --b-gray-bg: rgba(148,163,184,.18);
   --b-gray-fg: #aab4c6;
+
+  /* ── Avatar palette (dark) ── */
+  --av1: #1c2a44; --av1f: #93b4fb;
+  --av2: #13304a; --av2f: #6cc0e0;
+  --av3: #2a2347; --av3f: #b794f4;
+  --av4: #142e2a; --av4f: #6cd49d;
+  --av5: #332344; --av5f: #e0a0d0;
+  --av6: #3a2e1a; --av6f: #e7be73;
+
   --chart-1: 217 91% 70%;
   --chart-2: 142 76% 65%;
   --chart-3: 262 83% 75%;
