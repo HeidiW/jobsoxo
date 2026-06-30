@@ -71,6 +71,14 @@
   --b-purple-fg: #7c3aed;
   --b-gray-bg: #eef0f3;
   --b-gray-fg: #6b7686;
+  --b-pink-bg: #fde8ef;
+  --b-pink-fg: #be185d;
+  --b-teal-bg: #e0f2fe;
+  --b-teal-fg: #0e7faf;
+
+  /* ── Gmail Messages tokens (light) ── */
+  --gem-bg: linear-gradient(120deg,#eef3ff,#f5eefc,#fdeef0);
+  --gem-bd: #e3d4f3;
 
   /* ── Scheduling block tokens (light) ── */
   --colhead: #fafbfc;
@@ -194,6 +202,14 @@
   --b-purple-fg: #b794f4;
   --b-gray-bg: rgba(148,163,184,.18);
   --b-gray-fg: #aab4c6;
+  --b-pink-bg: rgba(214,101,112,.2);
+  --b-pink-fg: #e79aa3;
+  --b-teal-bg: rgba(14,127,175,.2);
+  --b-teal-fg: #6cc0e0;
+
+  /* ── Gmail Messages tokens (dark) ── */
+  --gem-bg: linear-gradient(120deg,rgba(66,133,244,.16),rgba(155,114,203,.16),rgba(217,101,112,.14));
+  --gem-bd: rgba(155,114,203,.4);
 
   /* ── Scheduling block tokens (dark) ── */
   --colhead: #10192b;
@@ -263,6 +279,12 @@
   }
 }
 
+@keyframes sparklePulse {
+  0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); }
+  33%       { opacity: .85; transform: scale(1.08) rotate(6deg); }
+  66%       { opacity: .9; transform: scale(.95) rotate(-4deg); }
+}
+
 /**
  * Using the elevate system.
  * Automatic contrast adjustment.
@@ -288,6 +310,16 @@
   /* Row hover using design token */
   .rowhover:hover {
     background: var(--rowhover) !important;
+  }
+
+  /* Gmail Messages task row hover */
+  .taskrow:hover {
+    background: var(--rowhover) !important;
+  }
+
+  /* Gmail Messages checkbox hover */
+  .cbtn:hover {
+    border-color: var(--jox-primary) !important;
   }
 
   /* Hide ugly search cancel button in Chrome until we can style it properly */
