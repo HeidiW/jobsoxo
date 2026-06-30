@@ -72,6 +72,13 @@
   --b-gray-bg: #eef0f3;
   --b-gray-fg: #6b7686;
 
+  /* ── Scheduling block tokens (light) ── */
+  --colhead: #fafbfc;
+  --bl-bg: #eef2fe; --bl-fg: #2563eb; --bl-bd: #bcd0fb;
+  --gr-bg: #e7f7ee; --gr-fg: #15a35a; --gr-bd: #a7e3c1;
+  --pu-bg: #f3eafe; --pu-fg: #7c3aed; --pu-bd: #d6bbf7;
+  --am-bg: #fef5e7; --am-fg: #b6731a; --am-bd: #f7d994;
+
   /* ── Avatar palette (light) ── */
   --av1: #eef2fe; --av1f: #2563eb;
   --av2: #e6f6fb; --av2f: #0e7faf;
@@ -187,6 +194,13 @@
   --b-purple-fg: #b794f4;
   --b-gray-bg: rgba(148,163,184,.18);
   --b-gray-fg: #aab4c6;
+
+  /* ── Scheduling block tokens (dark) ── */
+  --colhead: #10192b;
+  --bl-bg: rgba(59,130,246,.16); --bl-fg: #93b4fb; --bl-bd: rgba(59,130,246,.4);
+  --gr-bg: rgba(21,163,90,.16);  --gr-fg: #6cd49d; --gr-bd: rgba(21,163,90,.4);
+  --pu-bg: rgba(124,58,237,.18); --pu-fg: #b794f4; --pu-bd: rgba(124,58,237,.45);
+  --am-bg: rgba(224,160,32,.16); --am-fg: #e7be73; --am-bd: rgba(224,160,32,.4);
 
   /* ── Avatar palette (dark) ── */
   --av1: #1c2a44; --av1f: #93b4fb;
