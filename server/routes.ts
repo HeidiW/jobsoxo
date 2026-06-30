@@ -380,39 +380,155 @@ export async function registerRoutes(
   // Dashboard
   app.get("/api/dashboard", async (req, res) => {
     try {
-      const stats = await storage.getDashboardStats();
-      
-      const recentInvoicesRaw = await db
-        .select()
+      const now = new Date();
+      const hour = now.getHours();
+      const timeOfDay = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
+
+      // Greeting
+      const user = req.session?.userId ? await storage.getUser(req.session.userId as string) : null;
+      const firstName = user?.username ? user.username.split(/[\s_@.]/)[0] : "there";
+
+      // Date boundaries
+      const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+      const todayEnd   = new Date(now); todayEnd.setHours(23, 59, 59, 999);
+      const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const endOfLastMonth   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+      const dueSoonDate = new Date(todayStart); dueSoonDate.setDate(dueSoonDate.getDate() + 30);
+
+      // All invoices with client + job names
+      const allInvoices = await db
+        .select({
+          id: invoices.id,
+          invoiceNumber: invoices.invoiceNumber,
+          clientId: invoices.clientId,
+          jobId: invoices.jobId,
+          status: invoices.status,
+          total: invoices.total,
+          balance: invoices.balance,
+          dueDate: invoices.dueDate,
+          clientName: clients.name,
+          jobTitle: jobs.title,
+        })
         .from(invoices)
-        .orderBy(invoices.createdAt)
-        .limit(5);
-      
-      const recentInvoices = await Promise.all(
-        recentInvoicesRaw.map(async (invoice) => {
-          const client = await storage.getClient(invoice.clientId);
-          return { ...invoice, client };
-        })
-      );
+        .leftJoin(clients, eq(invoices.clientId, clients.id))
+        .leftJoin(jobs, eq(invoices.jobId, jobs.id));
 
-      const upcomingJobsRaw = await db
-        .select()
+      const openStatuses = ["sent", "partial", "overdue"];
+      const openInvoices = allInvoices.filter(r => openStatuses.includes(r.status));
+      const outstanding = {
+        total: openInvoices.reduce((s, r) => s + Number(r.balance), 0),
+        invoiceCount: openInvoices.length,
+        clientCount: new Set(openInvoices.map(r => r.clientId)).size,
+        overdue: openInvoices
+          .filter(r => r.status === "overdue")
+          .reduce((s, r) => s + Number(r.balance), 0),
+        dueSoon: openInvoices
+          .filter(r => {
+            if (r.status !== "sent" || !r.dueDate) return false;
+            const dd = new Date(r.dueDate);
+            return dd >= todayStart && dd <= dueSoonDate;
+          })
+          .reduce((s, r) => s + Number(r.balance), 0),
+        draft: allInvoices
+          .filter(r => r.status === "draft")
+          .reduce((s, r) => s + Number(r.total), 0),
+      };
+
+      // Payments — this month vs last month
+      const [thisMonthPmt, lastMonthPmt] = await Promise.all([
+        db.select({ total: sql<number>`COALESCE(SUM(${payments.amount}::numeric), 0)` })
+          .from(payments)
+          .where(sql`${payments.paymentDate} >= ${startOfThisMonth}`),
+        db.select({ total: sql<number>`COALESCE(SUM(${payments.amount}::numeric), 0)` })
+          .from(payments)
+          .where(sql`${payments.paymentDate} >= ${startOfLastMonth} AND ${payments.paymentDate} <= ${endOfLastMonth}`),
+      ]);
+      const thisAmt = Number(thisMonthPmt[0]?.total) || 0;
+      const lastAmt = Number(lastMonthPmt[0]?.total) || 0;
+      const momDeltaPct = lastAmt > 0 ? Math.round(((thisAmt - lastAmt) / lastAmt) * 100) : (thisAmt > 0 ? 100 : 0);
+
+      // Active jobs + crew / hours today
+      const [activeJobsRows, hoursTodayRows, crewsTodayRows] = await Promise.all([
+        db.select({ count: sql<number>`count(*)` }).from(jobs).where(sql`${jobs.status} = 'in_progress'`),
+        db.select({ total: sql<number>`COALESCE(SUM(${timeEntries.hoursWorked}::numeric), 0)` })
+          .from(timeEntries).where(sql`DATE(${timeEntries.date}) = CURRENT_DATE`),
+        db.select({ count: sql<number>`COUNT(DISTINCT ${timeEntries.employeeId})` })
+          .from(timeEntries).where(sql`DATE(${timeEntries.date}) = CURRENT_DATE`),
+      ]);
+
+      // Needs attention — overdue OR due today, sorted most overdue first
+      const needsAttention = allInvoices
+        .filter(r => {
+          if (r.status === "overdue") return true;
+          if ((r.status === "sent" || r.status === "partial") && r.dueDate) {
+            const dd = new Date(r.dueDate);
+            return dd >= todayStart && dd <= todayEnd;
+          }
+          return false;
+        })
+        .map(r => {
+          const dueDate = r.dueDate ? new Date(r.dueDate) : null;
+          let reason: "overdue" | "due-today" | "deposit-due" = "due-today";
+          let detail = "Due today";
+          let daysOverdue = 0;
+          if (r.status === "overdue") {
+            reason = "overdue";
+            daysOverdue = dueDate
+              ? Math.floor((todayStart.getTime() - dueDate.getTime()) / 86_400_000)
+              : 0;
+            detail = `${daysOverdue} day${daysOverdue !== 1 ? "s" : ""} overdue`;
+          } else if (r.status === "partial") {
+            detail = "Balance due today · partially paid";
+          }
+          return { invoiceId: r.id, invoiceNumber: r.invoiceNumber, client: r.clientName || "Unknown", project: r.jobTitle ?? undefined, reason, detail, balance: Number(r.balance), daysOverdue };
+        })
+        .sort((a, b) => b.daysOverdue - a.daysOverdue);
+
+      // This week Mon–Fri
+      const dow = now.getDay();
+      const monday = new Date(todayStart);
+      monday.setDate(todayStart.getDate() - (dow === 0 ? 6 : dow - 1));
+      const friday = new Date(monday); friday.setDate(monday.getDate() + 4);
+
+      const weekJobs = await db
+        .select({ id: jobs.id, title: jobs.title, startDate: jobs.startDate, endDate: jobs.endDate })
         .from(jobs)
-        .where(eq(jobs.status, "scheduled"))
-        .orderBy(jobs.startDate)
-        .limit(5);
+        .where(sql`${jobs.startDate} IS NOT NULL AND ${jobs.startDate} <= ${friday} AND (${jobs.endDate} IS NULL OR ${jobs.endDate} >= ${monday})`);
 
-      const upcomingJobs = await Promise.all(
-        upcomingJobsRaw.map(async (job) => {
-          const client = await storage.getClient(job.clientId);
-          return { ...job, client };
-        })
-      );
+      const JOB_COLORS = ["#3b82f6","#10b981","#8b5cf6","#f59e0b","#ef4444","#06b6d4","#f97316"];
+      const colorMap = new Map<string, string>();
+      let ci = 0;
+      const getColor = (id: string) => { if (!colorMap.has(id)) colorMap.set(id, JOB_COLORS[ci++ % JOB_COLORS.length]); return colorMap.get(id)!; };
+      const WDAYS = ["MON","TUE","WED","THU","FRI"];
+
+      const week = Array.from({ length: 5 }, (_, i) => {
+        const day = new Date(monday); day.setDate(monday.getDate() + i);
+        const dayS = new Date(day); dayS.setHours(0,0,0,0);
+        const dayE = new Date(day); dayE.setHours(23,59,59,999);
+        return {
+          date: day.toISOString().split("T")[0],
+          weekday: WDAYS[i],
+          dayNum: day.getDate(),
+          isToday: dayS.getTime() === todayStart.getTime(),
+          jobs: weekJobs
+            .filter(j => {
+              if (!j.startDate) return false;
+              const s = new Date(j.startDate); s.setHours(0,0,0,0);
+              const e = j.endDate ? new Date(j.endDate) : s; e.setHours(23,59,59,999);
+              return s <= dayE && e >= dayS;
+            })
+            .map(j => ({ jobId: j.id, label: j.title, crewSize: 0, color: getColor(j.id) })),
+        };
+      });
 
       res.json({
-        stats,
-        recentInvoices,
-        upcomingJobs,
+        outstanding,
+        collectedThisMonth: { amount: thisAmt, momDeltaPct },
+        activeJobs: { count: Number(activeJobsRows[0]?.count) || 0, crews: Number(crewsTodayRows[0]?.count) || 0, hoursToday: Math.round(Number(hoursTodayRows[0]?.total) || 0) },
+        needsAttention,
+        week,
+        greeting: { firstName, timeOfDay },
       });
     } catch (error) {
       console.error("Dashboard error:", error);
