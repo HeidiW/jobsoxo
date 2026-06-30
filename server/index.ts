@@ -5,6 +5,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { processOverdueReminders } from "./email";
 import { startInboxScheduler } from "./scheduler";
+import { seedDemoData } from "./seed";
 
 declare module "express-session" {
   interface SessionData {
@@ -85,6 +86,7 @@ app.use((req, res, next) => {
 
 (async () => {
   await registerRoutes(httpServer, app);
+  await seedDemoData();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
