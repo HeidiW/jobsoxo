@@ -45,6 +45,33 @@
   --chart-5: 340 82% 52%;
   --track: #eef0f3;
   --row-hover: #f8fafc;
+
+  /* ── JobsOxo design tokens ── */
+  --jox-primary: #2563eb;
+  --panel: #ffffff;
+  --panel-bd: #e4e7ec;
+  --fg: #0f1729;
+  --faint: #8a93a3;
+  --soft: #eef2fe;
+  --rowhover: #f8fafc;
+  --navhover: #e7e9ee;
+  --topbar: rgba(255,255,255,.7);
+  --searchbg: #eef0f3;
+  --activeitem: #ffffff;
+  --activeshadow: rgba(15,23,41,.08);
+  --b-blue-bg: #eef2fe;
+  --b-blue-fg: #2563eb;
+  --b-red-bg: #fdeeec;
+  --b-red-fg: #d23b1f;
+  --b-amber-bg: #fef5e7;
+  --b-amber-fg: #b6731a;
+  --b-green-bg: #e7f7ee;
+  --b-green-fg: #15a35a;
+  --b-purple-bg: #f3eafe;
+  --b-purple-fg: #7c3aed;
+  --b-gray-bg: #eef0f3;
+  --b-gray-fg: #6b7686;
+
   --font-sans: 'Inter', sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: 'IBM Plex Mono', monospace;
@@ -126,6 +153,32 @@
   --ring: 217 91% 60%;
   --track: #1a2336;
   --row-hover: #1b2740;
+
+  /* ── JobsOxo design tokens (dark) ── */
+  --jox-primary: #3b82f6;
+  --panel: #141d30;
+  --panel-bd: #243049;
+  --fg: #f1f5f9;
+  --faint: #7c8aa3;
+  --soft: #1c2a44;
+  --rowhover: #1b2740;
+  --navhover: #222e4a;
+  --topbar: rgba(20,29,48,.72);
+  --searchbg: #1a2336;
+  --activeitem: #222e4a;
+  --activeshadow: rgba(0,0,0,.3);
+  --b-blue-bg: rgba(59,130,246,.18);
+  --b-blue-fg: #93b4fb;
+  --b-red-bg: rgba(220,59,31,.2);
+  --b-red-fg: #f1937f;
+  --b-amber-bg: rgba(224,160,32,.2);
+  --b-amber-fg: #e7be73;
+  --b-green-bg: rgba(21,163,90,.2);
+  --b-green-fg: #6cd49d;
+  --b-purple-bg: rgba(124,58,237,.22);
+  --b-purple-fg: #b794f4;
+  --b-gray-bg: rgba(148,163,184,.18);
+  --b-gray-fg: #aab4c6;
   --chart-1: 217 91% 70%;
   --chart-2: 142 76% 65%;
   --chart-3: 262 83% 75%;
@@ -200,6 +253,11 @@
  * need to be distinguished from eachother visually.
  */
 @layer utilities {
+
+  /* Row hover using design token */
+  .rowhover:hover {
+    background: var(--rowhover) !important;
+  }
 
   /* Hide ugly search cancel button in Chrome until we can style it properly */
   input[type="search"]::-webkit-search-cancel-button {
