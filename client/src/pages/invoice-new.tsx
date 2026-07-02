@@ -1115,6 +1115,44 @@ export default function InvoiceNew() {
 
             </form>
           </Form>
+
+          {/* ── Bottom save bar ── */}
+          <div style={{
+            position: "sticky", bottom: 0, left: 0, right: 0,
+            background: "rgba(255,255,255,0.95)",
+            backdropFilter: "blur(8px)",
+            borderTop: "1px solid #e2e8f0",
+            padding: "12px 0",
+            marginTop: "8px",
+            display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "10px",
+            zIndex: 10,
+          }}>
+            <span style={{ marginRight: "auto", fontSize: "12px", color: "#94a3b8", fontWeight: 600 }}>
+              {lineItems.length > 0
+                ? `${lineItems.length} item${lineItems.length !== 1 ? "s" : ""} · Total ${formatCurrency(total)}`
+                : "Add line items to calculate total"}
+            </span>
+            <button
+              type="button"
+              onClick={form.handleSubmit((d) => onSubmit(d, false))}
+              disabled={createInvoiceMutation.isPending}
+              style={{ padding: "9px 18px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#475569", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "6px" }}
+              data-testid="button-save-invoice-bottom"
+            >
+              <Save style={{ width: "14px", height: "14px" }} />
+              Save invoice
+            </button>
+            <button
+              type="button"
+              onClick={form.handleSubmit((d) => onSubmit(d, true))}
+              disabled={createInvoiceMutation.isPending}
+              style={{ padding: "9px 18px", border: "none", background: "#2563eb", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "6px" }}
+              data-testid="button-send-invoice-bottom"
+            >
+              <Send style={{ width: "14px", height: "14px" }} />
+              Send invoice
+            </button>
+          </div>
         </div>
 
         {/* Right: Live preview */}
