@@ -78,16 +78,6 @@ const newCOSchema = z.object({
 });
 type NewCOValues = z.infer<typeof newCOSchema>;
 
-const newLineItemSchema = z.object({
-  category: z.enum(["materials", "labor", "square_footage", "other"]),
-  description: z.string().min(1, "Description is required"),
-  quantity: z.string().min(1, "Required").refine((v) => !isNaN(parseFloat(v)) && parseFloat(v) > 0, "Must be > 0"),
-  unit: z.string().min(1, "Required"),
-  rate: z.string().min(1, "Required").refine((v) => !isNaN(parseFloat(v)) && parseFloat(v) > 0, "Must be > 0"),
-  section: z.string().optional(),
-});
-type NewLineItemValues = z.infer<typeof newLineItemSchema>;
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const formatCurrency = (amount: string | number | null | undefined) => {
@@ -465,149 +455,6 @@ function LineItemEditRow({
   );
 }
 
-// ── NewLineItemInvoiceForm ─────────────────────────────────────────────────────
-
-function NewLineItemInvoiceForm({
-  invoiceId,
-  onSuccess,
-  onCancel,
-}: {
-  invoiceId: string;
-  onSuccess: () => void;
-  onCancel: () => void;
-}) {
-  const { toast } = useToast();
-  const form = useForm<NewLineItemValues>({
-    resolver: zodResolver(newLineItemSchema),
-    defaultValues: { category: "labor", description: "", quantity: "", unit: "hours", rate: "", section: "" },
-  });
-
-  const qty = parseFloat(form.watch("quantity") || "0");
-  const rate = parseFloat(form.watch("rate") || "0");
-  const amount = !isNaN(qty * rate) ? qty * rate : 0;
-
-  const mutation = useMutation({
-    mutationFn: async (data: NewLineItemValues) => {
-      const res = await apiRequest("POST", `/api/invoices/${invoiceId}/line-items`, {
-        category: data.category,
-        description: data.description,
-        quantity: parseFloat(data.quantity),
-        unit: data.unit,
-        rate: parseFloat(data.rate),
-        section: data.section || null,
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices", invoiceId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      toast({ title: "Line item added" });
-      onSuccess();
-    },
-    onError: (err: Error) => {
-      toast({ title: "Error adding line item", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const cats = [
-    { value: "labor", label: "Labor" },
-    { value: "materials", label: "Materials" },
-    { value: "square_footage", label: "Square Footage" },
-    { value: "other", label: "Other" },
-  ];
-  const units = ["hours", "each", "sqft", "gallon", "linear_ft", "flat"];
-
-  return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))} className="space-y-3 p-3 rounded-md border border-blue-200 bg-blue-50/40 dark:border-blue-800 dark:bg-blue-950/20">
-        <div className="grid grid-cols-2 gap-3">
-          <FormField control={form.control} name="description" render={({ field }) => (
-            <FormItem className="col-span-2">
-              <FormLabel className="text-xs">Description</FormLabel>
-              <FormControl>
-                <Input placeholder="e.g. Skim and paint feature wall" {...field} data-testid="input-new-li-description" />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="category" render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-xs">Category</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl>
-                  <SelectTrigger data-testid="select-new-li-category"><SelectValue /></SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {cats.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="unit" render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-xs">Unit</FormLabel>
-              <Select onValueChange={field.onChange} value={field.value}>
-                <FormControl>
-                  <SelectTrigger data-testid="select-new-li-unit"><SelectValue /></SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {units.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )} />
-        </div>
-        <div className="grid grid-cols-4 gap-3 items-end">
-          <FormField control={form.control} name="quantity" render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-xs">Quantity</FormLabel>
-              <FormControl>
-                <Input type="number" step="0.01" placeholder="0" {...field} data-testid="input-new-li-quantity" />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="rate" render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-xs">Rate ($)</FormLabel>
-              <FormControl>
-                <Input type="number" step="0.01" placeholder="0.00" {...field} data-testid="input-new-li-rate" />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="section" render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-xs">Section <span className="text-muted-foreground">(opt)</span></FormLabel>
-              <FormControl>
-                <Input placeholder="e.g. Living Room" {...field} data-testid="input-new-li-section" />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <div>
-            <FormLabel className="text-xs text-muted-foreground block mb-2">Amount</FormLabel>
-            <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 font-mono text-sm font-medium">
-              {fmt(amount)}
-            </div>
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 pt-1">
-          <Button type="button" variant="ghost" size="sm" onClick={onCancel} data-testid="button-cancel-new-li">
-            <X className="h-3.5 w-3.5 mr-1" />Cancel
-          </Button>
-          <Button type="submit" size="sm" disabled={mutation.isPending} data-testid="button-save-new-li">
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            {mutation.isPending ? "Adding…" : "Add Line Item"}
-          </Button>
-        </div>
-      </form>
-    </Form>
-  );
-}
-
 // ── NewChangeOrderForm ─────────────────────────────────────────────────────────
 
 function NewChangeOrderForm({
@@ -965,7 +812,6 @@ export default function InvoiceDetail() {
 
   const [editMode, setEditMode] = useState(false);
   const [editingLineItemId, setEditingLineItemId] = useState<string | null>(null);
-  const [showNewLiForm, setShowNewLiForm] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
@@ -1229,7 +1075,7 @@ export default function InvoiceDetail() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { setEditMode(false); setEditingLineItemId(null); setShowNewLiForm(false); }}
+                onClick={() => { setEditMode(false); setEditingLineItemId(null); }}
                 data-testid="button-cancel-edit"
               >
                 <X className="h-4 w-4 mr-1" />Cancel editing
@@ -1433,24 +1279,10 @@ export default function InvoiceDetail() {
         {editMode && (
           <Card className="mb-4 print:hidden border-blue-200 dark:border-blue-800">
             <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Pencil className="h-4 w-4 text-blue-600" />
-                  Line Items
-                </CardTitle>
-                {!showNewLiForm && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-400"
-                    onClick={() => { setShowNewLiForm(true); setEditingLineItemId(null); }}
-                    data-testid="button-add-line-item"
-                  >
-                    <Plus className="h-3.5 w-3.5 mr-1" />
-                    Add line item
-                  </Button>
-                )}
-              </div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Pencil className="h-4 w-4 text-blue-600" />
+                Line Items
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {(invoice.lineItems?.length ?? 0) > 0 ? (
@@ -1498,7 +1330,7 @@ export default function InvoiceDetail() {
                                   variant="ghost"
                                   size="icon"
                                   className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                                  onClick={() => { setEditingLineItemId(item.id); setShowNewLiForm(false); }}
+                                  onClick={() => setEditingLineItemId(item.id)}
                                   data-testid={`button-edit-li-${item.id}`}
                                   title="Edit"
                                 >
@@ -1524,20 +1356,14 @@ export default function InvoiceDetail() {
                   </Table>
                 </div>
               ) : (
-                !showNewLiForm && (
-                  <p className="text-sm text-muted-foreground text-center py-4">
-                    No line items yet. Click "Add line item" to add one.
-                  </p>
-                )
+                <p className="text-sm text-muted-foreground text-center py-2">No line items on this invoice.</p>
               )}
-
-              {showNewLiForm && (
-                <NewLineItemInvoiceForm
-                  invoiceId={invoice.id}
-                  onSuccess={() => setShowNewLiForm(false)}
-                  onCancel={() => setShowNewLiForm(false)}
-                />
-              )}
+              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>
+                  Need to add new work? Use the <strong>Change Orders</strong> section below — any addition to an existing invoice is a change order.
+                </span>
+              </div>
             </CardContent>
           </Card>
         )}
