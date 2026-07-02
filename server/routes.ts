@@ -15,7 +15,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { 
-  clients, jobs, invoices, lineItems, payments, employees, timeEntries, users,
+  clients, jobs, invoices, lineItems, payments, employees, timeEntries, users, changeOrders,
   insertClientSchema, insertJobSchema, insertLineItemSchema, insertInvoiceSchema,
   insertPaymentSchema, insertEmployeeSchema, insertTimeEntrySchema, insertSettingsSchema,
   insertPayrollRecordSchema, insertChangeOrderSchema
@@ -45,6 +45,35 @@ function parseNumeric(value: unknown): number {
 
 function badRequest(res: Response, err: z.ZodError) {
   return res.status(400).json({ error: "Invalid request data", details: err.flatten().fieldErrors });
+}
+
+async function recalcInvoiceTotals(invoiceId: string): Promise<void> {
+  const invoice = await storage.getInvoice(invoiceId);
+  if (!invoice) return;
+  const allLineItems = await db.select().from(lineItems).where(eq(lineItems.invoiceId, invoiceId));
+  const lineItemsSubtotal = allLineItems.reduce((s, i) => s + Number(i.amount), 0);
+  const approvedCOs = await db.select().from(changeOrders)
+    .where(eq(changeOrders.invoiceId, invoiceId));
+  const coSubtotal = approvedCOs
+    .filter((co) => co.status === "approved")
+    .reduce((s, co) => s + Number(co.amount), 0);
+  const newSubtotal = lineItemsSubtotal + coSubtotal;
+  const taxRate = Number(invoice.taxRate) || 0;
+  const newTax = newSubtotal * (taxRate / 100);
+  const newTotal = newSubtotal + newTax;
+  const alreadyPaid = Number(invoice.amountPaid) || 0;
+  const newBalance = newTotal - alreadyPaid;
+  const currentStatus = invoice.status;
+  let newStatus = currentStatus;
+  if (newBalance <= 0 && currentStatus !== "paid") newStatus = "paid";
+  else if (newBalance > 0 && currentStatus === "paid") newStatus = "partial";
+  await storage.updateInvoice(invoiceId, {
+    subtotal: String(newSubtotal),
+    taxAmount: String(newTax),
+    total: String(newTotal),
+    balance: String(Math.max(0, newBalance)),
+    status: newStatus,
+  });
 }
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -790,12 +819,13 @@ export async function registerRoutes(
 
   app.patch("/api/line-items/:id", async (req, res) => {
     try {
+      const existing = await storage.getLineItem(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Line item not found" });
       const parsed = insertLineItemSchema.partial().safeParse(req.body);
       if (!parsed.success) return badRequest(res, parsed.error);
       const item = await storage.updateLineItem(req.params.id, parsed.data);
-      if (!item) {
-        return res.status(404).json({ error: "Line item not found" });
-      }
+      if (!item) return res.status(404).json({ error: "Line item not found" });
+      if (existing.invoiceId) await recalcInvoiceTotals(existing.invoiceId);
       res.json(item);
     } catch (error) {
       console.error("Update line item error:", error);
@@ -805,7 +835,10 @@ export async function registerRoutes(
 
   app.delete("/api/line-items/:id", async (req, res) => {
     try {
+      const existing = await storage.getLineItem(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Line item not found" });
       await storage.deleteLineItem(req.params.id);
+      if (existing.invoiceId) await recalcInvoiceTotals(existing.invoiceId);
       res.status(204).send();
     } catch (error) {
       console.error("Delete line item error:", error);
@@ -931,6 +964,7 @@ export async function registerRoutes(
         .from(lineItems)
         .where(eq(lineItems.invoiceId, invoice.id));
       const invoicePayments = await storage.getPaymentsByInvoice(invoice.id);
+      const invoiceChangeOrders = await storage.getChangeOrdersByInvoice(invoice.id);
       
       res.json({
         ...invoice,
@@ -938,6 +972,7 @@ export async function registerRoutes(
         job,
         lineItems: invoiceLineItems,
         payments: invoicePayments,
+        changeOrders: invoiceChangeOrders,
       });
     } catch (error) {
       console.error("Get invoice error:", error);
@@ -1113,10 +1148,14 @@ export async function registerRoutes(
     try {
       const parsed = insertInvoiceSchema.partial().safeParse(req.body);
       if (!parsed.success) return badRequest(res, parsed.error);
-      const invoice = await storage.updateInvoice(req.params.id, parsed.data);
-      if (!invoice) {
-        return res.status(404).json({ error: "Invoice not found" });
+      const existing = await storage.getInvoice(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Invoice not found" });
+      if (existing.status === "paid") {
+        return res.status(400).json({ error: "Paid invoices cannot be edited" });
       }
+      await storage.updateInvoice(req.params.id, parsed.data);
+      if ("taxRate" in parsed.data) await recalcInvoiceTotals(req.params.id);
+      const invoice = await storage.getInvoice(req.params.id);
       res.json(invoice);
     } catch (error) {
       console.error("Update invoice error:", error);
@@ -1275,7 +1314,10 @@ export async function registerRoutes(
     try {
       const order = await storage.getChangeOrder(req.params.id);
       if (!order) return res.status(404).json({ error: "Change order not found" });
-      const updated = await storage.updateChangeOrder(req.params.id, req.body);
+      const parsed = insertChangeOrderSchema.partial().safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const updated = await storage.updateChangeOrder(req.params.id, parsed.data);
+      await recalcInvoiceTotals(order.invoiceId);
       res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update change order" });
@@ -1287,6 +1329,7 @@ export async function registerRoutes(
       const order = await storage.getChangeOrder(req.params.id);
       if (!order) return res.status(404).json({ error: "Change order not found" });
       await storage.deleteChangeOrder(req.params.id);
+      await recalcInvoiceTotals(order.invoiceId);
       res.status(204).send();
     } catch (error) {
       res.status(500).json({ error: "Failed to delete change order" });
