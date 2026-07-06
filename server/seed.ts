@@ -112,7 +112,7 @@ export async function seedDemoData() {
   `);
 
   await db.execute(sql`
-    INSERT INTO employees (id, name, email, phone, hourly_rate, position, hire_date, status) VALUES
+    INSERT INTO employees (id, name, email, phone, day_rate, position, hire_date, status) VALUES
       ('e1','Jamie Holbrook', 'jamie@jobsoxo.local',  '07700 111222','36.00','Senior Decorator',   '2021-03-15','active'),
       ('e2','Cora Ndiaye',    'cora@jobsoxo.local',   '07700 333444','34.00','Decorator',          '2022-08-01','active'),
       ('e3','Reuben Marsh',   'reuben@jobsoxo.local', '07700 555666','32.00','Decorator',          '2023-01-10','active'),

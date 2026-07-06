@@ -1385,7 +1385,7 @@ export async function registerRoutes(
             (sum, entry) => sum + Number(entry.hoursWorked),
             0
           );
-          const totalPay = hoursThisPeriod * Number(employee.hourlyRate);
+          const totalPay = hoursThisPeriod * Number(employee.dayRate);
           
           const deductions = await storage.getDeductionsByEmployee(employee.id);
           return { ...employee, hoursThisPeriod, totalPay, deductions, deductionsCount: deductions.length };
@@ -1686,7 +1686,7 @@ export async function registerRoutes(
   }
 
   // Compute per-period OT breakdown by ISO work week (Mon–Sun)
-  function computeOvertimeBreakdown(entries: { date: string | Date; hoursWorked: string | number }[], hourlyRate: number) {
+  function computeOvertimeBreakdown(entries: { date: string | Date; hoursWorked: string | number }[], dayRate: number) {
     const byWeek = new Map<string, number>();
     for (const e of entries) {
       const d = new Date(e.date);
@@ -1702,8 +1702,8 @@ export async function registerRoutes(
       regularHours += Math.min(wkHours, 40);
       overtimeHours += Math.max(0, wkHours - 40);
     }
-    const regularPay = regularHours * hourlyRate;
-    const overtimePay = overtimeHours * hourlyRate * 1.5;
+    const regularPay = regularHours * dayRate;
+    const overtimePay = overtimeHours * dayRate * 1.5;
     const grossPay = regularPay + overtimePay;
     return { regularHours, overtimeHours, regularPay, overtimePay, grossPay };
   }
@@ -1745,7 +1745,7 @@ export async function registerRoutes(
         activeEmployees
           .map(async (emp) => {
             const empEntries = periodEntries.filter((e) => e.employeeId === emp.id);
-            const hourlyRate = Number(emp.hourlyRate);
+            const dayRate = Number(emp.dayRate);
             const isSalary = emp.payType === "salary";
             const is1099 = emp.employmentType === "1099";
 
@@ -1757,7 +1757,7 @@ export async function registerRoutes(
               totalHours = empEntries.reduce((s, e) => s + Number(e.hoursWorked), 0);
               regularHours = totalHours; overtimeHours = 0; regularPay = grossPay; overtimePay = 0;
             } else {
-              const ot = computeOvertimeBreakdown(empEntries as any, hourlyRate);
+              const ot = computeOvertimeBreakdown(empEntries as any, dayRate);
               ({ regularHours, overtimeHours, regularPay, overtimePay, grossPay } = ot);
               totalHours = regularHours + overtimeHours;
             }
@@ -1798,7 +1798,7 @@ export async function registerRoutes(
               totalHours: String(totalHours),
               regularHours: String(regularHours),
               overtimeHours: String(overtimeHours),
-              hourlyRate: String(hourlyRate),
+              dayRate: String(dayRate),
               regularPay: String(regularPay),
               overtimePay: String(overtimePay),
               grossPay: String(grossPay),

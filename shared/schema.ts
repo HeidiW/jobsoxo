@@ -302,7 +302,7 @@ export const employees = pgTable("employees", {
   name: text("name").notNull(),
   email: text("email"),
   phone: text("phone"),
-  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }).notNull(),
+  dayRate: decimal("day_rate", { precision: 10, scale: 2 }).notNull(),
   position: text("position"),
   hireDate: timestamp("hire_date"),
   status: text("status").notNull().default("active"), // active, inactive
@@ -327,7 +327,7 @@ export const insertEmployeeSchema = createInsertSchema(employees)
   .omit({ id: true, createdAt: true })
   .extend({
     hireDate: z.coerce.date().optional().nullable(),
-    hourlyRate: positiveNumericString("Hourly rate"),
+    dayRate: positiveNumericString("Day rate"),
     employmentType: z.enum(["w2", "1099"]).optional(),
     payType: z.enum(["hourly", "salary"]).optional(),
     annualSalary: z.coerce.string().optional().nullable(),
@@ -435,7 +435,7 @@ export const payrollRecords = pgTable("payroll_records", {
   totalHours: decimal("total_hours", { precision: 10, scale: 2 }).notNull(),
   regularHours: decimal("regular_hours", { precision: 10, scale: 2 }).default("0"),
   overtimeHours: decimal("overtime_hours", { precision: 10, scale: 2 }).default("0"),
-  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }).notNull(),
+  dayRate: decimal("day_rate", { precision: 10, scale: 2 }).notNull(),
   regularPay: decimal("regular_pay", { precision: 10, scale: 2 }).default("0"),
   overtimePay: decimal("overtime_pay", { precision: 10, scale: 2 }).default("0"),
   grossPay: decimal("gross_pay", { precision: 10, scale: 2 }).notNull(),
@@ -461,7 +461,7 @@ export const insertPayrollRecordSchema = createInsertSchema(payrollRecords)
     totalHours: positiveNumericString("Total hours"),
     regularHours: z.coerce.string().optional(),
     overtimeHours: z.coerce.string().optional(),
-    hourlyRate: positiveNumericString("Hourly rate"),
+    dayRate: positiveNumericString("Day rate"),
     regularPay: z.coerce.string().optional(),
     overtimePay: z.coerce.string().optional(),
     grossPay: positiveNumericString("Gross pay"),

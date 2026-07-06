@@ -39,7 +39,7 @@ interface TimeEntryWithRelations extends TimeEntry { employee: Employee; job?: J
 interface PayrollRecordWithEmployee {
   id: string; employeeId: string; status: string; createdAt: string | Date;
   periodStart: string | Date; periodEnd: string | Date;
-  totalHours: string; hourlyRate: string; grossPay: string; deductions: string; netPay: string;
+  totalHours: string; dayRate: string; grossPay: string; deductions: string; netPay: string;
   regularHours: string | null; overtimeHours: string | null;
   regularPay: string | null; overtimePay: string | null;
   taxWithheld: string | null; deductionsBreakdown: { label: string; amount: number; category: string }[] | null;
@@ -109,7 +109,7 @@ const employeeFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   email: z.string().email("Invalid email").optional().or(z.literal("")),
   phone: z.string().optional(),
-  hourlyRate: z.string().min(1, "Rate is required")
+  dayRate: z.string().min(1, "Rate is required")
     .refine(v => !isNaN(parseFloat(v)) && parseFloat(v) > 0, "Must be a positive number"),
   annualSalary: z.string().optional(),
   position: z.string().optional(),
@@ -314,7 +314,7 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
       name: employee?.name || "",
       email: employee?.email || "",
       phone: employee?.phone || "",
-      hourlyRate: employee?.hourlyRate?.toString() || "",
+      dayRate: employee?.dayRate?.toString() || "",
       annualSalary: (employee as any)?.annualSalary?.toString() || "",
       position: employee?.position || "",
       status: (employee?.status as EmployeeFormValues["status"]) || "active",
@@ -408,9 +408,9 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
             )} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "12px" }}>
-            <FormField control={form.control} name="hourlyRate" render={({ field }) => (
+            <FormField control={form.control} name="dayRate" render={({ field }) => (
               <FormItem>
-                <label style={lbl}>{watchPayType === "salary" ? "Hourly (for time tracking)" : "Hourly rate ($) *"}</label>
+                <label style={lbl}>{watchPayType === "salary" ? "Daily (for time tracking)" : "Day rate ($) *"}</label>
                 <FormControl><input {...field} type="text" inputMode="decimal" style={inp} placeholder="38.00" data-testid="input-employee-rate" /></FormControl>
                 <FormMessage />
               </FormItem>
@@ -733,7 +733,7 @@ function PayStubDialog({ record, onClose }: { record: PayrollRecordWithEmployee;
       <div style={{ fontSize: "10.5px", fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--faint)", marginBottom: "6px" }}>Earnings</div>
       <div style={{ background: "var(--track)", borderRadius: "8px", overflow: "hidden", marginBottom: "12px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", fontSize: "13px" }}>
-          <span>Regular pay ({regHrs.toFixed(1)} hrs × ${Number(record.hourlyRate).toFixed(2)})</span>
+          <span>Regular pay ({regHrs.toFixed(1)} hrs × ${Number(record.dayRate).toFixed(2)}/day)</span>
           <span className="font-mono" style={{ fontWeight: 600 }}>{fmtFull(regPay)}</span>
         </div>
         {otHrs > 0 && (
@@ -1114,7 +1114,7 @@ export default function Payroll() {
                       </div>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.employee?.name ?? "Unknown"}</div>
-                        <div style={{ fontSize: "11px", color: "var(--faint)", whiteSpace: "nowrap" }}>${Number(r.hourlyRate ?? 0).toFixed(0)}/hr</div>
+                        <div style={{ fontSize: "11px", color: "var(--faint)", whiteSpace: "nowrap" }}>${Number(r.dayRate ?? 0).toFixed(0)}/day</div>
                       </div>
                     </div>
                     {/* Type */}
@@ -1206,7 +1206,7 @@ export default function Payroll() {
                 <span style={{ flex: 1, minWidth: 0 }}>Employee</span>
                 <span style={{ width: "80px", flexShrink: 0 }}>Type</span>
                 <span style={{ width: "100px", flexShrink: 0 }}>Position</span>
-                <span style={{ width: "100px", flexShrink: 0, textAlign: "right" }}>Rate</span>
+                <span style={{ width: "100px", flexShrink: 0, textAlign: "right" }}>Day rate</span>
                 <span style={{ width: "88px", flexShrink: 0, textAlign: "right" }}>Hrs (month)</span>
                 <span style={{ width: "100px", flexShrink: 0, textAlign: "right" }}>Month pay</span>
                 <span style={{ width: "80px", flexShrink: 0, textAlign: "center" }}>Deductions</span>
@@ -1252,7 +1252,7 @@ export default function Payroll() {
                       <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 7px", borderRadius: "5px", background: is1099 ? "var(--b-amber-bg)" : "var(--b-blue-bg, #eff6ff)", color: is1099 ? "var(--b-amber-fg)" : "var(--b-blue-fg, #1d4ed8)" }}>{is1099 ? "1099" : "W-2"}</span>
                     </span>
                     <span style={{ width: "100px", flexShrink: 0, fontSize: "12.5px", color: "var(--muted)" }}>{emp.position || "—"}</span>
-                    <span className="font-mono" style={{ width: "100px", flexShrink: 0, textAlign: "right", fontSize: "12.5px" }}>{fmtFull(emp.hourlyRate)}/hr</span>
+                    <span className="font-mono" style={{ width: "100px", flexShrink: 0, textAlign: "right", fontSize: "12.5px" }}>{fmtFull(emp.dayRate)}/day</span>
                     <span className="font-mono" style={{ width: "88px", flexShrink: 0, textAlign: "right", fontSize: "12.5px", color: "var(--muted)" }}>{(emp.hoursThisPeriod || 0).toFixed(1)} hrs</span>
                     <span className="font-mono" style={{ width: "100px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 600 }}>{fmtFull(emp.totalPay || 0)}</span>
                     <span style={{ width: "80px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
@@ -1348,7 +1348,7 @@ export default function Payroll() {
                   <span style={{ width: "160px", flexShrink: 0, fontSize: "13px", fontWeight: 500 }}>{entry.employee?.name ?? "—"}</span>
                   <span style={{ flex: 1, minWidth: 0, fontSize: "12.5px", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(entry as any).job?.title ?? "—"}</span>
                   <span className="font-mono" style={{ width: "80px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 600 }}>{Number(entry.hoursWorked).toFixed(1)} hrs</span>
-                  <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "12.5px" }}>{fmtFull(Number(entry.hoursWorked) * Number(entry.employee?.hourlyRate ?? 0))}</span>
+                  <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "12.5px" }}>{fmtFull(Number(entry.hoursWorked) * Number(entry.employee?.dayRate ?? 0))}</span>
                   <span style={{ width: "180px", flexShrink: 0, fontSize: "12px", color: "var(--faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.description || "—"}</span>
                   <span style={{ width: "28px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
                     <button onClick={() => setDeleteTimeEntryId(entry.id)} style={{ border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "2px", display: "flex" }} data-testid={`button-delete-time-${entry.id}`}>

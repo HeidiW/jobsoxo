@@ -148,24 +148,24 @@ describe("POST /api/employees — validation", () => {
   it("returns 400 when name is missing", async () => {
     const res = await request(app)
       .post("/api/employees")
-      .send({ hourlyRate: "25.00" })
+      .send({ dayRate: "25.00" })
       .expect(400);
 
     expect(res.body.error).toBe("Invalid request data");
     expect(res.body.details).toHaveProperty("name");
   });
 
-  it("returns 400 when hourlyRate is missing", async () => {
+  it("returns 400 when dayRate is missing", async () => {
     const res = await request(app)
       .post("/api/employees")
       .send({ name: "Jane Doe" })
       .expect(400);
 
     expect(res.body.error).toBe("Invalid request data");
-    expect(res.body.details).toHaveProperty("hourlyRate");
+    expect(res.body.details).toHaveProperty("dayRate");
   });
 
-  it("returns 400 when both name and hourlyRate are missing", async () => {
+  it("returns 400 when both name and dayRate are missing", async () => {
     const res = await request(app)
       .post("/api/employees")
       .send({})
@@ -173,7 +173,7 @@ describe("POST /api/employees — validation", () => {
 
     expect(res.body.error).toBe("Invalid request data");
     expect(res.body.details).toHaveProperty("name");
-    expect(res.body.details).toHaveProperty("hourlyRate");
+    expect(res.body.details).toHaveProperty("dayRate");
   });
 });
 
@@ -326,14 +326,14 @@ describe("PATCH /api/payroll-records/:id — blank numeric fields", () => {
     expect(res.body.details).toHaveProperty("totalHours");
   });
 
-  it("returns 400 when hourlyRate is blank", async () => {
+  it("returns 400 when dayRate is blank", async () => {
     const res = await request(app)
       .patch("/api/payroll-records/nonexistent-id")
-      .send({ hourlyRate: "" })
+      .send({ dayRate: "" })
       .expect(400);
 
     expect(res.body.error).toBe("Invalid request data");
-    expect(res.body.details).toHaveProperty("hourlyRate");
+    expect(res.body.details).toHaveProperty("dayRate");
   });
 
   it("returns 400 when grossPay is blank", async () => {
@@ -513,25 +513,25 @@ describe("POST /api/invoices/:id/payments — negative and non-numeric amount", 
   });
 });
 
-describe("POST /api/employees — non-numeric and negative hourlyRate", () => {
-  it("returns 400 when hourlyRate is a non-numeric string", async () => {
+describe("POST /api/employees — non-numeric and negative dayRate", () => {
+  it("returns 400 when dayRate is a non-numeric string", async () => {
     const res = await request(app)
       .post("/api/employees")
-      .send({ name: "Jane Doe", hourlyRate: "abc" })
+      .send({ name: "Jane Doe", dayRate: "abc" })
       .expect(400);
 
     expect(res.body.error).toBe("Invalid request data");
-    expect(res.body.details).toHaveProperty("hourlyRate");
+    expect(res.body.details).toHaveProperty("dayRate");
   });
 
-  it("returns 400 when hourlyRate is negative", async () => {
+  it("returns 400 when dayRate is negative", async () => {
     const res = await request(app)
       .post("/api/employees")
-      .send({ name: "Jane Doe", hourlyRate: "-25" })
+      .send({ name: "Jane Doe", dayRate: "-25" })
       .expect(400);
 
     expect(res.body.error).toBe("Invalid request data");
-    expect(res.body.details).toHaveProperty("hourlyRate");
+    expect(res.body.details).toHaveProperty("dayRate");
   });
 });
 
@@ -546,14 +546,14 @@ describe("PATCH /api/payroll-records/:id — non-numeric and negative numeric fi
     expect(res.body.details).toHaveProperty("totalHours");
   });
 
-  it("returns 400 when hourlyRate is a non-numeric string", async () => {
+  it("returns 400 when dayRate is a non-numeric string", async () => {
     const res = await request(app)
       .patch("/api/payroll-records/nonexistent-id")
-      .send({ hourlyRate: "abc" })
+      .send({ dayRate: "abc" })
       .expect(400);
 
     expect(res.body.error).toBe("Invalid request data");
-    expect(res.body.details).toHaveProperty("hourlyRate");
+    expect(res.body.details).toHaveProperty("dayRate");
   });
 
   it("returns 400 when grossPay is negative", async () => {
@@ -576,14 +576,14 @@ describe("PATCH /api/payroll-records/:id — non-numeric and negative numeric fi
     expect(res.body.details).toHaveProperty("netPay");
   });
 
-  it("returns 400 when hourlyRate is negative", async () => {
+  it("returns 400 when dayRate is negative", async () => {
     const res = await request(app)
       .patch("/api/payroll-records/nonexistent-id")
-      .send({ hourlyRate: "-15" })
+      .send({ dayRate: "-15" })
       .expect(400);
 
     expect(res.body.error).toBe("Invalid request data");
-    expect(res.body.details).toHaveProperty("hourlyRate");
+    expect(res.body.details).toHaveProperty("dayRate");
   });
 });
 
@@ -679,7 +679,7 @@ describe("POST /api/payroll-records/run — overlapping period validation", () =
   it("returns 400 when the period overlaps an already-processed payroll period", async () => {
     const empRes = await request(app)
       .post("/api/employees")
-      .send({ name: "Overlap Test Employee", hourlyRate: "20", status: "active" })
+      .send({ name: "Overlap Test Employee", dayRate: "20", status: "active" })
       .expect(201);
 
     const employeeId = empRes.body.id;
@@ -689,7 +689,7 @@ describe("POST /api/payroll-records/run — overlapping period validation", () =
       periodStart: new Date("2001-05-01"),
       periodEnd: new Date("2001-05-31"),
       totalHours: "80",
-      hourlyRate: "20",
+      dayRate: "20",
       grossPay: "1600",
       deductions: "0",
       netPay: "1600",
@@ -749,7 +749,7 @@ describe("POST /api/time-entries — validation", () => {
   it("returns 400 when adding an entry would push the daily total past 24 hours", async () => {
     const empRes = await request(app)
       .post("/api/employees")
-      .send({ name: "Daily Limit Test Employee", hourlyRate: "15", status: "active" })
+      .send({ name: "Daily Limit Test Employee", dayRate: "15", status: "active" })
       .expect(201);
     const employeeId = empRes.body.id;
 
