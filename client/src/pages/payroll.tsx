@@ -106,7 +106,9 @@ const lbl: React.CSSProperties = {
 
 // ── Schemas ───────────────────────────────────────────────────────────────────
 const employeeFormSchema = z.object({
-  name: z.string().min(1, "Name is required"),
+  firstName: z.string().min(1, "First name is required"),
+  middleName: z.string().optional(),
+  lastName: z.string().min(1, "Last name is required"),
   email: z.string().email("Invalid email").optional().or(z.literal("")),
   phone: z.string().optional(),
   dayRate: z.string().min(1, "Rate is required")
@@ -115,7 +117,7 @@ const employeeFormSchema = z.object({
   position: z.string().optional(),
   status: z.enum(["active", "inactive"]),
   employmentType: z.enum(["w2", "1099"]),
-  payType: z.enum(["hourly", "salary"]),
+  payType: z.enum(["hourly", "salary", "day"]),
   filingStatus: z.enum(["single", "married", "head_of_household"]),
   taxAllowances: z.string().optional(),
   stateCode: z.string().optional(),
@@ -308,10 +310,18 @@ function DeductionsSection({ employeeId }: { employeeId: string }) {
 function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onClose: () => void }) {
   const { toast } = useToast();
   const isEdit = !!employee;
+  // Split stored full name into parts for editing
+  const nameParts = employee?.name?.trim().split(/\s+/) ?? [];
+  const defaultFirst = nameParts[0] ?? "";
+  const defaultLast = nameParts.length > 1 ? nameParts[nameParts.length - 1] : "";
+  const defaultMiddle = nameParts.length > 2 ? nameParts.slice(1, -1).join(" ") : "";
+
   const form = useForm<EmployeeFormValues>({
     resolver: zodResolver(employeeFormSchema),
     defaultValues: {
-      name: employee?.name || "",
+      firstName: defaultFirst,
+      middleName: defaultMiddle,
+      lastName: defaultLast,
       email: employee?.email || "",
       phone: employee?.phone || "",
       dayRate: employee?.dayRate?.toString() || "",
@@ -322,7 +332,7 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
       payType: ((employee as any)?.payType as EmployeeFormValues["payType"]) || "hourly",
       filingStatus: ((employee as any)?.filingStatus as EmployeeFormValues["filingStatus"]) || "single",
       taxAllowances: (employee as any)?.taxAllowances?.toString() || "0",
-      stateCode: (employee as any)?.stateCode || "CA",
+      stateCode: (employee as any)?.stateCode || "NY",
     },
   });
   const watchPayType = form.watch("payType");
@@ -330,8 +340,10 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
 
   const mutation = useMutation({
     mutationFn: async (data: EmployeeFormValues) => {
+      const fullName = [data.firstName, data.middleName, data.lastName].filter(Boolean).join(" ");
       const payload = {
         ...data,
+        name: fullName,
         taxAllowances: parseInt(data.taxAllowances || "0"),
         annualSalary: data.annualSalary ? String(parseFloat(data.annualSalary)) : null,
       };
@@ -355,9 +367,17 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
     <Form {...form}>
       <form onSubmit={form.handleSubmit(d => mutation.mutate(d))} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
         {/* Basic info */}
-        <FormField control={form.control} name="name" render={({ field }) => (
-          <FormItem><label style={lbl}>Name *</label><FormControl><input {...field} style={inp} placeholder="Full name" data-testid="input-employee-name" /></FormControl><FormMessage /></FormItem>
-        )} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+          <FormField control={form.control} name="firstName" render={({ field }) => (
+            <FormItem><label style={lbl}>First name *</label><FormControl><input {...field} style={inp} placeholder="Jane" data-testid="input-employee-first-name" /></FormControl><FormMessage /></FormItem>
+          )} />
+          <FormField control={form.control} name="middleName" render={({ field }) => (
+            <FormItem><label style={lbl}>Middle name</label><FormControl><input {...field} style={inp} placeholder="(optional)" data-testid="input-employee-middle-name" /></FormControl><FormMessage /></FormItem>
+          )} />
+          <FormField control={form.control} name="lastName" render={({ field }) => (
+            <FormItem><label style={lbl}>Last name *</label><FormControl><input {...field} style={inp} placeholder="Smith" data-testid="input-employee-last-name" /></FormControl><FormMessage /></FormItem>
+          )} />
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
           <FormField control={form.control} name="email" render={({ field }) => (
             <FormItem><label style={lbl}>Email</label><FormControl><input {...field} type="email" style={inp} placeholder="email@example.com" data-testid="input-employee-email" /></FormControl><FormMessage /></FormItem>
@@ -402,6 +422,7 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
                   <SelectContent>
                     <SelectItem value="hourly">Hourly</SelectItem>
                     <SelectItem value="salary">Salary</SelectItem>
+                    <SelectItem value="day">Day rate</SelectItem>
                   </SelectContent>
                 </Select>
               <FormMessage /></FormItem>

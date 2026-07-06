@@ -308,7 +308,7 @@ export const employees = pgTable("employees", {
   status: text("status").notNull().default("active"), // active, inactive
   // Payroll / tax fields
   employmentType: text("employment_type").default("w2"), // w2, 1099
-  payType: text("pay_type").default("hourly"), // hourly, salary
+  payType: text("pay_type").default("hourly"), // hourly, salary, day
   annualSalary: decimal("annual_salary", { precision: 10, scale: 2 }),
   filingStatus: text("filing_status").default("single"), // single, married, head_of_household
   taxAllowances: integer("tax_allowances").default(0),
@@ -329,7 +329,7 @@ export const insertEmployeeSchema = createInsertSchema(employees)
     hireDate: z.coerce.date().optional().nullable(),
     dayRate: positiveNumericString("Day rate"),
     employmentType: z.enum(["w2", "1099"]).optional(),
-    payType: z.enum(["hourly", "salary"]).optional(),
+    payType: z.enum(["hourly", "salary", "day"]).optional(),
     annualSalary: z.coerce.string().optional().nullable(),
     filingStatus: z.enum(["single", "married", "head_of_household"]).optional(),
     taxAllowances: z.coerce.number().int().min(0).max(20).optional(),
