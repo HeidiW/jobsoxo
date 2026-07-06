@@ -313,6 +313,7 @@ export const employees = pgTable("employees", {
   filingStatus: text("filing_status").default("single"), // single, married, head_of_household
   taxAllowances: integer("tax_allowances").default(0),
   stateCode: text("state_code").default("CA"),
+  taxpayerIdNumber: text("taxpayer_id_number"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

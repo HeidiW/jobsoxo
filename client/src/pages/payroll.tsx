@@ -121,6 +121,7 @@ const employeeFormSchema = z.object({
   filingStatus: z.enum(["single", "married", "head_of_household"]),
   taxAllowances: z.string().optional(),
   stateCode: z.string().optional(),
+  taxpayerIdNumber: z.string().optional(),
 });
 const timeEntryFormSchema = z.object({
   employeeId: z.string().min(1, "Employee is required"),
@@ -333,6 +334,7 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
       filingStatus: ((employee as any)?.filingStatus as EmployeeFormValues["filingStatus"]) || "single",
       taxAllowances: (employee as any)?.taxAllowances?.toString() || "0",
       stateCode: (employee as any)?.stateCode || "NY",
+      taxpayerIdNumber: (employee as any)?.taxpayerIdNumber || "",
     },
   });
   const watchPayType = form.watch("payType");
@@ -378,6 +380,9 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
             <FormItem><label style={lbl}>Last name *</label><FormControl><input {...field} style={inp} placeholder="Smith" data-testid="input-employee-last-name" /></FormControl><FormMessage /></FormItem>
           )} />
         </div>
+        <FormField control={form.control} name="taxpayerIdNumber" render={({ field }) => (
+          <FormItem><label style={lbl}>Taxpayer ID / SSN</label><FormControl><input {...field} style={inp} placeholder="XXX-XX-XXXX" data-testid="input-employee-taxpayer-id" /></FormControl><FormMessage /></FormItem>
+        )} />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
           <FormField control={form.control} name="email" render={({ field }) => (
             <FormItem><label style={lbl}>Email</label><FormControl><input {...field} type="email" style={inp} placeholder="email@example.com" data-testid="input-employee-email" /></FormControl><FormMessage /></FormItem>
