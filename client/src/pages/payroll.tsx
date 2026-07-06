@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/select";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -25,14 +24,28 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
-import { Plus, Play, AlertTriangle, PhoneOff, Edit, Trash2, CheckCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Play, AlertTriangle, PhoneOff, Edit, Trash2, CheckCircle, ChevronLeft, ChevronRight, FileText, X, Settings2 } from "lucide-react";
 import { format, startOfMonth, endOfMonth, subMonths } from "date-fns";
 import type { Employee, TimeEntry, PayrollRecord, Job } from "@shared/schema";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+interface EmployeeDeduction {
+  id: string; employeeId: string; label: string; deductionType: string;
+  amount: string; category: string; active: boolean; createdAt: string;
+}
+interface PayrollSettings { id: string; payFrequency: string; updatedAt: string; }
 interface EmployeeWithStats extends Employee { hoursThisPeriod: number; totalPay: number; }
 interface TimeEntryWithRelations extends TimeEntry { employee: Employee; job?: Job; }
-interface PayrollRecordWithEmployee extends PayrollRecord { employee: Employee; }
+interface PayrollRecordWithEmployee {
+  id: string; employeeId: string; status: string; createdAt: string | Date;
+  periodStart: string | Date; periodEnd: string | Date;
+  totalHours: string; hourlyRate: string; grossPay: string; deductions: string; netPay: string;
+  regularHours: string | null; overtimeHours: string | null;
+  regularPay: string | null; overtimePay: string | null;
+  taxWithheld: string | null; deductionsBreakdown: { label: string; amount: number; category: string }[] | null;
+  paidDate?: string | Date | null;
+  employee: Employee;
+}
 
 // ── Design helpers ─────────────────────────────────────────────────────────────
 const AV_BG = ["--av1","--av2","--av3","--av4","--av5","--av6"];
@@ -45,6 +58,19 @@ const STATUS_BADGE: Record<string, { bg: string; fg: string; label: string }> = 
   pending:  { bg: "var(--b-gray-bg)",  fg: "var(--b-gray-fg)",  label: "Pending" },
 };
 
+const DEDUCTION_CATEGORIES: { value: string; label: string }[] = [
+  { value: "health",      label: "Health Insurance" },
+  { value: "dental",      label: "Dental" },
+  { value: "vision",      label: "Vision" },
+  { value: "retirement",  label: "Retirement (401k)" },
+  { value: "garnishment", label: "Wage Garnishment" },
+  { value: "other",       label: "Other" },
+];
+
+const PAY_FREQUENCY_LABELS: Record<string,string> = {
+  weekly: "Weekly", biweekly: "Bi-weekly", semimonthly: "Semi-monthly", monthly: "Monthly",
+};
+
 function fmt(n: number | string | null | undefined) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(Number(n ?? 0));
 }
@@ -54,12 +80,17 @@ function fmtFull(n: number | string | null | undefined) {
 function initials(name: string) {
   return name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
 }
-function periodLabel(start: string, end: string) {
+function toDateStr(d: string | Date | null | undefined): string {
+  if (!d) return "";
+  if (d instanceof Date) return d.toISOString().slice(0, 10);
+  return String(d).slice(0, 10);
+}
+function periodLabel(start: string | Date, end: string | Date) {
   try {
-    const s = new Date(start + "T12:00:00");
-    const e = new Date(end + "T12:00:00");
+    const s = new Date(toDateStr(start) + "T12:00:00");
+    const e = new Date(toDateStr(end) + "T12:00:00");
     return format(s, "MMM d") + " – " + format(e, "MMM d, yyyy");
-  } catch { return `${start} – ${end}`; }
+  } catch { return `${toDateStr(start)} – ${toDateStr(end)}`; }
 }
 
 // ── Shared input style ────────────────────────────────────────────────────────
@@ -78,10 +109,16 @@ const employeeFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   email: z.string().email("Invalid email").optional().or(z.literal("")),
   phone: z.string().optional(),
-  hourlyRate: z.string().min(1, "Hourly rate is required")
+  hourlyRate: z.string().min(1, "Rate is required")
     .refine(v => !isNaN(parseFloat(v)) && parseFloat(v) > 0, "Must be a positive number"),
+  annualSalary: z.string().optional(),
   position: z.string().optional(),
   status: z.enum(["active", "inactive"]),
+  employmentType: z.enum(["w2", "1099"]),
+  payType: z.enum(["hourly", "salary"]),
+  filingStatus: z.enum(["single", "married", "head_of_household"]),
+  taxAllowances: z.string().optional(),
+  stateCode: z.string().optional(),
 });
 const timeEntryFormSchema = z.object({
   employeeId: z.string().min(1, "Employee is required"),
@@ -95,7 +132,6 @@ const timeEntryFormSchema = z.object({
 const runPayrollSchema = z.object({
   periodStart: z.string().min(1, "Start date required"),
   periodEnd: z.string().min(1, "End date required"),
-  deductionRate: z.string().optional(),
 }).refine(d => !d.periodStart || !d.periodEnd || new Date(d.periodStart) < new Date(d.periodEnd), {
   message: "Start must be before end", path: ["periodEnd"],
 });
@@ -113,24 +149,167 @@ function periodPresets() {
   ];
 }
 
+// ── Deductions section (used inside employee form) ────────────────────────────
+function DeductionsSection({ employeeId }: { employeeId: string }) {
+  const { toast } = useToast();
+  const [adding, setAdding] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [newType, setNewType] = useState("fixed");
+  const [newAmount, setNewAmount] = useState("");
+  const [newCategory, setNewCategory] = useState("other");
+
+  const { data: deductions = [] } = useQuery<EmployeeDeduction[]>({
+    queryKey: [`/api/employees/${employeeId}/deductions`],
+    enabled: !!employeeId,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/employees/${employeeId}/deductions`, {
+        label: newLabel, deductionType: newType, amount: parseFloat(newAmount), category: newCategory,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/employees/${employeeId}/deductions`] });
+      setAdding(false); setNewLabel(""); setNewAmount(""); setNewType("fixed"); setNewCategory("other");
+      toast({ title: "Deduction added" });
+    },
+    onError: () => toast({ title: "Failed to add deduction", variant: "destructive" }),
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, active }: { id: string; active: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/employees/${employeeId}/deductions/${id}`, { active });
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: [`/api/employees/${employeeId}/deductions`] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/employees/${employeeId}/deductions/${id}`); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/employees/${employeeId}/deductions`] });
+      toast({ title: "Deduction removed" });
+    },
+  });
+
+  return (
+    <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "14px", marginTop: "4px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+        <span style={{ ...lbl, margin: 0 }}>Recurring Deductions</span>
+        {!adding && (
+          <button type="button" onClick={() => setAdding(true)}
+            style={{ fontSize: "11.5px", fontWeight: 700, color: "#2563eb", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
+            data-testid="button-add-deduction">
+            <Plus style={{ width: "12px", height: "12px" }} /> Add
+          </button>
+        )}
+      </div>
+
+      {deductions.length === 0 && !adding && (
+        <p style={{ fontSize: "12px", color: "#94a3b8", margin: 0 }}>No deductions — health, 401k, garnishments, etc.</p>
+      )}
+
+      {deductions.map(d => (
+        <div key={d.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 0", borderBottom: "1px solid #f1f5f9" }} data-testid={`row-deduction-${d.id}`}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: "13px", fontWeight: 600, color: d.active ? "#0f172a" : "#94a3b8" }}>{d.label}</span>
+            <span style={{ marginLeft: "8px", fontSize: "11.5px", color: "#64748b" }}>
+              {d.deductionType === "percent" ? `${d.amount}%` : fmtFull(d.amount)} · {DEDUCTION_CATEGORIES.find(c => c.value === d.category)?.label ?? d.category}
+            </span>
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: "5px", cursor: "pointer" }}>
+            <input type="checkbox" checked={d.active} onChange={e => toggleMutation.mutate({ id: d.id, active: e.target.checked })} style={{ cursor: "pointer" }} data-testid={`toggle-deduction-${d.id}`} />
+            <span style={{ fontSize: "11px", color: "#94a3b8" }}>{d.active ? "Active" : "Off"}</span>
+          </label>
+          <button type="button" onClick={() => deleteMutation.mutate(d.id)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", padding: "2px", display: "flex" }} data-testid={`button-delete-deduction-${d.id}`}>
+            <X style={{ width: "14px", height: "14px" }} />
+          </button>
+        </div>
+      ))}
+
+      {adding && (
+        <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px", marginTop: "8px", display: "flex", flexDirection: "column", gap: "10px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            <div>
+              <label style={lbl}>Label *</label>
+              <input value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="Health insurance" style={{ ...inp, fontSize: "12.5px" }} data-testid="input-deduction-label" />
+            </div>
+            <div>
+              <label style={lbl}>Category</label>
+              <select value={newCategory} onChange={e => setNewCategory(e.target.value)} style={{ ...inp, fontSize: "12.5px" }} data-testid="select-deduction-category">
+                {DEDUCTION_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            <div>
+              <label style={lbl}>Type</label>
+              <select value={newType} onChange={e => setNewType(e.target.value)} style={{ ...inp, fontSize: "12.5px" }} data-testid="select-deduction-type">
+                <option value="fixed">Fixed ($)</option>
+                <option value="percent">Percent (%)</option>
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Amount *</label>
+              <input value={newAmount} onChange={e => setNewAmount(e.target.value)} type="number" step="0.01" placeholder={newType === "percent" ? "5" : "150"} style={{ ...inp, fontSize: "12.5px" }} data-testid="input-deduction-amount" />
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "6px" }}>
+            <button type="button" onClick={() => setAdding(false)} style={{ padding: "7px 13px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "7px", fontSize: "12.5px", fontWeight: 600, color: "#475569", cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <button type="button" disabled={!newLabel || !newAmount || addMutation.isPending} onClick={() => addMutation.mutate()}
+              style={{ padding: "7px 13px", border: "none", background: "#2563eb", borderRadius: "7px", fontSize: "12.5px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit", opacity: (!newLabel || !newAmount) ? 0.5 : 1 }}
+              data-testid="button-save-deduction">
+              {addMutation.isPending ? "Saving…" : "Add deduction"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Employee Form ─────────────────────────────────────────────────────────────
-function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () => void }) {
+function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onClose: () => void }) {
   const { toast } = useToast();
   const isEdit = !!employee;
   const form = useForm<EmployeeFormValues>({
     resolver: zodResolver(employeeFormSchema),
     defaultValues: {
-      name: employee?.name || "", email: employee?.email || "", phone: employee?.phone || "",
-      hourlyRate: employee?.hourlyRate?.toString() || "", position: employee?.position || "",
+      name: employee?.name || "",
+      email: employee?.email || "",
+      phone: employee?.phone || "",
+      hourlyRate: employee?.hourlyRate?.toString() || "",
+      annualSalary: (employee as any)?.annualSalary?.toString() || "",
+      position: employee?.position || "",
       status: (employee?.status as EmployeeFormValues["status"]) || "active",
+      employmentType: ((employee as any)?.employmentType as EmployeeFormValues["employmentType"]) || "w2",
+      payType: ((employee as any)?.payType as EmployeeFormValues["payType"]) || "hourly",
+      filingStatus: ((employee as any)?.filingStatus as EmployeeFormValues["filingStatus"]) || "single",
+      taxAllowances: (employee as any)?.taxAllowances?.toString() || "0",
+      stateCode: (employee as any)?.stateCode || "CA",
     },
   });
+  const watchPayType = form.watch("payType");
+  const watchEmpType = form.watch("employmentType");
+
   const mutation = useMutation({
     mutationFn: async (data: EmployeeFormValues) => {
-      const res = await apiRequest(isEdit ? "PATCH" : "POST", isEdit ? `/api/employees/${employee.id}` : "/api/employees", data);
+      const payload = {
+        ...data,
+        taxAllowances: parseInt(data.taxAllowances || "0"),
+        annualSalary: data.annualSalary ? String(parseFloat(data.annualSalary)) : null,
+      };
+      const res = await apiRequest(isEdit ? "PATCH" : "POST", isEdit ? `/api/employees/${employee.id}` : "/api/employees", payload);
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/employees"] }); toast({ title: isEdit ? "Employee updated" : "Employee added" }); onClose(); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+      toast({ title: isEdit ? "Employee updated" : "Employee added" });
+      if (!isEdit) onClose();
+    },
     onError: (error: Error) => {
       if (error instanceof ApiError && error.details) {
         Object.entries(error.details).forEach(([f, msgs]) => form.setError(f as keyof EmployeeFormValues, { message: Array.isArray(msgs) ? msgs[0] : String(msgs) }));
@@ -138,9 +317,11 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
+
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(d => mutation.mutate(d))} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+        {/* Basic info */}
         <FormField control={form.control} name="name" render={({ field }) => (
           <FormItem><label style={lbl}>Name *</label><FormControl><input {...field} style={inp} placeholder="Full name" data-testid="input-employee-name" /></FormControl><FormMessage /></FormItem>
         )} />
@@ -153,27 +334,118 @@ function EmployeeForm({ employee, onClose }: { employee?: Employee; onClose: () 
           )} />
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <FormField control={form.control} name="hourlyRate" render={({ field }) => (
-            <FormItem><label style={lbl}>Hourly rate ($) *</label><FormControl><input {...field} type="text" inputMode="decimal" style={inp} placeholder="38.00" data-testid="input-employee-rate" /></FormControl><FormMessage /></FormItem>
-          )} />
           <FormField control={form.control} name="position" render={({ field }) => (
             <FormItem><label style={lbl}>Position</label><FormControl><input {...field} style={inp} placeholder="Painter, Foreman…" data-testid="input-employee-position" /></FormControl><FormMessage /></FormItem>
           )} />
+          <FormField control={form.control} name="status" render={({ field }) => (
+            <FormItem><label style={lbl}>Status</label>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl><SelectTrigger style={{ ...inp, height: "auto" }} data-testid="select-employee-status"><SelectValue /></SelectTrigger></FormControl>
+                <SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent>
+              </Select>
+            <FormMessage /></FormItem>
+          )} />
         </div>
-        <FormField control={form.control} name="status" render={({ field }) => (
-          <FormItem><label style={lbl}>Status</label>
-            <Select value={field.value} onValueChange={field.onChange}>
-              <FormControl><SelectTrigger style={{ ...inp, height: "auto" }} data-testid="select-employee-status"><SelectValue /></SelectTrigger></FormControl>
-              <SelectContent><SelectItem value="active">Active</SelectItem><SelectItem value="inactive">Inactive</SelectItem></SelectContent>
-            </Select>
-          <FormMessage /></FormItem>
-        )} />
+
+        {/* Employment classification */}
+        <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "9px", padding: "12px 14px" }}>
+          <p style={{ ...lbl, marginBottom: "10px", color: "#334155" }}>Employment Classification</p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <FormField control={form.control} name="employmentType" render={({ field }) => (
+              <FormItem><label style={lbl}>Type</label>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl><SelectTrigger style={{ ...inp, height: "auto" }} data-testid="select-employment-type"><SelectValue /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    <SelectItem value="w2">W-2 Employee</SelectItem>
+                    <SelectItem value="1099">1099 Contractor</SelectItem>
+                  </SelectContent>
+                </Select>
+              <FormMessage /></FormItem>
+            )} />
+            <FormField control={form.control} name="payType" render={({ field }) => (
+              <FormItem><label style={lbl}>Pay basis</label>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl><SelectTrigger style={{ ...inp, height: "auto" }} data-testid="select-pay-type"><SelectValue /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    <SelectItem value="hourly">Hourly</SelectItem>
+                    <SelectItem value="salary">Salary</SelectItem>
+                  </SelectContent>
+                </Select>
+              <FormMessage /></FormItem>
+            )} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginTop: "12px" }}>
+            <FormField control={form.control} name="hourlyRate" render={({ field }) => (
+              <FormItem>
+                <label style={lbl}>{watchPayType === "salary" ? "Hourly (for time tracking)" : "Hourly rate ($) *"}</label>
+                <FormControl><input {...field} type="text" inputMode="decimal" style={inp} placeholder="38.00" data-testid="input-employee-rate" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            {watchPayType === "salary" && (
+              <FormField control={form.control} name="annualSalary" render={({ field }) => (
+                <FormItem><label style={lbl}>Annual salary ($) *</label>
+                  <FormControl><input {...field} type="text" inputMode="decimal" style={inp} placeholder="65000" data-testid="input-employee-salary" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            )}
+          </div>
+        </div>
+
+        {/* Tax withholding (W-2 only) */}
+        {watchEmpType === "w2" && (
+          <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "9px", padding: "12px 14px" }}>
+            <p style={{ ...lbl, marginBottom: "10px", color: "#334155" }}>Tax Withholding (Federal + State)</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 80px", gap: "12px" }}>
+              <FormField control={form.control} name="filingStatus" render={({ field }) => (
+                <FormItem><label style={lbl}>Filing status</label>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl><SelectTrigger style={{ ...inp, height: "auto" }} data-testid="select-filing-status"><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="single">Single</SelectItem>
+                      <SelectItem value="married">Married</SelectItem>
+                      <SelectItem value="head_of_household">Head of Household</SelectItem>
+                    </SelectContent>
+                  </Select>
+                <FormMessage /></FormItem>
+              )} />
+              <FormField control={form.control} name="stateCode" render={({ field }) => (
+                <FormItem><label style={lbl}>State</label>
+                  <FormControl><input {...field} style={inp} placeholder="CA" maxLength={2} onChange={e => field.onChange(e.target.value.toUpperCase())} data-testid="input-state-code" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="taxAllowances" render={({ field }) => (
+                <FormItem><label style={lbl}>Allowances</label>
+                  <FormControl><input {...field} type="number" min="0" max="20" style={inp} placeholder="0" data-testid="input-tax-allowances" /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+            </div>
+            <p style={{ fontSize: "11px", color: "#94a3b8", marginTop: "6px" }}>
+              Uses 2024 federal brackets + state rate. 1099 contractors handle their own taxes.
+            </p>
+          </div>
+        )}
+        {watchEmpType === "1099" && (
+          <div style={{ display: "flex", gap: "8px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 12px" }}>
+            <AlertTriangle style={{ width: "14px", height: "14px", color: "#b45309", flexShrink: 0, marginTop: "1px" }} />
+            <p style={{ fontSize: "12px", color: "#92400e", margin: 0 }}>1099 contractors — no tax is withheld. They receive gross pay minus deductions.</p>
+          </div>
+        )}
+
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "4px" }}>
           <button type="button" onClick={onClose} style={{ padding: "9px 16px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "9px", fontSize: "13px", fontWeight: 600, color: "#475569", cursor: "pointer", fontFamily: "inherit" }} data-testid="button-cancel-employee">Cancel</button>
           <button type="submit" disabled={mutation.isPending} style={{ padding: "9px 18px", border: "none", background: "#2563eb", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit", opacity: mutation.isPending ? 0.7 : 1 }} data-testid="button-save-employee">
             {mutation.isPending ? "Saving…" : isEdit ? "Update employee" : "Add employee"}
           </button>
         </div>
+
+        {/* Deductions — only shown in edit mode */}
+        {isEdit && employee?.id && (
+          <DeductionsSection employeeId={employee.id} />
+        )}
       </form>
     </Form>
   );
@@ -242,15 +514,17 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
   const { toast } = useToast();
   const { data: employees } = useQuery<EmployeeWithStats[]>({ queryKey: ["/api/employees"] });
   const { data: payrollRecords } = useQuery<PayrollRecordWithEmployee[]>({ queryKey: ["/api/payroll-records"] });
+  const { data: payrollSettings } = useQuery<PayrollSettings>({ queryKey: ["/api/payroll-settings"] });
   const activeCount = employees?.filter(e => e.status === "active").length ?? 0;
+  const w2Count = employees?.filter(e => e.status === "active" && (e as any).employmentType !== "1099").length ?? 0;
   const presets = periodPresets();
   const form = useForm<RunPayrollValues>({
     resolver: zodResolver(runPayrollSchema),
-    defaultValues: { periodStart: presets[0].start, periodEnd: presets[0].end, deductionRate: "0" },
+    defaultValues: { periodStart: presets[0].start, periodEnd: presets[0].end },
   });
   const mutation = useMutation({
     mutationFn: async (data: RunPayrollValues) => {
-      const res = await apiRequest("POST", "/api/payroll-records/run", { periodStart: data.periodStart, periodEnd: data.periodEnd, deductionRate: parseFloat(data.deductionRate || "0") });
+      const res = await apiRequest("POST", "/api/payroll-records/run", { periodStart: data.periodStart, periodEnd: data.periodEnd });
       return res.json();
     },
     onSuccess: (records) => {
@@ -262,17 +536,22 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
   });
   const watchStart = form.watch("periodStart");
   const watchEnd = form.watch("periodEnd");
-  const watchDeduction = form.watch("deductionRate");
   const overlapping = (payrollRecords && watchStart && watchEnd)
-    ? payrollRecords.filter(r => new Date(r.periodStart) < new Date(watchEnd) && new Date(r.periodEnd) > new Date(watchStart))
+    ? payrollRecords.filter(r => new Date(toDateStr(r.periodStart)) < new Date(watchEnd) && new Date(toDateStr(r.periodEnd)) > new Date(watchStart))
       .reduce<{ periodStart: string; periodEnd: string }[]>((acc, r) => {
-        if (!acc.some(x => x.periodStart === r.periodStart && x.periodEnd === r.periodEnd)) acc.push({ periodStart: r.periodStart, periodEnd: r.periodEnd });
+        const ps = toDateStr(r.periodStart); const pe = toDateStr(r.periodEnd);
+        if (!acc.some(x => x.periodStart === ps && x.periodEnd === pe)) acc.push({ periodStart: ps, periodEnd: pe });
         return acc;
       }, [])
     : [];
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(d => mutation.mutate(d))} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        {payrollSettings && (
+          <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: "8px", padding: "10px 12px", fontSize: "12.5px", color: "#0369a1" }}>
+            Pay schedule: <strong>{PAY_FREQUENCY_LABELS[payrollSettings.payFrequency]}</strong> — change in Settings tab.
+          </div>
+        )}
         <div>
           <label style={{ ...lbl, marginBottom: "8px" }}>Quick period</label>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
@@ -293,14 +572,6 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
             <FormItem><label style={lbl}>Period end *</label><FormControl><input {...field} type="date" style={inp} data-testid="input-payroll-end" /></FormControl><FormMessage /></FormItem>
           )} />
         </div>
-        <FormField control={form.control} name="deductionRate" render={({ field }) => (
-          <FormItem>
-            <label style={lbl}>Deduction rate <span style={{ textTransform: "none", fontWeight: 400, color: "#94a3b8" }}>% (optional)</span></label>
-            <FormControl><input {...field} type="number" step="0.1" min="0" max="100" placeholder="0" style={inp} data-testid="input-deduction-rate" /></FormControl>
-            <p style={{ fontSize: "11.5px", color: "#94a3b8", marginTop: "4px" }}>Applied uniformly as % of gross pay.</p>
-            <FormMessage />
-          </FormItem>
-        )} />
         {overlapping.length > 0 && (
           <div style={{ display: "flex", gap: "10px", background: "#fefce8", border: "1px solid #fde68a", borderRadius: "8px", padding: "12px" }} data-testid="warning-payroll-overlap">
             <AlertTriangle style={{ width: "16px", height: "16px", flexShrink: 0, color: "#b45309", marginTop: "1px" }} />
@@ -315,8 +586,9 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
           <div style={{ background: "var(--track)", borderRadius: "8px", padding: "12px 14px", fontSize: "13px", color: "var(--muted)" }}>
             <div style={{ fontWeight: 600, marginBottom: "4px", color: "var(--fg)" }}>Preview</div>
             <div>{watchStart} → {watchEnd}</div>
-            <div>{activeCount} active employee{activeCount !== 1 ? "s" : ""} will get a payroll record.</div>
-            {Number(watchDeduction) > 0 && <div>Deduction: {watchDeduction}% of gross.</div>}
+            <div>{activeCount} active employee{activeCount !== 1 ? "s" : ""} will get pay records.</div>
+            {w2Count > 0 && <div>{w2Count} W-2 employees will have federal + state tax withheld automatically.</div>}
+            <div style={{ marginTop: "4px", fontSize: "12px", color: "#64748b" }}>OT calculated per work week (Mon–Sun). Recurring deductions applied per employee.</div>
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
@@ -343,8 +615,184 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
   );
 }
 
+// ── Pay Stub Dialog ───────────────────────────────────────────────────────────
+function PayStubDialog({ record, onClose }: { record: PayrollRecordWithEmployee; onClose: () => void }) {
+  const emp = record.employee;
+  const gross = Number(record.grossPay);
+  const regPay = Number(record.regularPay ?? 0);
+  const otPay = Number(record.overtimePay ?? 0);
+  const taxWithheld = Number(record.taxWithheld ?? 0);
+  const deductions = Number(record.deductions ?? 0);
+  const net = Number(record.netPay);
+  const regHrs = Number(record.regularHours ?? record.totalHours);
+  const otHrs = Number(record.overtimeHours ?? 0);
+  const breakdown = (record.deductionsBreakdown ?? []) as { label: string; amount: number; category: string }[];
+  const is1099 = (emp as any).employmentType === "1099";
+
+  function printStub() {
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(`<!DOCTYPE html><html><head><title>Pay Stub</title><style>
+      body{font-family:sans-serif;padding:32px;max-width:620px;margin:0 auto}
+      h2{margin:0 0 4px;font-size:20px}
+      .sub{color:#64748b;font-size:13px;margin-bottom:20px}
+      table{width:100%;border-collapse:collapse;font-size:13px}
+      td{padding:5px 8px;border-bottom:1px solid #f1f5f9}
+      td:last-child{text-align:right;font-weight:600}
+      .total td{font-size:15px;font-weight:800;border-top:2px solid #0f172a}
+      .section{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#64748b;padding-top:14px}
+    </style></head><body>
+    <h2>${emp.name}</h2>
+    <div class="sub">${(emp as any).position ?? ""} · ${is1099 ? "1099 Contractor" : "W-2 Employee"}<br/>
+    Period: ${toDateStr(record.periodStart)} – ${toDateStr(record.periodEnd)}</div>
+    <table>
+      <tr><td class="section" colspan="2">Earnings</td></tr>
+      <tr><td>Regular pay (${regHrs.toFixed(2)} hrs)</td><td>${fmtFull(regPay)}</td></tr>
+      ${otHrs > 0 ? `<tr><td>Overtime pay (${otHrs.toFixed(2)} hrs × 1.5×)</td><td>${fmtFull(otPay)}</td></tr>` : ""}
+      <tr><td><strong>Gross pay</strong></td><td>${fmtFull(gross)}</td></tr>
+      ${!is1099 ? `<tr><td class="section" colspan="2">Tax Withholding</td></tr>
+      <tr><td>Federal + State income tax</td><td>(${fmtFull(taxWithheld)})</td></tr>` : ""}
+      ${breakdown.length > 0 ? `<tr><td class="section" colspan="2">Deductions</td></tr>
+      ${breakdown.map(d => `<tr><td>${d.label}</td><td>(${fmtFull(d.amount)})</td></tr>`).join("")}` : ""}
+      <tr class="total"><td>Net pay</td><td>${fmtFull(net)}</td></tr>
+    </table>
+    </body></html>`);
+    w.document.close();
+    w.print();
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: "14px", marginBottom: "18px" }}>
+        <div style={{ width: "44px", height: "44px", borderRadius: "50%", background: "var(--av1)", color: "var(--av1f)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "14px", flexShrink: 0 }}>
+          {initials(emp.name)}
+        </div>
+        <div>
+          <div style={{ fontSize: "16px", fontWeight: 700 }}>{emp.name}</div>
+          <div style={{ fontSize: "12.5px", color: "var(--muted)" }}>
+            {(emp as any).position ?? "Employee"} · {is1099 ? "1099 Contractor" : "W-2 Employee"}
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--faint)", marginTop: "2px" }}>
+            Pay period: {toDateStr(record.periodStart)} – {toDateStr(record.periodEnd)}
+          </div>
+        </div>
+      </div>
+
+      {/* Earnings */}
+      <div style={{ fontSize: "10.5px", fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--faint)", marginBottom: "6px" }}>Earnings</div>
+      <div style={{ background: "var(--track)", borderRadius: "8px", overflow: "hidden", marginBottom: "12px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", fontSize: "13px" }}>
+          <span>Regular pay ({regHrs.toFixed(1)} hrs × ${Number(record.hourlyRate).toFixed(2)})</span>
+          <span className="font-mono" style={{ fontWeight: 600 }}>{fmtFull(regPay)}</span>
+        </div>
+        {otHrs > 0 && (
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", fontSize: "13px", borderTop: "1px solid var(--panel-bd)" }}>
+            <span style={{ color: OT_COLOR, fontWeight: 600 }}>Overtime ({otHrs.toFixed(1)} hrs × 1.5×)</span>
+            <span className="font-mono" style={{ fontWeight: 600, color: OT_COLOR }}>{fmtFull(otPay)}</span>
+          </div>
+        )}
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "9px 12px", fontSize: "13.5px", fontWeight: 700, borderTop: "1px solid var(--panel-bd)", background: "var(--panel)" }}>
+          <span>Gross pay</span>
+          <span className="font-mono">{fmtFull(gross)}</span>
+        </div>
+      </div>
+
+      {/* Tax withholding */}
+      {!is1099 && taxWithheld > 0 && (
+        <>
+          <div style={{ fontSize: "10.5px", fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--faint)", marginBottom: "6px" }}>Tax Withholding</div>
+          <div style={{ background: "var(--track)", borderRadius: "8px", marginBottom: "12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", fontSize: "13px" }}>
+              <span>Federal + State income tax</span>
+              <span className="font-mono" style={{ color: "#dc2626" }}>({fmtFull(taxWithheld)})</span>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Deductions */}
+      {breakdown.length > 0 && (
+        <>
+          <div style={{ fontSize: "10.5px", fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--faint)", marginBottom: "6px" }}>Deductions</div>
+          <div style={{ background: "var(--track)", borderRadius: "8px", overflow: "hidden", marginBottom: "12px" }}>
+            {breakdown.map((d, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", fontSize: "13px", borderTop: i > 0 ? "1px solid var(--panel-bd)" : "none" }}>
+                <span>{d.label}</span>
+                <span className="font-mono" style={{ color: "#dc2626" }}>({fmtFull(d.amount)})</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Net pay */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "9px", marginBottom: "16px" }}>
+        <span style={{ fontSize: "14px", fontWeight: 700, color: "#15803d" }}>Net pay</span>
+        <span className="font-mono" style={{ fontSize: "20px", fontWeight: 800, color: "#15803d" }}>{fmtFull(net)}</span>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+        <button type="button" onClick={onClose} style={{ padding: "9px 16px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "9px", fontSize: "13px", fontWeight: 600, color: "#475569", cursor: "pointer", fontFamily: "inherit" }} data-testid="button-close-paystub">Close</button>
+        <button type="button" onClick={printStub} style={{ display: "flex", alignItems: "center", gap: "7px", padding: "9px 16px", border: "none", background: "#0f172a", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit" }} data-testid="button-print-paystub">
+          <FileText style={{ width: "14px", height: "14px" }} /> Print / PDF
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Pay Settings Panel ────────────────────────────────────────────────────────
+function PaySettings() {
+  const { toast } = useToast();
+  const { data: ps } = useQuery<PayrollSettings>({ queryKey: ["/api/payroll-settings"] });
+  const [freq, setFreq] = useState<string | null>(null);
+  const currentFreq = freq ?? ps?.payFrequency ?? "biweekly";
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", "/api/payroll-settings", { payFrequency: currentFreq });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll-settings"] });
+      toast({ title: "Pay schedule saved" });
+    },
+    onError: () => toast({ title: "Failed to save", variant: "destructive" }),
+  });
+
+  return (
+    <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", padding: "24px", maxWidth: "520px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
+        <Settings2 style={{ width: "18px", height: "18px", color: "var(--jox-primary)" }} />
+        <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 700 }}>Pay Schedule</h3>
+      </div>
+
+      <div style={{ marginBottom: "16px" }}>
+        <label style={lbl}>Pay frequency</label>
+        <select value={currentFreq} onChange={e => setFreq(e.target.value)}
+          style={{ ...inp, maxWidth: "280px" }} data-testid="select-pay-frequency">
+          <option value="weekly">Weekly (every week)</option>
+          <option value="biweekly">Bi-weekly (every 2 weeks)</option>
+          <option value="semimonthly">Semi-monthly (1st & 15th)</option>
+          <option value="monthly">Monthly</option>
+        </select>
+        <p style={{ fontSize: "12px", color: "#94a3b8", marginTop: "6px" }}>
+          This is informational and controls the default period in Run Payroll. Tax withholding is always calculated from the actual period dates.
+        </p>
+      </div>
+
+      <button type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending}
+        style={{ padding: "9px 18px", border: "none", background: "#2563eb", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit", opacity: mutation.isPending ? 0.7 : 1 }}
+        data-testid="button-save-pay-settings">
+        {mutation.isPending ? "Saving…" : "Save settings"}
+      </button>
+    </div>
+  );
+}
+
 // ── Section tab types ─────────────────────────────────────────────────────────
-type Section = "payroll" | "employees" | "time";
+type Section = "payroll" | "employees" | "time" | "settings";
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Payroll() {
@@ -352,11 +800,12 @@ export default function Payroll() {
   const [periodIdx, setPeriodIdx] = useState(0);
   const [isRunPayrollOpen, setIsRunPayrollOpen] = useState(false);
   const [isEmployeeDialogOpen, setIsEmployeeDialogOpen] = useState(false);
-  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [editingEmployee, setEditingEmployee] = useState<EmployeeWithStats | null>(null);
   const [isTimeEntryDialogOpen, setIsTimeEntryDialogOpen] = useState(false);
   const [deleteTimeEntryId, setDeleteTimeEntryId] = useState<string | null>(null);
   const [empSearch, setEmpSearch] = useState("");
   const [timeFilter, setTimeFilter] = useState("all");
+  const [payStubRecord, setPayStubRecord] = useState<PayrollRecordWithEmployee | null>(null);
   const { toast } = useToast();
 
   const { data: employees, isLoading: empLoading } = useQuery<EmployeeWithStats[]>({ queryKey: ["/api/employees"] });
@@ -369,8 +818,9 @@ export default function Payroll() {
     const seen = new Set<string>();
     const result: { start: string; end: string }[] = [];
     for (const r of payrollRecords) {
-      const key = `${r.periodStart}|${r.periodEnd}`;
-      if (!seen.has(key)) { seen.add(key); result.push({ start: r.periodStart, end: r.periodEnd }); }
+      const ps = toDateStr(r.periodStart); const pe = toDateStr(r.periodEnd);
+      const key = `${ps}|${pe}`;
+      if (!seen.has(key)) { seen.add(key); result.push({ start: ps, end: pe }); }
     }
     return result.sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
   }, [payrollRecords]);
@@ -378,13 +828,15 @@ export default function Payroll() {
   const currentPeriod = periods[periodIdx] ?? null;
   const currentRecords = useMemo(() => {
     if (!currentPeriod || !payrollRecords) return [];
-    return payrollRecords.filter(r => r.periodStart === currentPeriod.start && r.periodEnd === currentPeriod.end);
+    return payrollRecords.filter(r => toDateStr(r.periodStart) === currentPeriod.start && toDateStr(r.periodEnd) === currentPeriod.end);
   }, [currentPeriod, payrollRecords]);
 
-  // ── Stats for current period ───────────────────────────────────────────────
+  // ── Stats ──────────────────────────────────────────────────────────────────
   const gross = currentRecords.reduce((s, r) => s + Number(r.grossPay), 0);
-  const totalHrs = currentRecords.reduce((s, r) => s + Number(r.hoursWorked), 0);
-  const otHrs = currentRecords.reduce((s, r) => s + Math.max(0, Number(r.hoursWorked) - 40), 0);
+  const netTotal = currentRecords.reduce((s, r) => s + Number(r.netPay), 0);
+  const totalHrs = currentRecords.reduce((s, r) => s + Number(r.totalHours), 0);
+  const otHrs = currentRecords.reduce((s, r) => s + Number(r.overtimeHours ?? 0), 0);
+  const taxTotal = currentRecords.reduce((s, r) => s + Number(r.taxWithheld ?? 0), 0);
   const crewCount = currentRecords.length;
 
   // ── Mutations ─────────────────────────────────────────────────────────────
@@ -423,9 +875,9 @@ export default function Payroll() {
 
   // ── Per-row payroll data ───────────────────────────────────────────────────
   const crewRows = currentRecords.map((r, i) => {
-    const hrs = Number(r.hoursWorked);
-    const reg = Math.min(hrs, 40);
-    const ot = Math.max(0, hrs - 40);
+    const hrs = Number(r.totalHours);
+    const reg = Number(r.regularHours ?? Math.min(hrs, 40));
+    const ot = Number(r.overtimeHours ?? Math.max(0, hrs - 40));
     const badge = STATUS_BADGE[r.status ?? "pending"] ?? STATUS_BADGE.pending;
     return {
       ...r,
@@ -443,6 +895,7 @@ export default function Payroll() {
     { key: "payroll",   label: "Pay run" },
     { key: "employees", label: "Employees" },
     { key: "time",      label: "Time entries" },
+    { key: "settings",  label: "Settings" },
   ];
 
   const TH: React.CSSProperties = {
@@ -462,13 +915,22 @@ export default function Payroll() {
       </Dialog>
 
       <Dialog open={isEmployeeDialogOpen} onOpenChange={o => { if (!o) { setIsEmployeeDialogOpen(false); setEditingEmployee(null); } }}>
-        <DialogContent className="max-w-md"><DialogHeader><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>{editingEmployee ? "Edit employee" : "Add employee"}</DialogTitle></DialogHeader>
-          <EmployeeForm employee={editingEmployee || undefined} onClose={() => { setIsEmployeeDialogOpen(false); setEditingEmployee(null); }} /></DialogContent>
+        <DialogContent className="max-w-lg" style={{ maxHeight: "90vh", overflowY: "auto" }}>
+          <DialogHeader><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>{editingEmployee ? "Edit employee" : "Add employee"}</DialogTitle></DialogHeader>
+          <EmployeeForm employee={editingEmployee || undefined} onClose={() => { setIsEmployeeDialogOpen(false); setEditingEmployee(null); }} />
+        </DialogContent>
       </Dialog>
 
       <Dialog open={isTimeEntryDialogOpen} onOpenChange={o => { if (!o) setIsTimeEntryDialogOpen(false); }}>
         <DialogContent className="max-w-md"><DialogHeader><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>Log hours</DialogTitle></DialogHeader>
           <TimeEntryForm onClose={() => setIsTimeEntryDialogOpen(false)} /></DialogContent>
+      </Dialog>
+
+      <Dialog open={!!payStubRecord} onOpenChange={o => { if (!o) setPayStubRecord(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>Pay Stub</DialogTitle></DialogHeader>
+          {payStubRecord && <PayStubDialog record={payStubRecord} onClose={() => setPayStubRecord(null)} />}
+        </DialogContent>
       </Dialog>
 
       <AlertDialog open={!!deleteTimeEntryId} onOpenChange={o => { if (!o) setDeleteTimeEntryId(null); }}>
@@ -494,15 +956,10 @@ export default function Payroll() {
               </p>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              {/* Log hours — secondary */}
               <button onClick={() => setIsTimeEntryDialogOpen(true)} style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-log-hours">
-                Log hours
-              </button>
-              {/* Add employee — secondary */}
+                Log hours</button>
               <button onClick={() => { setEditingEmployee(null); setIsEmployeeDialogOpen(true); }} style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-add-employee">
-                <Plus style={{ width: "14px", height: "14px" }} /> Add employee
-              </button>
-              {/* Period nav — only on payroll tab when periods exist */}
+                <Plus style={{ width: "14px", height: "14px" }} /> Add employee</button>
               {activeSection === "payroll" && periods.length > 1 && (
                 <div style={{ display: "flex", alignItems: "center", gap: "2px", background: "var(--track)", border: "1px solid var(--panel-bd)", borderRadius: "9px", padding: "3px" }}>
                   <button onClick={() => setPeriodIdx(i => Math.min(i + 1, periods.length - 1))} disabled={periodIdx >= periods.length - 1}
@@ -518,31 +975,25 @@ export default function Payroll() {
                   </button>
                 </div>
               )}
-              {/* Run payroll — primary */}
               <button onClick={() => setIsRunPayrollOpen(true)} style={{ display: "flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "9px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 1px 2px rgba(37,99,235,.3)" }} data-testid="button-run-payroll">
-                Run payroll
-              </button>
+                Run payroll</button>
             </div>
           </div>
 
-          {/* ── 4-stat strip ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "14px", marginBottom: "20px" }}>
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>Gross this period</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px" }} data-testid="stat-gross">{payrollLoading ? "—" : fmt(gross)}</div>
-            </div>
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>Total hours</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px" }} data-testid="stat-hours">{payrollLoading ? "—" : totalHrs.toFixed(0)}</div>
-            </div>
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>Overtime hours</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px", color: payrollLoading ? "var(--faint)" : (otHrs > 0 ? "#b6731a" : "var(--fg)") }} data-testid="stat-ot">{payrollLoading ? "—" : otHrs.toFixed(0)}</div>
-            </div>
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>Crew on payroll</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px" }} data-testid="stat-crew">{payrollLoading ? "—" : crewCount}</div>
-            </div>
+          {/* ── 5-stat strip ── */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: "12px", marginBottom: "20px" }}>
+            {[
+              { label: "Gross this period", value: fmt(gross), testid: "stat-gross" },
+              { label: "Net pay (take-home)", value: fmt(netTotal), testid: "stat-net", highlight: true },
+              { label: "Tax withheld", value: fmt(taxTotal), testid: "stat-tax" },
+              { label: "Overtime hours", value: otHrs > 0 ? otHrs.toFixed(0) + " hrs" : "0", testid: "stat-ot", warn: otHrs > 0 },
+              { label: "Crew on payroll", value: String(crewCount), testid: "stat-crew" },
+            ].map(s => (
+              <div key={s.label} style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
+                <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>{s.label}</div>
+                <div className="font-mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "6px", color: s.warn ? "#b6731a" : s.highlight ? "#15803d" : "var(--fg)" }} data-testid={s.testid}>{payrollLoading ? "—" : s.value}</div>
+              </div>
+            ))}
           </div>
 
           {/* ── Section tabs ── */}
@@ -566,15 +1017,17 @@ export default function Payroll() {
 
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* ── PAY RUN TABLE ── */}
-          {/* ══════════════════════════════════════════════════════════════════ */}
           {activeSection === "payroll" && (
             <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
               <div style={{ ...TH }}>
                 <span style={{ flex: 1, minWidth: 0 }}>Painter</span>
-                <span style={{ width: "120px", flexShrink: 0 }}>Rate</span>
+                <span style={{ width: "90px", flexShrink: 0 }}>Type</span>
                 <span style={{ width: "130px", flexShrink: 0 }}>Hours (reg + OT)</span>
-                <span style={{ width: "104px", flexShrink: 0, textAlign: "right" }}>Gross</span>
-                <span style={{ width: "96px", flexShrink: 0, textAlign: "center" }}>Status</span>
+                <span style={{ width: "96px", flexShrink: 0, textAlign: "right" }}>Gross</span>
+                <span style={{ width: "86px", flexShrink: 0, textAlign: "right" }}>Tax</span>
+                <span style={{ width: "86px", flexShrink: 0, textAlign: "right" }}>Deductions</span>
+                <span style={{ width: "96px", flexShrink: 0, textAlign: "right" }}>Net pay</span>
+                <span style={{ width: "88px", flexShrink: 0, textAlign: "center" }}>Status</span>
                 <span style={{ width: "28px", flexShrink: 0 }}></span>
               </div>
 
@@ -595,66 +1048,87 @@ export default function Payroll() {
                 <div style={{ padding: "40px", textAlign: "center" as const, color: "var(--faint)", fontSize: "13px" }}>No records for this period.</div>
               )}
 
-              {crewRows.map((r, i) => (
-                <div key={r.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-payroll-${r.id}`}>
-                  {/* Painter */}
-                  <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "12px", paddingRight: "12px" }}>
-                    <div style={{ width: "36px", height: "36px", borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "12px", background: r.avBg, color: r.avFg }}>
-                      {initials(r.employee?.name ?? "?")}
+              {crewRows.map((r) => {
+                const taxW = Number((r as any).taxWithheld ?? 0);
+                const dedW = Number(r.deductions ?? 0);
+                const is1099 = (r.employee as any).employmentType === "1099";
+                return (
+                  <div key={r.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "11px 18px", borderBottom: "1px solid var(--panel-bd)", cursor: "pointer" }}
+                    onClick={() => setPayStubRecord(r as PayrollRecordWithEmployee)} data-testid={`row-payroll-${r.id}`}>
+                    {/* Painter */}
+                    <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "10px", paddingRight: "10px" }}>
+                      <div style={{ width: "34px", height: "34px", borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "11.5px", background: r.avBg, color: r.avFg }}>
+                        {initials(r.employee?.name ?? "?")}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.employee?.name ?? "Unknown"}</div>
+                        <div style={{ fontSize: "11px", color: "var(--faint)", whiteSpace: "nowrap" }}>${Number(r.hourlyRate ?? 0).toFixed(0)}/hr</div>
+                      </div>
                     </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "13.5px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.employee?.name ?? "Unknown"}</div>
-                      <div style={{ fontSize: "11.5px", color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.employee?.position ?? "—"}</div>
+                    {/* Type */}
+                    <div style={{ width: "90px", flexShrink: 0 }}>
+                      <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 7px", borderRadius: "5px", background: is1099 ? "var(--b-amber-bg)" : "var(--b-blue-bg, #eff6ff)", color: is1099 ? "var(--b-amber-fg)" : "var(--b-blue-fg, #1d4ed8)" }}>{is1099 ? "1099" : "W-2"}</span>
                     </div>
-                  </div>
-                  {/* Rate */}
-                  <div style={{ width: "120px", flexShrink: 0, fontSize: "12.5px", color: "var(--muted)" }}>
-                    {r.employee?.position ?? "Painter"} · <span className="font-mono">${Number(r.employee?.hourlyRate ?? 0).toFixed(0)}/hr</span>
-                  </div>
-                  {/* Hours */}
-                  <div style={{ width: "130px", flexShrink: 0 }}>
-                    <div className="font-mono" style={{ fontSize: "13px", fontWeight: 600 }}>{r.hoursLabel}</div>
-                    <div style={{ height: "5px", borderRadius: "3px", background: "var(--track)", overflow: "hidden", marginTop: "4px", width: "96px" }}>
-                      <div style={{ width: `${r.barReg}%`, height: "100%", background: "var(--jox-primary)", float: "left" }} />
-                      <div style={{ width: `${r.barOt}%`, height: "100%", background: OT_COLOR, float: "left" }} />
+                    {/* Hours */}
+                    <div style={{ width: "130px", flexShrink: 0 }}>
+                      <div className="font-mono" style={{ fontSize: "12.5px", fontWeight: 600 }}>{r.hoursLabel}</div>
+                      <div style={{ height: "4px", borderRadius: "3px", background: "var(--track)", overflow: "hidden", marginTop: "4px", width: "96px" }}>
+                        <div style={{ width: `${r.barReg}%`, height: "100%", background: "var(--jox-primary)", float: "left" }} />
+                        <div style={{ width: `${r.barOt}%`, height: "100%", background: OT_COLOR, float: "left" }} />
+                      </div>
                     </div>
+                    {/* Gross */}
+                    <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 700 }} data-testid={`gross-${r.id}`}>{fmt(r.grossPay)}</span>
+                    {/* Tax */}
+                    <span className="font-mono" style={{ width: "86px", flexShrink: 0, textAlign: "right", fontSize: "12px", color: taxW > 0 ? "#dc2626" : "var(--faint)" }} data-testid={`tax-${r.id}`}>{taxW > 0 ? `(${fmt(taxW)})` : "—"}</span>
+                    {/* Deductions */}
+                    <span className="font-mono" style={{ width: "86px", flexShrink: 0, textAlign: "right", fontSize: "12px", color: dedW > 0 ? "#7c3aed" : "var(--faint)" }} data-testid={`ded-${r.id}`}>{dedW > 0 ? `(${fmt(dedW)})` : "—"}</span>
+                    {/* Net */}
+                    <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "13.5px", fontWeight: 800, color: "#15803d" }} data-testid={`net-${r.id}`}>{fmt(r.netPay)}</span>
+                    {/* Status */}
+                    <span style={{ width: "88px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
+                      <span style={{ background: r.badge.bg, color: r.badge.fg, fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px", textTransform: "capitalize", whiteSpace: "nowrap" }}>{r.badge.label}</span>
+                    </span>
+                    {/* Actions */}
+                    <span style={{ width: "28px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
+                      {r.status !== "paid" && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button style={{ border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "2px 0", display: "flex", alignItems: "center" }} data-testid={`button-payroll-actions-${r.id}`}>
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" sideOffset={4}>
+                            <DropdownMenuItem onClick={() => setPayStubRecord(r as PayrollRecordWithEmployee)} data-testid={`button-view-stub-${r.id}`}>
+                              <FileText className="h-4 w-4 mr-2" />View pay stub
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => markPaidMutation.mutate(r.id)} data-testid={`button-mark-paid-${r.id}`}>
+                              <CheckCircle className="h-4 w-4 mr-2 text-green-600" />Mark as paid
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                      {r.status === "paid" && (
+                        <button style={{ border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "2px", display: "flex", alignItems: "center" }} onClick={e => { e.stopPropagation(); setPayStubRecord(r as PayrollRecordWithEmployee); }} data-testid={`button-stub-${r.id}`}>
+                          <FileText style={{ width: "14px", height: "14px" }} />
+                        </button>
+                      )}
+                    </span>
                   </div>
-                  {/* Gross */}
-                  <span className="font-mono" style={{ width: "104px", flexShrink: 0, textAlign: "right", fontSize: "13.5px", fontWeight: 700 }} data-testid={`gross-${r.id}`}>
-                    {fmt(r.grossPay)}
-                  </span>
-                  {/* Status badge */}
-                  <span style={{ width: "96px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
-                    <span style={{ background: r.badge.bg, color: r.badge.fg, fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px", textTransform: "capitalize", whiteSpace: "nowrap" }}>{r.badge.label}</span>
-                  </span>
-                  {/* Actions */}
-                  <span style={{ width: "28px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
-                    {r.status !== "paid" && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button style={{ border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "2px 0", display: "flex", alignItems: "center" }} data-testid={`button-payroll-actions-${r.id}`}>
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" sideOffset={4}>
-                          <DropdownMenuItem onClick={() => markPaidMutation.mutate(r.id)} data-testid={`button-mark-paid-${r.id}`}>
-                            <CheckCircle className="h-4 w-4 mr-2 text-green-600" />Mark as paid
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
 
               {/* Footer totals */}
               {crewRows.length > 0 && (
-                <div style={{ display: "flex", alignItems: "center", padding: "13px 18px", background: "var(--track)", borderTop: "1px solid var(--panel-bd)" }}>
+                <div style={{ display: "flex", alignItems: "center", padding: "12px 18px", background: "var(--track)", borderTop: "1px solid var(--panel-bd)" }}>
                   <span style={{ flex: 1, fontSize: "12.5px", fontWeight: 700 }}>Total</span>
-                  <span style={{ width: "120px", flexShrink: 0 }}></span>
-                  <span className="font-mono" style={{ width: "130px", flexShrink: 0, fontSize: "12.5px", color: "var(--muted)" }}>{totalHrs.toFixed(0)} hrs</span>
-                  <span className="font-mono" style={{ width: "104px", flexShrink: 0, textAlign: "right", fontSize: "14px", fontWeight: 800 }}>{fmt(gross)}</span>
-                  <span style={{ width: "96px", flexShrink: 0 }}></span>
+                  <span style={{ width: "90px", flexShrink: 0 }}></span>
+                  <span className="font-mono" style={{ width: "130px", flexShrink: 0, fontSize: "12px", color: "var(--muted)" }}>{totalHrs.toFixed(0)} hrs</span>
+                  <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 700 }}>{fmt(gross)}</span>
+                  <span className="font-mono" style={{ width: "86px", flexShrink: 0, textAlign: "right", fontSize: "12px", color: taxTotal > 0 ? "#dc2626" : "var(--faint)" }}>{taxTotal > 0 ? `(${fmt(taxTotal)})` : "—"}</span>
+                  <span style={{ width: "86px", flexShrink: 0 }}></span>
+                  <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "14px", fontWeight: 800, color: "#15803d" }}>{fmt(netTotal)}</span>
+                  <span style={{ width: "88px", flexShrink: 0 }}></span>
                   <span style={{ width: "28px", flexShrink: 0 }}></span>
                 </div>
               )}
@@ -663,10 +1137,8 @@ export default function Payroll() {
 
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* ── EMPLOYEES TABLE ── */}
-          {/* ══════════════════════════════════════════════════════════════════ */}
           {activeSection === "employees" && (
             <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
-              {/* Toolbar */}
               <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)", background: "var(--track)" }}>
                 <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "7px", background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "6px 11px" }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -677,10 +1149,10 @@ export default function Payroll() {
                 </button>
               </div>
 
-              {/* Header */}
               <div style={{ ...TH }}>
                 <span style={{ flex: 1, minWidth: 0 }}>Employee</span>
-                <span style={{ width: "120px", flexShrink: 0 }}>Position</span>
+                <span style={{ width: "80px", flexShrink: 0 }}>Type</span>
+                <span style={{ width: "100px", flexShrink: 0 }}>Position</span>
                 <span style={{ width: "100px", flexShrink: 0, textAlign: "right" }}>Rate</span>
                 <span style={{ width: "88px", flexShrink: 0, textAlign: "right" }}>Hrs (month)</span>
                 <span style={{ width: "100px", flexShrink: 0, textAlign: "right" }}>Month pay</span>
@@ -703,6 +1175,7 @@ export default function Payroll() {
                 const active = emp.status === "active";
                 const avBg = `var(${AV_BG[i % 6]})`;
                 const avFg = `var(${AV_FG[i % 6]})`;
+                const is1099 = (emp as any).employmentType === "1099";
                 return (
                   <div key={emp.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-employee-${emp.id}`}>
                     <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "12px", paddingRight: "12px" }}>
@@ -721,7 +1194,10 @@ export default function Payroll() {
                         {emp.email && <div style={{ fontSize: "11.5px", color: "var(--faint)" }}>{emp.email}</div>}
                       </div>
                     </div>
-                    <span style={{ width: "120px", flexShrink: 0, fontSize: "12.5px", color: "var(--muted)" }}>{emp.position || "—"}</span>
+                    <span style={{ width: "80px", flexShrink: 0 }}>
+                      <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 7px", borderRadius: "5px", background: is1099 ? "var(--b-amber-bg)" : "var(--b-blue-bg, #eff6ff)", color: is1099 ? "var(--b-amber-fg)" : "var(--b-blue-fg, #1d4ed8)" }}>{is1099 ? "1099" : "W-2"}</span>
+                    </span>
+                    <span style={{ width: "100px", flexShrink: 0, fontSize: "12.5px", color: "var(--muted)" }}>{emp.position || "—"}</span>
                     <span className="font-mono" style={{ width: "100px", flexShrink: 0, textAlign: "right", fontSize: "12.5px" }}>{fmtFull(emp.hourlyRate)}/hr</span>
                     <span className="font-mono" style={{ width: "88px", flexShrink: 0, textAlign: "right", fontSize: "12.5px", color: "var(--muted)" }}>{(emp.hoursThisPeriod || 0).toFixed(1)} hrs</span>
                     <span className="font-mono" style={{ width: "100px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 600 }}>{fmtFull(emp.totalPay || 0)}</span>
@@ -739,7 +1215,7 @@ export default function Payroll() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" sideOffset={4}>
                           <DropdownMenuItem onClick={() => { setEditingEmployee(emp); setIsEmployeeDialogOpen(true); }} data-testid={`button-edit-employee-${emp.id}`}>
-                            <Edit className="h-4 w-4 mr-2" />Edit
+                            <Edit className="h-4 w-4 mr-2" />Edit &amp; deductions
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -751,6 +1227,7 @@ export default function Payroll() {
               {!empLoading && filteredEmployees.length > 0 && (
                 <div style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
                   {filteredEmployees.length} employee{filteredEmployees.length !== 1 ? "s" : ""} · {filteredEmployees.filter(e => e.status === "active").length} active
+                  · {filteredEmployees.filter(e => (e as any).employmentType === "1099").length} contractors
                 </div>
               )}
             </div>
@@ -758,10 +1235,8 @@ export default function Payroll() {
 
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* ── TIME ENTRIES TABLE ── */}
-          {/* ══════════════════════════════════════════════════════════════════ */}
           {activeSection === "time" && (
             <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
-              {/* Toolbar */}
               <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)", background: "var(--track)", flexWrap: "wrap" }}>
                 {(["all","this_month","last_month","last_7"] as const).map(f => {
                   const labels: Record<string, string> = { all: "All time", this_month: "This month", last_month: "Last month", last_7: "Last 7 days" };
@@ -777,7 +1252,6 @@ export default function Payroll() {
                 </button>
               </div>
 
-              {/* Header */}
               <div style={{ ...TH }}>
                 <span style={{ width: "96px", flexShrink: 0 }}>Date</span>
                 <span style={{ width: "160px", flexShrink: 0 }}>Employee</span>
@@ -785,7 +1259,7 @@ export default function Payroll() {
                 <span style={{ width: "80px", flexShrink: 0, textAlign: "right" }}>Hours</span>
                 <span style={{ width: "96px", flexShrink: 0, textAlign: "right" }}>Pay</span>
                 <span style={{ width: "180px", flexShrink: 0 }}>Description</span>
-                <span style={{ width: "32px", flexShrink: 0 }}></span>
+                <span style={{ width: "28px", flexShrink: 0 }}></span>
               </div>
 
               {timeLoading && <div style={{ padding: "40px", textAlign: "center" as const, color: "var(--faint)", fontSize: "13px" }}>Loading time entries…</div>}
@@ -794,52 +1268,42 @@ export default function Payroll() {
                 <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
                   <div style={{ fontSize: "32px", marginBottom: "10px" }}>⏱️</div>
                   <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>No time entries</div>
-                  <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>{timeFilter !== "all" ? "Try a different period." : "Start logging hours to track employee work."}</div>
-                  {timeFilter === "all" && <button onClick={() => setIsTimeEntryDialogOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 18px", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-log-first-hours"><Plus style={{ width: "15px", height: "15px" }} />Log hours</button>}
+                  <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>Log hours to track time worked by your crew.</div>
+                  <button onClick={() => setIsTimeEntryDialogOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 18px", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-add-first-time-entry">
+                    <Plus style={{ width: "15px", height: "15px" }} />Log hours
+                  </button>
                 </div>
               )}
 
-              {filteredTimeEntries.map(entry => {
-                const pay = entry.employee?.hourlyRate ? Number(entry.hoursWorked) * Number(entry.employee.hourlyRate) : null;
-                return (
-                  <div key={entry.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-time-${entry.id}`}>
-                    <span className="font-mono" style={{ width: "96px", flexShrink: 0, fontSize: "12px", color: "var(--muted)" }}>
-                      {format(new Date(entry.date), "MMM d")}
-                    </span>
-                    <span style={{ width: "160px", flexShrink: 0, fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: "8px" }}>
-                      {entry.employee?.name ?? "—"}
-                    </span>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: "12.5px", color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: "8px" }}>
-                      {entry.job?.title ?? "—"}
-                    </span>
-                    <span className="font-mono" style={{ width: "80px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 600 }}>
-                      {Number(entry.hoursWorked).toFixed(1)} hrs
-                    </span>
-                    <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "12.5px", color: "var(--muted)" }}>
-                      {pay !== null ? fmt(pay) : "—"}
-                    </span>
-                    <span style={{ width: "180px", flexShrink: 0, fontSize: "12px", color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingLeft: "8px" }}>
-                      {entry.description || "—"}
-                    </span>
-                    <span style={{ width: "32px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
-                      <button onClick={() => setDeleteTimeEntryId(entry.id)} style={{ border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "2px", display: "flex", alignItems: "center" }} data-testid={`button-delete-entry-${entry.id}`}>
-                        <Trash2 style={{ width: "14px", height: "14px" }} />
-                      </button>
-                    </span>
-                  </div>
-                );
-              })}
+              {filteredTimeEntries.map((entry) => (
+                <div key={entry.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "11px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-time-${entry.id}`}>
+                  <span style={{ width: "96px", flexShrink: 0, fontSize: "12.5px", color: "var(--muted)" }}>
+                    {format(new Date(entry.date), "MMM d, yyyy")}
+                  </span>
+                  <span style={{ width: "160px", flexShrink: 0, fontSize: "13px", fontWeight: 500 }}>{entry.employee?.name ?? "—"}</span>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: "12.5px", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(entry as any).job?.title ?? "—"}</span>
+                  <span className="font-mono" style={{ width: "80px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 600 }}>{Number(entry.hoursWorked).toFixed(1)} hrs</span>
+                  <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "12.5px" }}>{fmtFull(Number(entry.hoursWorked) * Number(entry.employee?.hourlyRate ?? 0))}</span>
+                  <span style={{ width: "180px", flexShrink: 0, fontSize: "12px", color: "var(--faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.description || "—"}</span>
+                  <span style={{ width: "28px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
+                    <button onClick={() => setDeleteTimeEntryId(entry.id)} style={{ border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "2px", display: "flex" }} data-testid={`button-delete-time-${entry.id}`}>
+                      <Trash2 style={{ width: "14px", height: "14px" }} />
+                    </button>
+                  </span>
+                </div>
+              ))}
 
               {!timeLoading && filteredTimeEntries.length > 0 && (
-                <div style={{ padding: "12px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: "12.5px", color: "var(--faint)" }}>{filteredTimeEntries.length} entries</span>
-                  <span style={{ fontSize: "12.5px", color: "var(--faint)" }}>
-                    Total: <span className="font-mono" style={{ fontWeight: 600, color: "var(--fg)" }}>{filteredTimeEntries.reduce((s,e) => s + Number(e.hoursWorked), 0).toFixed(1)} hrs</span>
-                  </span>
+                <div style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
+                  {filteredTimeEntries.length} entr{filteredTimeEntries.length !== 1 ? "ies" : "y"} · {filteredTimeEntries.reduce((s, e) => s + Number(e.hoursWorked), 0).toFixed(1)} total hours
                 </div>
               )}
             </div>
           )}
+
+          {/* ══════════════════════════════════════════════════════════════════ */}
+          {/* ── SETTINGS ── */}
+          {activeSection === "settings" && <PaySettings />}
 
         </div>
       </div>

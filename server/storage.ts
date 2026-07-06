@@ -19,6 +19,10 @@ import {
   type InsertTimeEntry,
   type PayrollRecord,
   type InsertPayrollRecord,
+  type EmployeeDeduction,
+  type InsertEmployeeDeduction,
+  type PayrollSettings,
+  type InsertPayrollSettings,
   type Settings,
   type InsertSettings,
   type Invite,
@@ -39,6 +43,8 @@ import {
   employeeAssignments,
   timeEntries,
   payrollRecords,
+  employeeDeductions,
+  payrollSettings,
   settings,
   invites,
   inboxTasks,
@@ -120,6 +126,16 @@ export interface IStorage {
   getPayrollRecordsByEmployee(employeeId: string): Promise<PayrollRecord[]>;
   createPayrollRecord(record: InsertPayrollRecord): Promise<PayrollRecord>;
   updatePayrollRecord(id: string, updates: Partial<InsertPayrollRecord>): Promise<PayrollRecord | undefined>;
+
+  // Employee Deductions
+  getDeductionsByEmployee(employeeId: string): Promise<EmployeeDeduction[]>;
+  createDeduction(deduction: InsertEmployeeDeduction): Promise<EmployeeDeduction>;
+  updateDeduction(id: string, updates: Partial<InsertEmployeeDeduction>): Promise<EmployeeDeduction | undefined>;
+  deleteDeduction(id: string): Promise<void>;
+
+  // Payroll Settings
+  getPayrollSettings(): Promise<PayrollSettings | undefined>;
+  upsertPayrollSettings(data: Partial<InsertPayrollSettings>): Promise<PayrollSettings>;
 
   // Settings
   getSettings(): Promise<Settings | undefined>;
@@ -444,6 +460,41 @@ export class DatabaseStorage implements IStorage {
   async updatePayrollRecord(id: string, updates: Partial<InsertPayrollRecord>): Promise<PayrollRecord | undefined> {
     const [updated] = await db.update(payrollRecords).set(updates).where(eq(payrollRecords.id, id)).returning();
     return updated || undefined;
+  }
+
+  // Employee Deductions
+  async getDeductionsByEmployee(employeeId: string): Promise<EmployeeDeduction[]> {
+    return db.select().from(employeeDeductions).where(eq(employeeDeductions.employeeId, employeeId)).orderBy(employeeDeductions.createdAt);
+  }
+
+  async createDeduction(deduction: InsertEmployeeDeduction): Promise<EmployeeDeduction> {
+    const [created] = await db.insert(employeeDeductions).values(deduction).returning();
+    return created;
+  }
+
+  async updateDeduction(id: string, updates: Partial<InsertEmployeeDeduction>): Promise<EmployeeDeduction | undefined> {
+    const [updated] = await db.update(employeeDeductions).set(updates).where(eq(employeeDeductions.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async deleteDeduction(id: string): Promise<void> {
+    await db.delete(employeeDeductions).where(eq(employeeDeductions.id, id));
+  }
+
+  // Payroll Settings
+  async getPayrollSettings(): Promise<PayrollSettings | undefined> {
+    const [row] = await db.select().from(payrollSettings).limit(1);
+    return row || undefined;
+  }
+
+  async upsertPayrollSettings(data: Partial<InsertPayrollSettings>): Promise<PayrollSettings> {
+    const existing = await this.getPayrollSettings();
+    if (existing) {
+      const [updated] = await db.update(payrollSettings).set({ ...data, updatedAt: new Date() }).where(eq(payrollSettings.id, existing.id)).returning();
+      return updated;
+    }
+    const [created] = await db.insert(payrollSettings).values({ payFrequency: "biweekly", ...data } as any).returning();
+    return created;
   }
 
   // Settings

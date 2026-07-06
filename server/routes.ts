@@ -1554,10 +1554,139 @@ export async function registerRoutes(
     }
   });
 
+  // ── Payroll Settings ─────────────────────────────────────────────────────
+  app.get("/api/payroll-settings", requireAuth, async (_req, res) => {
+    try {
+      let ps = await storage.getPayrollSettings();
+      if (!ps) ps = await storage.upsertPayrollSettings({ payFrequency: "biweekly" });
+      res.json(ps);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to get payroll settings" });
+    }
+  });
+
+  app.patch("/api/payroll-settings", requireAuth, async (req, res) => {
+    try {
+      const freq = req.body?.payFrequency;
+      const allowed = ["weekly","biweekly","semimonthly","monthly"];
+      if (freq && !allowed.includes(freq)) return res.status(400).json({ error: "Invalid payFrequency" });
+      const ps = await storage.upsertPayrollSettings(freq ? { payFrequency: freq } : {});
+      res.json(ps);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update payroll settings" });
+    }
+  });
+
+  // ── Employee Deductions ───────────────────────────────────────────────────
+  app.get("/api/employees/:id/deductions", requireAuth, async (req, res) => {
+    try {
+      const deductions = await storage.getDeductionsByEmployee(req.params.id);
+      res.json(deductions);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to get deductions" });
+    }
+  });
+
+  app.post("/api/employees/:id/deductions", requireAuth, async (req, res) => {
+    try {
+      const { label, deductionType, amount, category, active } = req.body;
+      if (!label || !amount) return res.status(400).json({ error: "label and amount are required" });
+      const deduction = await storage.createDeduction({
+        employeeId: req.params.id,
+        label,
+        deductionType: deductionType ?? "fixed",
+        amount: String(amount),
+        category: category ?? "other",
+        active: active !== false,
+      });
+      res.status(201).json(deduction);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to create deduction" });
+    }
+  });
+
+  app.patch("/api/employees/:empId/deductions/:id", requireAuth, async (req, res) => {
+    try {
+      const updates: Record<string, unknown> = {};
+      const allowed = ["label","deductionType","amount","category","active"];
+      allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+      if (updates.amount) updates.amount = String(updates.amount);
+      const d = await storage.updateDeduction(req.params.id, updates as any);
+      if (!d) return res.status(404).json({ error: "Deduction not found" });
+      res.json(d);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update deduction" });
+    }
+  });
+
+  app.delete("/api/employees/:empId/deductions/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteDeduction(req.params.id);
+      res.status(204).end();
+    } catch (err) {
+      res.status(500).json({ error: "Failed to delete deduction" });
+    }
+  });
+
+  // ── Tax-withholding helper ────────────────────────────────────────────────
+  function calcFederalTax(annualGross: number, filingStatus: string): number {
+    const stdDeduction = filingStatus === "married" ? 29200 : filingStatus === "head_of_household" ? 21900 : 14600;
+    const taxable = Math.max(0, annualGross - stdDeduction);
+    let tax = 0;
+    if (filingStatus === "married") {
+      const brackets = [[0,23200,.10],[23200,94300,.12],[94300,201050,.22],[201050,383900,.24],[383900,487450,.32],[487450,731200,.35],[731200,Infinity,.37]];
+      for (const [lo, hi, r] of brackets) {
+        if (taxable <= lo) break;
+        tax += (Math.min(taxable, hi as number) - lo) * r;
+      }
+    } else {
+      const brackets = [[0,11600,.10],[11600,47150,.12],[47150,100525,.22],[100525,191950,.24],[191950,243725,.32],[243725,609350,.35],[609350,Infinity,.37]];
+      for (const [lo, hi, r] of brackets) {
+        if (taxable <= lo) break;
+        tax += (Math.min(taxable, hi as number) - lo) * r;
+      }
+    }
+    return tax;
+  }
+
+  const STATE_RATES: Record<string,number> = {
+    TX:0, FL:0, WA:0, NV:0, WY:0, SD:0, AK:0, TN:0, NH:0,
+    CA:.093, NY:.0685, OR:.099, MN:.0985, HI:.11,
+    MA:.05, IL:.0495, CO:.044, PA:.0307, MI:.0425, GA:.055,
+  };
+
+  function calcStateTax(annualGross: number, stateCode: string): number {
+    const rate = STATE_RATES[stateCode?.toUpperCase()] ?? 0.05;
+    return annualGross * rate;
+  }
+
+  // Compute per-period OT breakdown by ISO work week (Mon–Sun)
+  function computeOvertimeBreakdown(entries: { date: string | Date; hoursWorked: string | number }[], hourlyRate: number) {
+    const byWeek = new Map<string, number>();
+    for (const e of entries) {
+      const d = new Date(e.date);
+      const day = d.getUTCDay(); // 0=Sun,1=Mon,...
+      const mondayOffset = (day === 0 ? -6 : 1 - day);
+      const monday = new Date(d);
+      monday.setUTCDate(d.getUTCDate() + mondayOffset);
+      const weekKey = monday.toISOString().slice(0,10);
+      byWeek.set(weekKey, (byWeek.get(weekKey) ?? 0) + Number(e.hoursWorked));
+    }
+    let regularHours = 0, overtimeHours = 0;
+    for (const wkHours of byWeek.values()) {
+      regularHours += Math.min(wkHours, 40);
+      overtimeHours += Math.max(0, wkHours - 40);
+    }
+    const regularPay = regularHours * hourlyRate;
+    const overtimePay = overtimeHours * hourlyRate * 1.5;
+    const grossPay = regularPay + overtimePay;
+    return { regularHours, overtimeHours, regularPay, overtimePay, grossPay };
+  }
+
   // Run payroll for a date range — creates one record per active employee
   app.post("/api/payroll-records/run", async (req, res) => {
     try {
-      const { periodStart, periodEnd, deductionRate } = req.body;
+      const { periodStart, periodEnd } = req.body;
       if (!periodStart || !periodEnd) {
         return res.status(400).json({ error: "periodStart and periodEnd are required" });
       }
@@ -1583,44 +1712,83 @@ export async function registerRoutes(
         return res.status(400).json({ error: "This period overlaps with an already-processed payroll period" });
       }
 
-      const parsedDeductionRate = deductionRate === undefined || deductionRate === null ? 0 : Number(deductionRate);
-      if (isNaN(parsedDeductionRate) || parsedDeductionRate < 0 || parsedDeductionRate > 100) {
-        return res.status(400).json({ error: "deductionRate must be a number between 0 and 100" });
-      }
-
       const activeEmployees = (await storage.getEmployees()).filter((e) => e.status === "active");
       const periodEntries = await storage.getTimeEntriesByPeriod(start, end);
-      const rate = parsedDeductionRate / 100;
-
-      const recordsToCreate = activeEmployees
-        .map((emp) => {
-          const empEntries = periodEntries.filter((e) => e.employeeId === emp.id);
-          const totalHours = empEntries.reduce((s, e) => s + Number(e.hoursWorked), 0);
-          const hourlyRate = Number(emp.hourlyRate);
-          const grossPay = totalHours * hourlyRate;
-          const deductions = grossPay * rate;
-          const netPay = grossPay - deductions;
-          return { emp, totalHours, hourlyRate, grossPay, deductions, netPay };
-        })
-        .filter(({ totalHours }) => totalHours > 0);
+      const periodDays = Math.max(1, (end.getTime() - start.getTime()) / 864e5);
 
       const created = await Promise.all(
-        recordsToCreate.map(({ emp, totalHours, hourlyRate, grossPay, deductions, netPay }) =>
-          storage.createPayrollRecord({
-            employeeId: emp.id,
-            periodStart: start,
-            periodEnd: end,
-            totalHours: String(totalHours),
-            hourlyRate: String(hourlyRate),
-            grossPay: String(grossPay),
-            deductions: String(deductions),
-            netPay: String(netPay),
-            status: "pending",
+        activeEmployees
+          .map(async (emp) => {
+            const empEntries = periodEntries.filter((e) => e.employeeId === emp.id);
+            const hourlyRate = Number(emp.hourlyRate);
+            const isSalary = emp.payType === "salary";
+            const is1099 = emp.employmentType === "1099";
+
+            // ── Hours and gross pay ──
+            let grossPay: number, regularHours: number, overtimeHours: number, regularPay: number, overtimePay: number, totalHours: number;
+            if (isSalary) {
+              const annual = Number(emp.annualSalary ?? 0);
+              grossPay = annual * (periodDays / 365);
+              totalHours = empEntries.reduce((s, e) => s + Number(e.hoursWorked), 0);
+              regularHours = totalHours; overtimeHours = 0; regularPay = grossPay; overtimePay = 0;
+            } else {
+              const ot = computeOvertimeBreakdown(empEntries as any, hourlyRate);
+              ({ regularHours, overtimeHours, regularPay, overtimePay, grossPay } = ot);
+              totalHours = regularHours + overtimeHours;
+            }
+
+            if (totalHours === 0 && !isSalary) return null;
+
+            // ── Deductions ──
+            const empDeductions = await storage.getDeductionsByEmployee(emp.id);
+            const activeDeductions = empDeductions.filter(d => d.active);
+            const deductionsBreakdown: { label: string; amount: number; category: string }[] = [];
+            let totalDeductionAmount = 0;
+            for (const d of activeDeductions) {
+              const amt = d.deductionType === "percent"
+                ? grossPay * (Number(d.amount) / 100)
+                : Number(d.amount);
+              deductionsBreakdown.push({ label: d.label, amount: amt, category: d.category });
+              totalDeductionAmount += amt;
+            }
+
+            // ── Tax withholding (W-2 only) ──
+            let taxWithheld = 0;
+            if (!is1099) {
+              const allowanceValue = 4300 * (emp.taxAllowances ?? 0);
+              const annualGross = grossPay * (365 / periodDays);
+              const adjustedAnnual = Math.max(0, annualGross - allowanceValue);
+              const annualFederal = calcFederalTax(adjustedAnnual, emp.filingStatus ?? "single");
+              const annualState = calcStateTax(adjustedAnnual, emp.stateCode ?? "CA");
+              const annualTax = annualFederal + annualState;
+              taxWithheld = Math.max(0, annualTax * (periodDays / 365));
+            }
+
+            const netPay = Math.max(0, grossPay - totalDeductionAmount - taxWithheld);
+
+            return storage.createPayrollRecord({
+              employeeId: emp.id,
+              periodStart: start,
+              periodEnd: end,
+              totalHours: String(totalHours),
+              regularHours: String(regularHours),
+              overtimeHours: String(overtimeHours),
+              hourlyRate: String(hourlyRate),
+              regularPay: String(regularPay),
+              overtimePay: String(overtimePay),
+              grossPay: String(grossPay),
+              taxWithheld: String(taxWithheld),
+              deductions: String(totalDeductionAmount),
+              deductionsBreakdown,
+              netPay: String(netPay),
+              status: "pending",
+            });
           })
-        )
+          .filter(Boolean)
       );
 
-      res.status(201).json(created);
+      const results = (await Promise.all(created)).filter(Boolean);
+      res.status(201).json(results);
     } catch (error) {
       console.error("Run payroll error:", error);
       res.status(500).json({ error: "Failed to run payroll" });

@@ -306,6 +306,13 @@ export const employees = pgTable("employees", {
   position: text("position"),
   hireDate: timestamp("hire_date"),
   status: text("status").notNull().default("active"), // active, inactive
+  // Payroll / tax fields
+  employmentType: text("employment_type").default("w2"), // w2, 1099
+  payType: text("pay_type").default("hourly"), // hourly, salary
+  annualSalary: decimal("annual_salary", { precision: 10, scale: 2 }),
+  filingStatus: text("filing_status").default("single"), // single, married, head_of_household
+  taxAllowances: integer("tax_allowances").default(0),
+  stateCode: text("state_code").default("CA"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -313,6 +320,7 @@ export const employeesRelations = relations(employees, ({ many }) => ({
   assignments: many(employeeAssignments),
   timeEntries: many(timeEntries),
   payrollRecords: many(payrollRecords),
+  deductions: many(employeeDeductions),
 }));
 
 export const insertEmployeeSchema = createInsertSchema(employees)
@@ -320,9 +328,46 @@ export const insertEmployeeSchema = createInsertSchema(employees)
   .extend({
     hireDate: z.coerce.date().optional().nullable(),
     hourlyRate: positiveNumericString("Hourly rate"),
+    employmentType: z.enum(["w2", "1099"]).optional(),
+    payType: z.enum(["hourly", "salary"]).optional(),
+    annualSalary: z.coerce.string().optional().nullable(),
+    filingStatus: z.enum(["single", "married", "head_of_household"]).optional(),
+    taxAllowances: z.coerce.number().int().min(0).max(20).optional(),
+    stateCode: z.string().length(2).optional(),
   });
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 export type Employee = typeof employees.$inferSelect;
+
+// Employee Deductions — pre-tax or post-tax recurring deductions per employee
+export const employeeDeductions = pgTable("employee_deductions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  employeeId: varchar("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  deductionType: text("deduction_type").notNull().default("fixed"), // fixed, percent
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  category: text("category").notNull().default("other"), // health, dental, vision, retirement, garnishment, other
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const employeeDeductionsRelations = relations(employeeDeductions, ({ one }) => ({
+  employee: one(employees, { fields: [employeeDeductions.employeeId], references: [employees.id] }),
+}));
+
+export const insertEmployeeDeductionSchema = createInsertSchema(employeeDeductions).omit({ id: true, createdAt: true });
+export type InsertEmployeeDeduction = z.infer<typeof insertEmployeeDeductionSchema>;
+export type EmployeeDeduction = typeof employeeDeductions.$inferSelect;
+
+// Payroll Settings — global single-row config (pay frequency, etc.)
+export const payrollSettings = pgTable("payroll_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  payFrequency: text("pay_frequency").notNull().default("biweekly"), // weekly, biweekly, semimonthly, monthly
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertPayrollSettingsSchema = createInsertSchema(payrollSettings).omit({ id: true, updatedAt: true });
+export type InsertPayrollSettings = z.infer<typeof insertPayrollSettingsSchema>;
+export type PayrollSettings = typeof payrollSettings.$inferSelect;
 
 // Employee Assignments to Jobs
 export const employeeAssignments = pgTable("employee_assignments", {
@@ -388,9 +433,15 @@ export const payrollRecords = pgTable("payroll_records", {
   periodStart: timestamp("period_start").notNull(),
   periodEnd: timestamp("period_end").notNull(),
   totalHours: decimal("total_hours", { precision: 10, scale: 2 }).notNull(),
+  regularHours: decimal("regular_hours", { precision: 10, scale: 2 }).default("0"),
+  overtimeHours: decimal("overtime_hours", { precision: 10, scale: 2 }).default("0"),
   hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }).notNull(),
+  regularPay: decimal("regular_pay", { precision: 10, scale: 2 }).default("0"),
+  overtimePay: decimal("overtime_pay", { precision: 10, scale: 2 }).default("0"),
   grossPay: decimal("gross_pay", { precision: 10, scale: 2 }).notNull(),
+  taxWithheld: decimal("tax_withheld", { precision: 10, scale: 2 }).default("0"),
   deductions: decimal("deductions", { precision: 10, scale: 2 }).default("0"),
+  deductionsBreakdown: jsonb("deductions_breakdown").$type<{ label: string; amount: number; category: string }[]>().default([]),
   netPay: decimal("net_pay", { precision: 10, scale: 2 }).notNull(),
   status: text("status").notNull().default("pending"), // pending, paid
   paidDate: timestamp("paid_date"),
@@ -408,9 +459,15 @@ export const insertPayrollRecordSchema = createInsertSchema(payrollRecords)
   .omit({ id: true, createdAt: true })
   .extend({
     totalHours: positiveNumericString("Total hours"),
+    regularHours: z.coerce.string().optional(),
+    overtimeHours: z.coerce.string().optional(),
     hourlyRate: positiveNumericString("Hourly rate"),
+    regularPay: z.coerce.string().optional(),
+    overtimePay: z.coerce.string().optional(),
     grossPay: positiveNumericString("Gross pay"),
+    taxWithheld: z.coerce.string().optional(),
     deductions: z.coerce.string().optional(),
+    deductionsBreakdown: z.array(z.object({ label: z.string(), amount: z.number(), category: z.string() })).optional(),
     netPay: nonNegativeNumericString("Net pay"),
   });
 export type InsertPayrollRecord = z.infer<typeof insertPayrollRecordSchema>;
