@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { formatPhone } from "@/lib/formatPhone";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -34,7 +34,7 @@ interface EmployeeDeduction {
   amount: string; category: string; active: boolean; createdAt: string;
 }
 interface PayrollSettings { id: string; payFrequency: string; updatedAt: string; }
-interface EmployeeWithStats extends Employee { hoursThisPeriod: number; totalPay: number; }
+interface EmployeeWithStats extends Employee { hoursThisPeriod: number; totalPay: number; deductionsCount?: number; }
 interface TimeEntryWithRelations extends TimeEntry { employee: Employee; job?: Job; }
 interface PayrollRecordWithEmployee {
   id: string; employeeId: string; status: string; createdAt: string | Date;
@@ -147,6 +147,39 @@ function periodPresets() {
     { label: "Last 2 Weeks", start: format(new Date(now.getTime()-14*864e5), "yyyy-MM-dd"), end: format(now, "yyyy-MM-dd") },
     { label: "Last Week",    start: format(new Date(now.getTime()-7*864e5), "yyyy-MM-dd"),  end: format(now, "yyyy-MM-dd") },
   ];
+}
+
+/** Returns the most recent complete period dates for a given pay frequency. */
+function getFrequencyPeriod(freq: string): { start: string; end: string } {
+  const now = new Date();
+  const today = format(now, "yyyy-MM-dd");
+  if (freq === "weekly") {
+    const day = now.getUTCDay(); // 0=Sun
+    const lastSun = new Date(now); lastSun.setUTCDate(now.getUTCDate() - (day === 0 ? 7 : day));
+    const lastMon = new Date(lastSun); lastMon.setUTCDate(lastSun.getUTCDate() - 6);
+    return { start: format(lastMon, "yyyy-MM-dd"), end: format(lastSun, "yyyy-MM-dd") };
+  }
+  if (freq === "biweekly") {
+    const day = now.getUTCDay();
+    const lastSun = new Date(now); lastSun.setUTCDate(now.getUTCDate() - (day === 0 ? 7 : day));
+    const twoWeekMon = new Date(lastSun); twoWeekMon.setUTCDate(lastSun.getUTCDate() - 13);
+    return { start: format(twoWeekMon, "yyyy-MM-dd"), end: format(lastSun, "yyyy-MM-dd") };
+  }
+  if (freq === "semimonthly") {
+    const d = now.getUTCDate();
+    if (d >= 16) {
+      // Return first half of this month
+      return { start: format(startOfMonth(now), "yyyy-MM-dd"), end: `${format(now, "yyyy-MM")}-15` };
+    }
+    // Return second half of last month
+    const lastMo = subMonths(now, 1);
+    return { start: `${format(lastMo, "yyyy-MM")}-16`, end: format(endOfMonth(lastMo), "yyyy-MM-dd") };
+  }
+  // monthly — last full month
+  return {
+    start: format(startOfMonth(subMonths(now,1)), "yyyy-MM-dd"),
+    end: format(endOfMonth(subMonths(now,1)), "yyyy-MM-dd"),
+  };
 }
 
 // ── Deductions section (used inside employee form) ────────────────────────────
@@ -518,9 +551,15 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
   const activeCount = employees?.filter(e => e.status === "active").length ?? 0;
   const w2Count = employees?.filter(e => e.status === "active" && (e as any).employmentType !== "1099").length ?? 0;
   const presets = periodPresets();
+
+  // Derive smart defaults from saved pay frequency; fall back to "This Month"
+  const freqPeriod = payrollSettings
+    ? getFrequencyPeriod(payrollSettings.payFrequency)
+    : presets[0];
+
   const form = useForm<RunPayrollValues>({
     resolver: zodResolver(runPayrollSchema),
-    defaultValues: { periodStart: presets[0].start, periodEnd: presets[0].end },
+    defaultValues: { periodStart: freqPeriod.start, periodEnd: freqPeriod.end },
   });
   const mutation = useMutation({
     mutationFn: async (data: RunPayrollValues) => {
@@ -628,41 +667,34 @@ function PayStubDialog({ record, onClose }: { record: PayrollRecordWithEmployee;
   const otHrs = Number(record.overtimeHours ?? 0);
   const breakdown = (record.deductionsBreakdown ?? []) as { label: string; amount: number; category: string }[];
   const is1099 = (emp as any).employmentType === "1099";
+  const [isPrinting, setIsPrinting] = useState(false);
+  const stubRef = useRef<HTMLDivElement | null>(null);
 
-  function printStub() {
-    const w = window.open("", "_blank");
-    if (!w) return;
-    w.document.write(`<!DOCTYPE html><html><head><title>Pay Stub</title><style>
-      body{font-family:sans-serif;padding:32px;max-width:620px;margin:0 auto}
-      h2{margin:0 0 4px;font-size:20px}
-      .sub{color:#64748b;font-size:13px;margin-bottom:20px}
-      table{width:100%;border-collapse:collapse;font-size:13px}
-      td{padding:5px 8px;border-bottom:1px solid #f1f5f9}
-      td:last-child{text-align:right;font-weight:600}
-      .total td{font-size:15px;font-weight:800;border-top:2px solid #0f172a}
-      .section{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#64748b;padding-top:14px}
-    </style></head><body>
-    <h2>${emp.name}</h2>
-    <div class="sub">${(emp as any).position ?? ""} · ${is1099 ? "1099 Contractor" : "W-2 Employee"}<br/>
-    Period: ${toDateStr(record.periodStart)} – ${toDateStr(record.periodEnd)}</div>
-    <table>
-      <tr><td class="section" colspan="2">Earnings</td></tr>
-      <tr><td>Regular pay (${regHrs.toFixed(2)} hrs)</td><td>${fmtFull(regPay)}</td></tr>
-      ${otHrs > 0 ? `<tr><td>Overtime pay (${otHrs.toFixed(2)} hrs × 1.5×)</td><td>${fmtFull(otPay)}</td></tr>` : ""}
-      <tr><td><strong>Gross pay</strong></td><td>${fmtFull(gross)}</td></tr>
-      ${!is1099 ? `<tr><td class="section" colspan="2">Tax Withholding</td></tr>
-      <tr><td>Federal + State income tax</td><td>(${fmtFull(taxWithheld)})</td></tr>` : ""}
-      ${breakdown.length > 0 ? `<tr><td class="section" colspan="2">Deductions</td></tr>
-      ${breakdown.map(d => `<tr><td>${d.label}</td><td>(${fmtFull(d.amount)})</td></tr>`).join("")}` : ""}
-      <tr class="total"><td>Net pay</td><td>${fmtFull(net)}</td></tr>
-    </table>
-    </body></html>`);
-    w.document.close();
-    w.print();
+  async function downloadPdf() {
+    const el = stubRef.current;
+    if (!el) return;
+    setIsPrinting(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
+      const canvas = await html2canvas(el, { scale: 2, useCORS: true, logging: false, backgroundColor: "#ffffff" });
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`paystub-${emp.name.replace(/\s+/g,"-").toLowerCase()}-${toDateStr(record.periodStart)}.pdf`);
+    } catch (e) {
+      console.error("PDF error", e);
+    } finally {
+      setIsPrinting(false);
+    }
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+      {/* Printable content area */}
+      <div ref={stubRef} style={{ background: "#ffffff" }}>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: "14px", marginBottom: "18px" }}>
         <div style={{ width: "44px", height: "44px", borderRadius: "50%", background: "var(--av1)", color: "var(--av1f)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "14px", flexShrink: 0 }}>
@@ -731,11 +763,12 @@ function PayStubDialog({ record, onClose }: { record: PayrollRecordWithEmployee;
         <span style={{ fontSize: "14px", fontWeight: 700, color: "#15803d" }}>Net pay</span>
         <span className="font-mono" style={{ fontSize: "20px", fontWeight: 800, color: "#15803d" }}>{fmtFull(net)}</span>
       </div>
+      </div>{/* end stubRef */}
 
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "4px" }}>
         <button type="button" onClick={onClose} style={{ padding: "9px 16px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "9px", fontSize: "13px", fontWeight: 600, color: "#475569", cursor: "pointer", fontFamily: "inherit" }} data-testid="button-close-paystub">Close</button>
-        <button type="button" onClick={printStub} style={{ display: "flex", alignItems: "center", gap: "7px", padding: "9px 16px", border: "none", background: "#0f172a", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit" }} data-testid="button-print-paystub">
-          <FileText style={{ width: "14px", height: "14px" }} /> Print / PDF
+        <button type="button" onClick={downloadPdf} disabled={isPrinting} style={{ display: "flex", alignItems: "center", gap: "7px", padding: "9px 16px", border: "none", background: "#0f172a", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit", opacity: isPrinting ? 0.7 : 1 }} data-testid="button-print-paystub">
+          <FileText style={{ width: "14px", height: "14px" }} /> {isPrinting ? "Generating…" : "Download PDF"}
         </button>
       </div>
     </div>
@@ -1156,6 +1189,7 @@ export default function Payroll() {
                 <span style={{ width: "100px", flexShrink: 0, textAlign: "right" }}>Rate</span>
                 <span style={{ width: "88px", flexShrink: 0, textAlign: "right" }}>Hrs (month)</span>
                 <span style={{ width: "100px", flexShrink: 0, textAlign: "right" }}>Month pay</span>
+                <span style={{ width: "80px", flexShrink: 0, textAlign: "center" }}>Deductions</span>
                 <span style={{ width: "88px", flexShrink: 0, textAlign: "center" }}>Status</span>
                 <span style={{ width: "28px", flexShrink: 0 }}></span>
               </div>
@@ -1201,6 +1235,17 @@ export default function Payroll() {
                     <span className="font-mono" style={{ width: "100px", flexShrink: 0, textAlign: "right", fontSize: "12.5px" }}>{fmtFull(emp.hourlyRate)}/hr</span>
                     <span className="font-mono" style={{ width: "88px", flexShrink: 0, textAlign: "right", fontSize: "12.5px", color: "var(--muted)" }}>{(emp.hoursThisPeriod || 0).toFixed(1)} hrs</span>
                     <span className="font-mono" style={{ width: "100px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 600 }}>{fmtFull(emp.totalPay || 0)}</span>
+                    <span style={{ width: "80px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
+                      {((emp as EmployeeWithStats).deductionsCount ?? 0) > 0 ? (
+                        <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "5px", background: "#f0fdf4", color: "#16a34a", cursor: "pointer", whiteSpace: "nowrap" }}
+                          onClick={() => { setEditingEmployee(emp); setIsEmployeeDialogOpen(true); }}
+                          data-testid={`badge-deductions-${emp.id}`}>
+                          {(emp as EmployeeWithStats).deductionsCount} deduction{((emp as EmployeeWithStats).deductionsCount ?? 0) !== 1 ? "s" : ""}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: "11px", color: "var(--faint)" }}>—</span>
+                      )}
+                    </span>
                     <span style={{ width: "88px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
                       <span style={{ background: active ? "var(--b-green-bg)" : "var(--b-gray-bg)", color: active ? "var(--b-green-fg)" : "var(--b-gray-fg)", fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px", textTransform: "capitalize", whiteSpace: "nowrap" }}>
                         {emp.status}

@@ -624,32 +624,23 @@ describe("POST /api/payroll-records/run — zero-hour employee filtering", () =>
   });
 });
 
-describe("POST /api/payroll-records/run — deductionRate validation", () => {
-  it("returns 400 when deductionRate is a non-numeric string", async () => {
+describe("POST /api/payroll-records/run — per-employee deductions (global deductionRate removed)", () => {
+  it("accepts a run without deductionRate (deductions are now per-employee)", async () => {
     const res = await request(app)
       .post("/api/payroll-records/run")
-      .send({ periodStart: "2025-01-01", periodEnd: "2025-01-31", deductionRate: "abc" })
-      .expect(400);
+      .send({ periodStart: "2001-01-01", periodEnd: "2001-01-31" })
+      .expect(201);
 
-    expect(res.body.error).toBe("deductionRate must be a number between 0 and 100");
+    expect(Array.isArray(res.body)).toBe(true);
   });
 
-  it("returns 400 when deductionRate is negative", async () => {
+  it("ignores a passed deductionRate field and still returns 201", async () => {
     const res = await request(app)
       .post("/api/payroll-records/run")
-      .send({ periodStart: "2025-01-01", periodEnd: "2025-01-31", deductionRate: -5 })
-      .expect(400);
+      .send({ periodStart: "2002-01-01", periodEnd: "2002-01-31", deductionRate: 50 })
+      .expect(201);
 
-    expect(res.body.error).toBe("deductionRate must be a number between 0 and 100");
-  });
-
-  it("returns 400 when deductionRate exceeds 100", async () => {
-    const res = await request(app)
-      .post("/api/payroll-records/run")
-      .send({ periodStart: "2025-01-01", periodEnd: "2025-01-31", deductionRate: 200 })
-      .expect(400);
-
-    expect(res.body.error).toBe("deductionRate must be a number between 0 and 100");
+    expect(Array.isArray(res.body)).toBe(true);
   });
 });
 

@@ -1387,7 +1387,9 @@ export async function registerRoutes(
           );
           const totalPay = hoursThisPeriod * Number(employee.hourlyRate);
           
-          return { ...employee, hoursThisPeriod, totalPay };
+          const deductions = await storage.getDeductionsByEmployee(employee.id);
+          const deductionsCount = deductions.length;
+          return { ...employee, hoursThisPeriod, totalPay, deductionsCount };
         })
       );
 
@@ -1620,6 +1622,30 @@ export async function registerRoutes(
   });
 
   app.delete("/api/employees/:empId/deductions/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteDeduction(req.params.id);
+      res.status(204).end();
+    } catch (err) {
+      res.status(500).json({ error: "Failed to delete deduction" });
+    }
+  });
+
+  // ── Flat deduction aliases (PATCH/DELETE /api/employee-deductions/:id) ────
+  app.patch("/api/employee-deductions/:id", requireAuth, async (req, res) => {
+    try {
+      const updates: Record<string, unknown> = {};
+      const allowed = ["label","deductionType","amount","category","active"];
+      allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+      if (updates.amount) updates.amount = String(updates.amount);
+      const d = await storage.updateDeduction(req.params.id, updates as any);
+      if (!d) return res.status(404).json({ error: "Deduction not found" });
+      res.json(d);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update deduction" });
+    }
+  });
+
+  app.delete("/api/employee-deductions/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteDeduction(req.params.id);
       res.status(204).end();
