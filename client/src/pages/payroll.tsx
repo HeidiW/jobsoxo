@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { formatPhone } from "@/lib/formatPhone";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -559,8 +559,16 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
 
   const form = useForm<RunPayrollValues>({
     resolver: zodResolver(runPayrollSchema),
-    defaultValues: { periodStart: freqPeriod.start, periodEnd: freqPeriod.end },
+    defaultValues: { periodStart: presets[0].start, periodEnd: presets[0].end },
   });
+
+  // When settings load async, reset to the frequency-driven period
+  useEffect(() => {
+    if (payrollSettings) {
+      const p = getFrequencyPeriod(payrollSettings.payFrequency);
+      form.reset({ periodStart: p.start, periodEnd: p.end });
+    }
+  }, [payrollSettings]);
   const mutation = useMutation({
     mutationFn: async (data: RunPayrollValues) => {
       const res = await apiRequest("POST", "/api/payroll-records/run", { periodStart: data.periodStart, periodEnd: data.periodEnd });
@@ -656,6 +664,8 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
 
 // ── Pay Stub Dialog ───────────────────────────────────────────────────────────
 function PayStubDialog({ record, onClose }: { record: PayrollRecordWithEmployee; onClose: () => void }) {
+  const { data: appSettings } = useQuery<{ companyName?: string }>({ queryKey: ["/api/settings"] });
+  const companyName = appSettings?.companyName || "JobsOxo";
   const emp = record.employee;
   const gross = Number(record.grossPay);
   const regPay = Number(record.regularPay ?? 0);
@@ -695,6 +705,17 @@ function PayStubDialog({ record, onClose }: { record: PayrollRecordWithEmployee;
     <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
       {/* Printable content area */}
       <div ref={stubRef} style={{ background: "#ffffff" }}>
+      {/* Company header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px", paddingBottom: "12px", borderBottom: "2px solid #0f172a" }}>
+        <div>
+          <div style={{ fontSize: "18px", fontWeight: 800, color: "#0f172a", letterSpacing: "-0.02em" }}>{companyName}</div>
+          <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px", fontWeight: 500, textTransform: "uppercase", letterSpacing: ".04em" }}>Pay Stub</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: "12px", color: "#64748b" }}>Pay period</div>
+          <div style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a" }}>{toDateStr(record.periodStart)} – {toDateStr(record.periodEnd)}</div>
+        </div>
+      </div>
       {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: "14px", marginBottom: "18px" }}>
         <div style={{ width: "44px", height: "44px", borderRadius: "50%", background: "var(--av1)", color: "var(--av1f)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "14px", flexShrink: 0 }}>
@@ -704,9 +725,6 @@ function PayStubDialog({ record, onClose }: { record: PayrollRecordWithEmployee;
           <div style={{ fontSize: "16px", fontWeight: 700 }}>{emp.name}</div>
           <div style={{ fontSize: "12.5px", color: "var(--muted)" }}>
             {(emp as any).position ?? "Employee"} · {is1099 ? "1099 Contractor" : "W-2 Employee"}
-          </div>
-          <div style={{ fontSize: "12px", color: "var(--faint)", marginTop: "2px" }}>
-            Pay period: {toDateStr(record.periodStart)} – {toDateStr(record.periodEnd)}
           </div>
         </div>
       </div>
@@ -1055,7 +1073,8 @@ export default function Payroll() {
               <div style={{ ...TH }}>
                 <span style={{ flex: 1, minWidth: 0 }}>Painter</span>
                 <span style={{ width: "90px", flexShrink: 0 }}>Type</span>
-                <span style={{ width: "130px", flexShrink: 0 }}>Hours (reg + OT)</span>
+                <span style={{ width: "80px", flexShrink: 0, textAlign: "right" }}>Reg hrs</span>
+                <span style={{ width: "72px", flexShrink: 0, textAlign: "right" }}>OT hrs</span>
                 <span style={{ width: "96px", flexShrink: 0, textAlign: "right" }}>Gross</span>
                 <span style={{ width: "86px", flexShrink: 0, textAlign: "right" }}>Tax</span>
                 <span style={{ width: "86px", flexShrink: 0, textAlign: "right" }}>Deductions</span>
@@ -1102,14 +1121,14 @@ export default function Payroll() {
                     <div style={{ width: "90px", flexShrink: 0 }}>
                       <span style={{ fontSize: "11px", fontWeight: 600, padding: "2px 7px", borderRadius: "5px", background: is1099 ? "var(--b-amber-bg)" : "var(--b-blue-bg, #eff6ff)", color: is1099 ? "var(--b-amber-fg)" : "var(--b-blue-fg, #1d4ed8)" }}>{is1099 ? "1099" : "W-2"}</span>
                     </div>
-                    {/* Hours */}
-                    <div style={{ width: "130px", flexShrink: 0 }}>
-                      <div className="font-mono" style={{ fontSize: "12.5px", fontWeight: 600 }}>{r.hoursLabel}</div>
-                      <div style={{ height: "4px", borderRadius: "3px", background: "var(--track)", overflow: "hidden", marginTop: "4px", width: "96px" }}>
-                        <div style={{ width: `${r.barReg}%`, height: "100%", background: "var(--jox-primary)", float: "left" }} />
-                        <div style={{ width: `${r.barOt}%`, height: "100%", background: OT_COLOR, float: "left" }} />
-                      </div>
-                    </div>
+                    {/* Reg hrs */}
+                    <span className="font-mono" style={{ width: "80px", flexShrink: 0, textAlign: "right", fontSize: "12.5px" }}>
+                      {Number(r.regularHours ?? Math.max(0, Number(r.totalHours) - Number(r.overtimeHours ?? 0))).toFixed(1)}
+                    </span>
+                    {/* OT hrs */}
+                    <span className="font-mono" style={{ width: "72px", flexShrink: 0, textAlign: "right", fontSize: "12.5px", fontWeight: Number(r.overtimeHours ?? 0) > 0 ? 700 : 400, color: Number(r.overtimeHours ?? 0) > 0 ? OT_COLOR : "var(--faint)" }} data-testid={`ot-${r.id}`}>
+                      {Number(r.overtimeHours ?? 0) > 0 ? Number(r.overtimeHours).toFixed(1) : "—"}
+                    </span>
                     {/* Gross */}
                     <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 700 }} data-testid={`gross-${r.id}`}>{fmt(r.grossPay)}</span>
                     {/* Tax */}
@@ -1156,7 +1175,8 @@ export default function Payroll() {
                 <div style={{ display: "flex", alignItems: "center", padding: "12px 18px", background: "var(--track)", borderTop: "1px solid var(--panel-bd)" }}>
                   <span style={{ flex: 1, fontSize: "12.5px", fontWeight: 700 }}>Total</span>
                   <span style={{ width: "90px", flexShrink: 0 }}></span>
-                  <span className="font-mono" style={{ width: "130px", flexShrink: 0, fontSize: "12px", color: "var(--muted)" }}>{totalHrs.toFixed(0)} hrs</span>
+                  <span className="font-mono" style={{ width: "80px", flexShrink: 0, textAlign: "right", fontSize: "12px", color: "var(--muted)" }}>{totalHrs.toFixed(0)} hrs</span>
+                  <span style={{ width: "72px", flexShrink: 0 }}></span>
                   <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 700 }}>{fmt(gross)}</span>
                   <span className="font-mono" style={{ width: "86px", flexShrink: 0, textAlign: "right", fontSize: "12px", color: taxTotal > 0 ? "#dc2626" : "var(--faint)" }}>{taxTotal > 0 ? `(${fmt(taxTotal)})` : "—"}</span>
                   <span style={{ width: "86px", flexShrink: 0 }}></span>

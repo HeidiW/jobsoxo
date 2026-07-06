@@ -1388,8 +1388,7 @@ export async function registerRoutes(
           const totalPay = hoursThisPeriod * Number(employee.hourlyRate);
           
           const deductions = await storage.getDeductionsByEmployee(employee.id);
-          const deductionsCount = deductions.length;
-          return { ...employee, hoursThisPeriod, totalPay, deductionsCount };
+          return { ...employee, hoursThisPeriod, totalPay, deductions, deductionsCount: deductions.length };
         })
       );
 
