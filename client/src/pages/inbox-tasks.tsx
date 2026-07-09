@@ -635,7 +635,7 @@ export default function InboxTasks() {
           Click a row or checkbox to mark done · Hover a row for dismiss/snooze options
         </p>
       )}
->>>>>>> 011bb1e (Show dismissed count in 'Clear all' button label)
     </div>
+  </div>
   );
 }

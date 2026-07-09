@@ -24,7 +24,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
-import { Plus, Play, AlertTriangle, PhoneOff, Edit, Trash2, CheckCircle, ChevronLeft, ChevronRight, FileText, X, Settings2 } from "lucide-react";
+import { Plus, Play, AlertTriangle, PhoneOff, Edit, Trash2, CheckCircle, ChevronLeft, ChevronRight, FileText, X, Settings2, Download } from "lucide-react";
 import { format, startOfMonth, endOfMonth, subMonths } from "date-fns";
 import type { Employee, TimeEntry, PayrollRecord, Job } from "@shared/schema";
 
@@ -888,6 +888,8 @@ export default function Payroll() {
   const { data: employees, isLoading: empLoading } = useQuery<EmployeeWithStats[]>({ queryKey: ["/api/employees"] });
   const { data: timeEntries, isLoading: timeLoading } = useQuery<TimeEntryWithRelations[]>({ queryKey: ["/api/time-entries"] });
   const { data: payrollRecords, isLoading: payrollLoading } = useQuery<PayrollRecordWithEmployee[]>({ queryKey: ["/api/payroll-records"] });
+  const { data: appSettings } = useQuery<{ companyName?: string }>({ queryKey: ["/api/settings"] });
+  const companyName = appSettings?.companyName || "JobsOxo";
 
   // ── Period grouping ────────────────────────────────────────────────────────
   const periods = useMemo(() => {
@@ -931,6 +933,246 @@ export default function Payroll() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] }); queryClient.invalidateQueries({ queryKey: ["/api/employees"] }); setDeleteTimeEntryId(null); },
     onError: () => toast({ title: "Failed to delete", variant: "destructive" }),
   });
+
+  // ── Export helpers ─────────────────────────────────────────────────────────
+  function exportCSV() {
+    if (!currentRecords.length || !currentPeriod) return;
+    const header = ["Name", "Type", "Pay Period", "Regular Hours", "Overtime Hours", "Gross Pay", "Tax Withheld", "Deductions", "Net Pay", "Status"];
+    const periodStr = `${currentPeriod.start} to ${currentPeriod.end}`;
+    const rows = currentRecords.map(r => {
+      const emp = r.employee;
+      const is1099 = (emp as any).employmentType === "1099";
+      const regHrs = Number(r.regularHours ?? Math.max(0, Number(r.totalHours) - Number(r.overtimeHours ?? 0)));
+      const otHrs = Number(r.overtimeHours ?? 0);
+      return [
+        emp.name,
+        is1099 ? "1099" : "W-2",
+        periodStr,
+        regHrs.toFixed(2),
+        otHrs.toFixed(2),
+        Number(r.grossPay).toFixed(2),
+        Number(r.taxWithheld ?? 0).toFixed(2),
+        Number(r.deductions ?? 0).toFixed(2),
+        Number(r.netPay).toFixed(2),
+        r.status ?? "pending",
+      ];
+    });
+    const csv = [header, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `payroll-register-${currentPeriod.start}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function exportPDF() {
+    if (!currentRecords.length || !currentPeriod) return;
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 14;
+    const contentW = pageW - margin * 2;
+    const rowH = 8;
+    const pageBottomLimit = pageH - 16; // reserve 16mm at bottom for page numbers
+
+    // Column definitions
+    const cols = [
+      { label: "Employee",       w: contentW * 0.20, align: "left"  as const },
+      { label: "Type",           w: contentW * 0.07, align: "center" as const },
+      { label: "Reg Hrs",        w: contentW * 0.09, align: "right" as const },
+      { label: "OT Hrs",         w: contentW * 0.09, align: "right" as const },
+      { label: "Gross Pay",      w: contentW * 0.13, align: "right" as const },
+      { label: "Tax Withheld",   w: contentW * 0.13, align: "right" as const },
+      { label: "Deductions",     w: contentW * 0.12, align: "right" as const },
+      { label: "Net Pay",        w: contentW * 0.13, align: "right" as const },
+      { label: "Status",         w: contentW * 0.04, align: "center" as const },
+    ];
+
+    // ── Helper: draw page header (company info + period) ─────────────────────
+    function drawPageHeader() {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.setTextColor(15, 23, 42);
+      doc.text(companyName, margin, 18);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
+      doc.setTextColor(100, 116, 139);
+      doc.text("Payroll Register", margin, 24);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.setTextColor(15, 23, 42);
+      const periodLabel_ = `Pay period: ${currentPeriod!.start} – ${currentPeriod!.end}`;
+      doc.text(periodLabel_, pageW - margin - doc.getTextWidth(periodLabel_), 18);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      const generated = `Generated ${format(new Date(), "MMM d, yyyy")}`;
+      doc.text(generated, pageW - margin - doc.getTextWidth(generated), 24);
+
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.4);
+      doc.line(margin, 28, pageW - margin, 28);
+    }
+
+    // ── Helper: draw table column headers ─────────────────────────────────────
+    function drawTableHeader(y: number) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(margin, y - 5, contentW, rowH, "F");
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.3);
+      doc.line(margin, y - 5, pageW - margin, y - 5);
+      doc.line(margin, y + 3, pageW - margin, y + 3);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      let xc = margin;
+      cols.forEach(col => {
+        const tx = col.align === "right" ? xc + col.w - 1 : col.align === "center" ? xc + col.w / 2 : xc + 1;
+        doc.text(col.label.toUpperCase(), tx, y, { align: col.align });
+        xc += col.w;
+      });
+      return y + rowH;
+    }
+
+    // ── Helper: draw page number footer ───────────────────────────────────────
+    function drawPageNumber(pageNum: number, total: number) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      const label = `Page ${pageNum} of ${total}`;
+      doc.text(label, pageW - margin - doc.getTextWidth(label), pageH - 6);
+    }
+
+    // ── First page setup ──────────────────────────────────────────────────────
+    drawPageHeader();
+    let y = drawTableHeader(34);
+    let pageNum = 1;
+
+    // Pre-calculate total pages: estimate rows per page
+    const firstPageRows = Math.floor((pageBottomLimit - (34 + rowH)) / rowH);
+    const subsequentPageRows = Math.floor((pageBottomLimit - (34 + rowH)) / rowH);
+    const totalRowsAvailable = firstPageRows + Math.max(0, currentRecords.length - firstPageRows);
+    const totalPages = currentRecords.length <= firstPageRows
+      ? 1
+      : 1 + Math.ceil((currentRecords.length - firstPageRows) / subsequentPageRows);
+
+    // ── Draw rows ─────────────────────────────────────────────────────────────
+    currentRecords.forEach((r, idx) => {
+      // Page break: if adding this row + totals line would overflow, start new page
+      if (y + rowH > pageBottomLimit) {
+        drawPageNumber(pageNum, totalPages);
+        doc.addPage();
+        pageNum++;
+        drawPageHeader();
+        y = drawTableHeader(34);
+      }
+
+      const emp = r.employee;
+      const is1099 = (emp as any).employmentType === "1099";
+      const regHrs = Number(r.regularHours ?? Math.max(0, Number(r.totalHours) - Number(r.overtimeHours ?? 0)));
+      const otHrs = Number(r.overtimeHours ?? 0);
+      const gross = Number(r.grossPay);
+      const tax = Number(r.taxWithheld ?? 0);
+      const ded = Number(r.deductions ?? 0);
+      const net = Number(r.netPay);
+
+      if (idx % 2 === 0) {
+        doc.setFillColor(249, 250, 251);
+        doc.rect(margin, y - 5, contentW, rowH, "F");
+      }
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+
+      const cells = [
+        { val: emp.name,                                        col: cols[0] },
+        { val: is1099 ? "1099" : "W-2",                        col: cols[1] },
+        { val: regHrs.toFixed(1),                              col: cols[2] },
+        { val: otHrs > 0 ? otHrs.toFixed(1) : "—",            col: cols[3] },
+        { val: `$${gross.toFixed(2)}`,                         col: cols[4] },
+        { val: tax > 0 ? `($${tax.toFixed(2)})` : "—",        col: cols[5] },
+        { val: ded > 0 ? `($${ded.toFixed(2)})` : "—",        col: cols[6] },
+        { val: `$${net.toFixed(2)}`,                           col: cols[7] },
+        { val: (r.status ?? "pending").charAt(0).toUpperCase() + (r.status ?? "pending").slice(1), col: cols[8] },
+      ];
+
+      let xCursor = margin;
+      cells.forEach(({ val, col }) => {
+        const tx = col.align === "right" ? xCursor + col.w - 1 : col.align === "center" ? xCursor + col.w / 2 : xCursor + 1;
+        const maxW = col.w - 2;
+        const text = doc.getTextWidth(val) > maxW ? doc.splitTextToSize(val, maxW)[0] + "…" : val;
+        if (col === cols[7]) { doc.setTextColor(21, 128, 61); doc.setFont("helvetica", "bold"); }
+        else if (col === cols[5] && tax > 0) { doc.setTextColor(220, 38, 38); doc.setFont("helvetica", "normal"); }
+        else if (col === cols[6] && ded > 0) { doc.setTextColor(124, 58, 237); doc.setFont("helvetica", "normal"); }
+        else if (col === cols[3] && otHrs > 0) { doc.setTextColor(224, 160, 32); doc.setFont("helvetica", "bold"); }
+        else { doc.setTextColor(15, 23, 42); doc.setFont("helvetica", "normal"); }
+        doc.text(text, tx, y, { align: col.align });
+        xCursor += col.w;
+      });
+
+      doc.setDrawColor(241, 245, 249);
+      doc.setLineWidth(0.2);
+      doc.line(margin, y + 3, pageW - margin, y + 3);
+
+      y += rowH;
+    });
+
+    // ── Totals row (page break if needed) ─────────────────────────────────────
+    if (y + rowH + 8 > pageBottomLimit) {
+      drawPageNumber(pageNum, totalPages);
+      doc.addPage();
+      pageNum++;
+      drawPageHeader();
+      y = drawTableHeader(34);
+    }
+
+    y += 2;
+    doc.setDrawColor(15, 23, 42);
+    doc.setLineWidth(0.5);
+    doc.line(margin, y - 2, pageW - margin, y - 2);
+
+    const totals = [
+      { val: `${currentRecords.length} employee${currentRecords.length !== 1 ? "s" : ""}`, col: cols[0] },
+      { val: "",                                                                              col: cols[1] },
+      { val: currentRecords.reduce((s, r) => s + Number(r.regularHours ?? 0), 0).toFixed(1), col: cols[2] },
+      { val: currentRecords.reduce((s, r) => s + Number(r.overtimeHours ?? 0), 0) > 0
+              ? currentRecords.reduce((s, r) => s + Number(r.overtimeHours ?? 0), 0).toFixed(1)
+              : "—",                                                                          col: cols[3] },
+      { val: `$${currentRecords.reduce((s, r) => s + Number(r.grossPay), 0).toFixed(2)}`,   col: cols[4] },
+      { val: currentRecords.reduce((s, r) => s + Number(r.taxWithheld ?? 0), 0) > 0
+              ? `($${currentRecords.reduce((s, r) => s + Number(r.taxWithheld ?? 0), 0).toFixed(2)})`
+              : "—",                                                                          col: cols[5] },
+      { val: currentRecords.reduce((s, r) => s + Number(r.deductions ?? 0), 0) > 0
+              ? `($${currentRecords.reduce((s, r) => s + Number(r.deductions ?? 0), 0).toFixed(2)})`
+              : "—",                                                                          col: cols[6] },
+      { val: `$${currentRecords.reduce((s, r) => s + Number(r.netPay), 0).toFixed(2)}`,     col: cols[7] },
+      { val: "",                                                                              col: cols[8] },
+    ];
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    let xCursor = margin;
+    totals.forEach(({ val, col }) => {
+      const tx = col.align === "right" ? xCursor + col.w - 1 : col.align === "center" ? xCursor + col.w / 2 : xCursor + 1;
+      if (col === cols[7]) doc.setTextColor(21, 128, 61);
+      else doc.setTextColor(15, 23, 42);
+      doc.text(val, tx, y + 5, { align: col.align });
+      xCursor += col.w;
+    });
+
+    // Page number on last page
+    drawPageNumber(pageNum, totalPages);
+
+    doc.save(`payroll-register-${currentPeriod.start}.pdf`);
+  }
 
   // ── Filtered employees ─────────────────────────────────────────────────────
   const filteredEmployees = (employees ?? []).filter(e =>
@@ -1063,6 +1305,23 @@ export default function Payroll() {
                     <ChevronRight style={{ width: "16px", height: "16px" }} />
                   </button>
                 </div>
+              )}
+              {activeSection === "payroll" && currentRecords.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button style={{ display: "flex", alignItems: "center", gap: "6px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-export-payroll">
+                      <Download style={{ width: "14px", height: "14px" }} /> Export
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" sideOffset={4}>
+                    <DropdownMenuItem onClick={exportCSV} data-testid="button-export-csv">
+                      <FileText className="h-4 w-4 mr-2" /> Download CSV
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={exportPDF} data-testid="button-export-pdf">
+                      <FileText className="h-4 w-4 mr-2" /> Download PDF
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
               <button onClick={() => setIsRunPayrollOpen(true)} style={{ display: "flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "9px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 1px 2px rgba(37,99,235,.3)" }} data-testid="button-run-payroll">
                 Run payroll</button>
