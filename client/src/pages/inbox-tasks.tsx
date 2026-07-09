@@ -429,7 +429,213 @@ export default function InboxTasks() {
           </div>
         )}
 
-      </div>
+      {/* Hidden emails — collapsible section */}
+      {connected && (
+        <div className="mt-4">
+          <div className="flex items-center justify-between">
+            <button
+              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors flex-1 text-left px-1 py-1 rounded"
+              onClick={() => setShowHidden((v) => !v)}
+              data-testid="button-toggle-hidden"
+            >
+              {showHidden ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
+              <span className="font-medium">Hidden emails</span>
+              <span className="text-xs opacity-70">(dismissed &amp; snoozed)</span>
+              {hiddenTasks.length > 0 && (() => {
+                const now = new Date();
+                const overdueCount = hiddenTasks.filter(
+                  (t) => !t.dismissed && t.snoozedUntil != null && new Date(t.snoozedUntil) < now
+                ).length;
+                const snoozedCount = hiddenTasks.filter(
+                  (t) => !t.dismissed && t.snoozedUntil != null
+                ).length;
+                const dismissedCount = hiddenTasks.filter((t) => t.dismissed).length;
+                return (
+                  <span
+                    className="ml-1 flex items-center gap-1 text-xs text-muted-foreground"
+                    data-testid="badge-hidden-count"
+                  >
+                    {overdueCount > 0 && (
+                      <Badge
+                        className="text-xs px-1.5 py-0 gap-1 bg-amber-500 hover:bg-amber-500 text-white border-0"
+                        data-testid="badge-hidden-overdue-count"
+                      >
+                        <Clock className="h-3 w-3" />
+                        {overdueCount} due now
+                      </Badge>
+                    )}
+                    {snoozedCount > overdueCount && (
+                      <Badge
+                        variant="secondary"
+                        className="text-xs px-1.5 py-0 gap-1"
+                        data-testid="badge-hidden-snoozed-count"
+                      >
+                        <Clock className="h-3 w-3" />
+                        {snoozedCount - overdueCount} snoozed
+                      </Badge>
+                    )}
+                    {snoozedCount > 0 && dismissedCount > 0 && (
+                      <span className="opacity-50">·</span>
+                    )}
+                    {dismissedCount > 0 && (
+                      <Badge
+                        variant="secondary"
+                        className="text-xs px-1.5 py-0 gap-1"
+                        data-testid="badge-hidden-dismissed-count"
+                      >
+                        <X className="h-3 w-3" />
+                        {dismissedCount} dismissed
+                      </Badge>
+                    )}
+                  </span>
+                );
+              })()}
+            </button>
+            <div className="flex items-center gap-1 shrink-0">
+              {selectedDismissedIds.size > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-destructive hover:text-destructive h-7 px-2"
+                  onClick={() => setShowDeleteSelectedDialog(true)}
+                  data-testid="button-delete-selected"
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                  Delete selected ({selectedDismissedIds.size})
+                </Button>
+              )}
+              {hiddenTasks.some((t) => t.dismissed) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-muted-foreground hover:text-destructive h-7 px-2"
+                  onClick={() => setShowClearDismissedDialog(true)}
+                  data-testid="button-clear-all-dismissed"
+                >
+                  Clear all {hiddenTasks.filter((t) => t.dismissed).length} dismissed
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {showHidden && (
+            <Card className="mt-2">
+              <CardContent className="pt-3 pb-2">
+                {hiddenLoading ? (
+                  <div className="space-y-2 py-2">
+                    {[1, 2].map((i) => (
+                      <div key={i} className="flex items-center gap-3 p-3">
+                        <Skeleton className="h-8 w-8 rounded-full shrink-0" />
+                        <div className="flex-1 space-y-1.5">
+                          <Skeleton className="h-4 w-1/2" />
+                          <Skeleton className="h-3 w-3/4" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : hiddenTasks.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    No hidden emails right now.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {(() => {
+                      const snoozedGroup = hiddenTasks.filter(
+                        (t) => !t.dismissed && t.snoozedUntil != null
+                      );
+                      const dismissedGroup = hiddenTasks.filter(
+                        (t) => t.dismissed
+                      );
+                      return (
+                        <>
+                          {snoozedGroup.length > 0 && (
+                            <div>
+                              <p
+                                className="text-xs font-semibold text-muted-foreground uppercase tracking-wide px-1 pb-1"
+                                data-testid="label-hidden-section-snoozed"
+                              >
+                                Snoozed
+                              </p>
+                              <div className="space-y-0.5">
+                                {snoozedGroup.map((t) => (
+                                  <HiddenTaskRow
+                                    key={t.id}
+                                    task={t}
+                                    onRestore={handleRestore}
+                                    onDelete={handleDelete}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {dismissedGroup.length > 0 && (
+                            <div>
+                              <div className="flex items-center justify-between px-1 pb-1">
+                                <span
+                                  className="text-xs font-semibold text-muted-foreground uppercase tracking-wide"
+                                  data-testid="label-hidden-section-dismissed"
+                                >
+                                  Dismissed
+                                </span>
+                                <label className="flex items-center gap-1.5 cursor-pointer select-none" data-testid="label-select-all-dismissed">
+                                  <Checkbox
+                                    data-testid="checkbox-select-all-dismissed"
+                                    checked={
+                                      selectedDismissedIds.size === dismissedGroup.length
+                                        ? true
+                                        : selectedDismissedIds.size > 0
+                                        ? "indeterminate"
+                                        : false
+                                    }
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        setSelectedDismissedIds(new Set(dismissedGroup.map((t) => t.emailId)));
+                                      } else {
+                                        setSelectedDismissedIds(new Set());
+                                      }
+                                    }}
+                                    className="h-3.5 w-3.5"
+                                  />
+                                  <span className="text-xs text-muted-foreground">Select all</span>
+                                </label>
+                              </div>
+                              <div className="space-y-0.5">
+                                {dismissedGroup.map((t) => (
+                                  <HiddenTaskRow
+                                    key={t.id}
+                                    task={t}
+                                    onRestore={handleRestore}
+                                    onDelete={handleDelete}
+                                    isSelected={selectedDismissedIds.has(t.emailId)}
+                                    onToggleSelect={handleToggleSelectDismissed}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Footer hint */}
+      {tasks.length > 0 && (
+        <p className="text-xs text-muted-foreground text-center mt-4">
+          <Clock className="h-3 w-3 inline mr-1" />
+          Click a row or checkbox to mark done · Hover a row for dismiss/snooze options
+        </p>
+      )}
+>>>>>>> 011bb1e (Show dismissed count in 'Clear all' button label)
     </div>
   );
 }
