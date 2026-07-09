@@ -151,6 +151,11 @@ export default function JobDetail() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "File must be under 10 MB", variant: "destructive" });
+      e.target.value = "";
+      return;
+    }
     setUploading(true);
     uploadMutation.mutate(file);
     e.target.value = "";
