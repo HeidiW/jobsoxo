@@ -426,7 +426,10 @@ export default function JobLineItems() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<LineItem | null>(null);
   const [previewInfo, setPreviewInfo] = useState<PreviewInfo | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    const saved = localStorage.getItem("job-line-items-sidebar-open");
+    return saved === null ? true : saved === "true";
+  });
 
   const { data: job, isLoading: jobLoading } = useQuery<JobWithClient>({
     queryKey: ["/api/jobs", id],
@@ -701,7 +704,11 @@ export default function JobLineItems() {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => setSidebarOpen((prev) => !prev)}
+                onClick={() => setSidebarOpen((prev) => {
+                  const next = !prev;
+                  localStorage.setItem("job-line-items-sidebar-open", String(next));
+                  return next;
+                })}
                 data-testid="button-toggle-sidebar"
                 title={sidebarOpen ? "Collapse summary" : "Expand summary"}
                 className="h-8 w-8 -mr-1"
