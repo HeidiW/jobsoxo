@@ -24,7 +24,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
-import { Plus, Play, AlertTriangle, PhoneOff, Edit, Trash2, CheckCircle, ChevronLeft, ChevronRight, FileText, X, Settings2, Download } from "lucide-react";
+import { Plus, Play, AlertTriangle, PhoneOff, Edit, Trash2, CheckCircle, ChevronLeft, ChevronRight, FileText, X, Settings2, Download, ClipboardList, ChevronDown, ChevronUp } from "lucide-react";
 import { format, startOfMonth, endOfMonth, subMonths } from "date-fns";
 import type { Employee, TimeEntry, PayrollRecord, Job } from "@shared/schema";
 
@@ -34,7 +34,7 @@ interface EmployeeDeduction {
   amount: string; category: string; active: boolean; createdAt: string;
 }
 interface PayrollSettings { id: string; payFrequency: string; updatedAt: string; }
-interface EmployeeWithStats extends Employee { hoursThisPeriod: number; totalPay: number; deductionsCount?: number; }
+interface EmployeeWithStats extends Employee { hoursThisPeriod: number; totalPay: number; deductionsCount?: number; onboardingIncomplete?: boolean; }
 interface TimeEntryWithRelations extends TimeEntry { employee: Employee; job?: Job; }
 interface PayrollRecordWithEmployee {
   id: string; employeeId: string; status: string; createdAt: string | Date;
@@ -307,6 +307,140 @@ function DeductionsSection({ employeeId }: { employeeId: string }) {
   );
 }
 
+// ── Onboarding Section (used inside employee form) ────────────────────────────
+interface OnboardingItem { id: string; employeeId: string; label: string; completed: boolean; completedDate: string | null; sortOrder: number; }
+
+function OnboardingSection({ employeeId }: { employeeId: string }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+
+  const { data: items = [] } = useQuery<OnboardingItem[]>({
+    queryKey: [`/api/employees/${employeeId}/onboarding`],
+    enabled: !!employeeId,
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, completed }: { id: string; completed: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/employees/${employeeId}/onboarding/${id}`, { completed });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/employees/${employeeId}/onboarding`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+    },
+    onError: () => toast({ title: "Failed to update item", variant: "destructive" }),
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/employees/${employeeId}/onboarding`, { label: newLabel });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/employees/${employeeId}/onboarding`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+      setAdding(false);
+      setNewLabel("");
+      toast({ title: "Item added" });
+    },
+    onError: () => toast({ title: "Failed to add item", variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/employees/${employeeId}/onboarding/${id}`); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/employees/${employeeId}/onboarding`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+    },
+    onError: () => toast({ title: "Failed to remove item", variant: "destructive" }),
+  });
+
+  const completedCount = items.filter(i => i.completed).length;
+  const totalCount = items.length;
+  const allDone = totalCount > 0 && completedCount === totalCount;
+
+  return (
+    <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "14px", marginTop: "4px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: open ? "10px" : 0 }}>
+        <button type="button" onClick={() => setOpen(o => !o)}
+          style={{ display: "flex", alignItems: "center", gap: "6px", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+          data-testid="button-toggle-onboarding">
+          <ClipboardList style={{ width: "13px", height: "13px", color: "#64748b" }} />
+          <span style={{ ...lbl, margin: 0 }}>Onboarding</span>
+          {totalCount > 0 && (
+            <span style={{ fontSize: "10.5px", fontWeight: 700, padding: "1px 7px", borderRadius: "5px",
+              background: allDone ? "var(--b-green-bg, #f0fdf4)" : "var(--b-amber-bg, #fffbeb)",
+              color: allDone ? "var(--b-green-fg, #16a34a)" : "var(--b-amber-fg, #b45309)" }}>
+              {completedCount}/{totalCount}
+            </span>
+          )}
+          {open ? <ChevronUp style={{ width: "13px", height: "13px", color: "#94a3b8" }} /> : <ChevronDown style={{ width: "13px", height: "13px", color: "#94a3b8" }} />}
+        </button>
+        {open && !adding && (
+          <button type="button" onClick={() => setAdding(true)}
+            style={{ fontSize: "11.5px", fontWeight: 700, color: "#2563eb", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
+            data-testid="button-add-onboarding-item">
+            <Plus style={{ width: "12px", height: "12px" }} /> Add
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <>
+          {items.length === 0 && !adding && (
+            <p style={{ fontSize: "12px", color: "#94a3b8", margin: 0 }}>No onboarding items.</p>
+          )}
+
+          {items.map(item => (
+            <div key={item.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "6px 0", borderBottom: "1px solid #f1f5f9" }} data-testid={`row-onboarding-${item.id}`}>
+              <input type="checkbox" checked={item.completed}
+                onChange={e => toggleMutation.mutate({ id: item.id, completed: e.target.checked })}
+                style={{ cursor: "pointer", accentColor: "#2563eb", width: "15px", height: "15px", flexShrink: 0 }}
+                data-testid={`toggle-onboarding-${item.id}`} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: "13px", fontWeight: 500, color: item.completed ? "#94a3b8" : "#0f172a", textDecoration: item.completed ? "line-through" : "none" }}>
+                  {item.label}
+                </span>
+                {item.completed && item.completedDate && (
+                  <span style={{ marginLeft: "8px", fontSize: "11px", color: "#94a3b8" }}>
+                    {format(new Date(item.completedDate), "MMM d, yyyy")}
+                  </span>
+                )}
+              </div>
+              <button type="button" onClick={() => deleteMutation.mutate(item.id)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8", padding: "2px", display: "flex" }}
+                data-testid={`button-delete-onboarding-${item.id}`}>
+                <X style={{ width: "14px", height: "14px" }} />
+              </button>
+            </div>
+          ))}
+
+          {adding && (
+            <div style={{ display: "flex", gap: "6px", marginTop: "8px", alignItems: "center" }}>
+              <input value={newLabel} onChange={e => setNewLabel(e.target.value)} placeholder="e.g. Background check completed"
+                style={{ ...inp, flex: 1, fontSize: "12.5px" }}
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); if (newLabel.trim()) addMutation.mutate(); } }}
+                autoFocus
+                data-testid="input-onboarding-label" />
+              <button type="button" onClick={() => { setAdding(false); setNewLabel(""); }}
+                style={{ padding: "7px 10px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "7px", fontSize: "12.5px", fontWeight: 600, color: "#475569", cursor: "pointer", fontFamily: "inherit" }}>
+                Cancel
+              </button>
+              <button type="button" disabled={!newLabel.trim() || addMutation.isPending} onClick={() => addMutation.mutate()}
+                style={{ padding: "7px 13px", border: "none", background: "#2563eb", borderRadius: "7px", fontSize: "12.5px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit", opacity: !newLabel.trim() ? 0.5 : 1 }}
+                data-testid="button-save-onboarding-item">
+                {addMutation.isPending ? "Adding…" : "Add"}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ── Employee Form ─────────────────────────────────────────────────────────────
 function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onClose: () => void }) {
   const { toast } = useToast();
@@ -504,6 +638,11 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
         {/* Deductions — only shown in edit mode */}
         {isEdit && employee?.id && (
           <DeductionsSection employeeId={employee.id} />
+        )}
+
+        {/* Onboarding — only shown in edit mode */}
+        {isEdit && employee?.id && (
+          <OnboardingSection employeeId={employee.id} />
         )}
       </form>
     </Form>
@@ -1534,11 +1673,18 @@ export default function Payroll() {
                         {initials(emp.name)}
                       </div>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: "13.5px", fontWeight: 600, display: "flex", alignItems: "center", gap: "7px" }}>
+                        <div style={{ fontSize: "13.5px", fontWeight: 600, display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}>
                           {emp.name}
                           {!emp.phone && active && (
                             <span title="No phone — can't log hours by SMS" style={{ display: "inline-flex", alignItems: "center", gap: "3px", background: "var(--b-amber-bg)", color: "var(--b-amber-fg)", fontSize: "10.5px", fontWeight: 600, padding: "1px 7px", borderRadius: "5px" }} data-testid={`badge-no-phone-${emp.id}`}>
                               <PhoneOff style={{ width: "10px", height: "10px" }} />No phone
+                            </span>
+                          )}
+                          {emp.onboardingIncomplete && (
+                            <span title="Onboarding incomplete — click Edit to review" style={{ display: "inline-flex", alignItems: "center", gap: "3px", background: "var(--b-amber-bg)", color: "var(--b-amber-fg)", fontSize: "10.5px", fontWeight: 600, padding: "1px 7px", borderRadius: "5px", cursor: "pointer" }}
+                              onClick={() => { setEditingEmployee(emp); setIsEmployeeDialogOpen(true); }}
+                              data-testid={`badge-onboarding-incomplete-${emp.id}`}>
+                              <ClipboardList style={{ width: "10px", height: "10px" }} />Incomplete
                             </span>
                           )}
                         </div>

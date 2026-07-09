@@ -512,6 +512,27 @@ export const insertInboxTaskSchema = createInsertSchema(inboxTasks).omit({ id: t
 export type InsertInboxTask = z.infer<typeof insertInboxTaskSchema>;
 export type InboxTask = typeof inboxTasks.$inferSelect;
 
+// Onboarding Items — per-employee checklist (W-4, I-9, direct deposit, etc.)
+export const onboardingItems = pgTable("onboarding_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  employeeId: varchar("employee_id").notNull().references(() => employees.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  completed: boolean("completed").notNull().default(false),
+  completedDate: timestamp("completed_date"),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
+export const insertOnboardingItemSchema = createInsertSchema(onboardingItems).omit({ id: true });
+export type InsertOnboardingItem = z.infer<typeof insertOnboardingItemSchema>;
+export type OnboardingItem = typeof onboardingItems.$inferSelect;
+
+export const DEFAULT_ONBOARDING_ITEMS = [
+  "W-4 received",
+  "I-9 verified",
+  "Direct deposit info collected",
+  "Employment agreement signed",
+];
+
 // Settings table for company info and email configuration
 export const settings = pgTable("settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

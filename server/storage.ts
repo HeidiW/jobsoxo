@@ -33,6 +33,8 @@ import {
   type InsertJobDocument,
   type ChangeOrder,
   type InsertChangeOrder,
+  type OnboardingItem,
+  type InsertOnboardingItem,
   users,
   clients,
   jobs,
@@ -51,6 +53,7 @@ import {
   googleTokens,
   jobDocuments,
   changeOrders,
+  onboardingItems,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql, isNull, or, inArray } from "drizzle-orm";
@@ -179,6 +182,13 @@ export interface IStorage {
   createChangeOrder(order: InsertChangeOrder): Promise<ChangeOrder>;
   updateChangeOrder(id: string, updates: Partial<InsertChangeOrder>): Promise<ChangeOrder | undefined>;
   deleteChangeOrder(id: string): Promise<void>;
+
+  // Onboarding Items
+  getOnboardingItems(employeeId: string): Promise<OnboardingItem[]>;
+  upsertOnboardingItem(item: InsertOnboardingItem): Promise<OnboardingItem>;
+  updateOnboardingItem(id: string, employeeId: string, updates: Partial<InsertOnboardingItem>): Promise<OnboardingItem | undefined>;
+  deleteOnboardingItem(id: string, employeeId: string): Promise<void>;
+  seedDefaultOnboardingItems(employeeId: string): Promise<void>;
 
   // Job Documents
   getJobDocuments(jobId: string): Promise<JobDocument[]>;
@@ -756,6 +766,43 @@ export class DatabaseStorage implements IStorage {
       .update(googleTokens)
       .set({ syncLabels: labels })
       .where(eq(googleTokens.userId, userId));
+  }
+
+  // Onboarding Items
+  async getOnboardingItems(employeeId: string): Promise<OnboardingItem[]> {
+    return db.select().from(onboardingItems)
+      .where(eq(onboardingItems.employeeId, employeeId))
+      .orderBy(onboardingItems.sortOrder, onboardingItems.id);
+  }
+
+  async upsertOnboardingItem(item: InsertOnboardingItem): Promise<OnboardingItem> {
+    const [created] = await db.insert(onboardingItems).values(item).returning();
+    return created;
+  }
+
+  async updateOnboardingItem(id: string, employeeId: string, updates: Partial<InsertOnboardingItem>): Promise<OnboardingItem | undefined> {
+    const [updated] = await db.update(onboardingItems).set(updates)
+      .where(and(eq(onboardingItems.id, id), eq(onboardingItems.employeeId, employeeId)))
+      .returning();
+    return updated ?? undefined;
+  }
+
+  async deleteOnboardingItem(id: string, employeeId: string): Promise<void> {
+    await db.delete(onboardingItems)
+      .where(and(eq(onboardingItems.id, id), eq(onboardingItems.employeeId, employeeId)));
+  }
+
+  async seedDefaultOnboardingItems(employeeId: string): Promise<void> {
+    const { DEFAULT_ONBOARDING_ITEMS } = await import("@shared/schema");
+    await db.insert(onboardingItems).values(
+      DEFAULT_ONBOARDING_ITEMS.map((label, i) => ({
+        employeeId,
+        label,
+        completed: false,
+        completedDate: null,
+        sortOrder: i,
+      }))
+    );
   }
 
   // Job Documents

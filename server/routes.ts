@@ -1375,7 +1375,11 @@ export async function registerRoutes(
 
       const employeesWithStats = await Promise.all(
         allEmployees.map(async (employee) => {
-          const entries = await storage.getTimeEntriesByEmployee(employee.id);
+          const [entries, deductions, onboarding] = await Promise.all([
+            storage.getTimeEntriesByEmployee(employee.id),
+            storage.getDeductionsByEmployee(employee.id),
+            storage.getOnboardingItems(employee.id),
+          ]);
           const periodEntries = entries.filter((entry) => {
             const entryDate = new Date(entry.date);
             return entryDate >= startOfPeriod && entryDate <= endOfPeriod;
@@ -1386,9 +1390,9 @@ export async function registerRoutes(
             0
           );
           const totalPay = hoursThisPeriod * Number(employee.dayRate);
+          const onboardingIncomplete = employee.status === "active" && onboarding.some(item => !item.completed);
           
-          const deductions = await storage.getDeductionsByEmployee(employee.id);
-          return { ...employee, hoursThisPeriod, totalPay, deductions, deductionsCount: deductions.length };
+          return { ...employee, hoursThisPeriod, totalPay, deductions, deductionsCount: deductions.length, onboardingIncomplete };
         })
       );
 
@@ -1417,6 +1421,7 @@ export async function registerRoutes(
       const parsed = insertEmployeeSchema.safeParse(req.body);
       if (!parsed.success) return badRequest(res, parsed.error);
       const employee = await storage.createEmployee(parsed.data);
+      await storage.seedDefaultOnboardingItems(employee.id);
       res.status(201).json(employee);
     } catch (error) {
       console.error("Create employee error:", error);
@@ -1626,6 +1631,62 @@ export async function registerRoutes(
       res.status(204).end();
     } catch (err) {
       res.status(500).json({ error: "Failed to delete deduction" });
+    }
+  });
+
+  // ── Employee Onboarding Items ──────────────────────────────────────────────
+  app.get("/api/employees/:id/onboarding", requireAuth, async (req, res) => {
+    try {
+      const items = await storage.getOnboardingItems(req.params.id);
+      res.json(items);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to get onboarding items" });
+    }
+  });
+
+  app.post("/api/employees/:id/onboarding", requireAuth, async (req, res) => {
+    try {
+      const { label } = req.body;
+      if (!label || typeof label !== "string" || !label.trim()) {
+        return res.status(400).json({ error: "label is required" });
+      }
+      const existing = await storage.getOnboardingItems(req.params.id);
+      const item = await storage.upsertOnboardingItem({
+        employeeId: req.params.id,
+        label: label.trim(),
+        completed: false,
+        completedDate: null,
+        sortOrder: existing.length,
+      });
+      res.status(201).json(item);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to create onboarding item" });
+    }
+  });
+
+  app.patch("/api/employees/:empId/onboarding/:id", requireAuth, async (req, res) => {
+    try {
+      const { completed, label } = req.body;
+      const updates: Partial<{ label: string; completed: boolean; completedDate: Date | null }> = {};
+      if (label !== undefined) updates.label = String(label);
+      if (completed !== undefined) {
+        updates.completed = !!completed;
+        updates.completedDate = completed ? new Date() : null;
+      }
+      const item = await storage.updateOnboardingItem(req.params.id, req.params.empId, updates);
+      if (!item) return res.status(404).json({ error: "Onboarding item not found" });
+      res.json(item);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update onboarding item" });
+    }
+  });
+
+  app.delete("/api/employees/:empId/onboarding/:id", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteOnboardingItem(req.params.id, req.params.empId);
+      res.status(204).end();
+    } catch (err) {
+      res.status(500).json({ error: "Failed to delete onboarding item" });
     }
   });
 
