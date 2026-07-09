@@ -227,6 +227,20 @@ function InvoicePreview({
             <>
               <div style={{ fontSize: "13.5px", fontWeight: 700, color: "#0f172a" }}>{job.title}</div>
               {job.address && <div style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6, marginTop: "2px" }}>{job.address}</div>}
+              {(() => {
+                const codes = (job.referenceCodes as { label: string; code: string }[] | null | undefined) ?? [];
+                const nonEmpty = codes.filter(c => c.code?.trim());
+                return nonEmpty.length > 0 ? (
+                  <div style={{ marginTop: "6px" }}>
+                    {nonEmpty.map((c, i) => (
+                      <div key={i} style={{ fontSize: "11.5px", color: "#64748b", lineHeight: 1.6 }}>
+                        <span style={{ fontWeight: 600, color: "#475569" }}>{c.label}:</span>{" "}
+                        <span style={{ fontFamily: "ui-monospace,Menlo,monospace" }}>{c.code}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
             </>
           ) : (
             <div style={{ fontSize: "13px", color: "#cbd5e1" }}>Link a job (optional)</div>

@@ -208,6 +208,20 @@ function InvoiceDocument({
                 {(invoice.job as any).address || (invoice.job as any).siteAddress}
               </div>
             )}
+            {(() => {
+              const codes = ((invoice.job as any).referenceCodes as { label: string; code: string }[] | null | undefined) ?? [];
+              const nonEmpty = codes.filter((c) => c.code?.trim());
+              return nonEmpty.length > 0 ? (
+                <div style={{ marginTop: "6px" }}>
+                  {nonEmpty.map((c, i) => (
+                    <div key={i} style={{ fontSize: "11.5px", color: "#64748b", lineHeight: 1.6 }}>
+                      <span style={{ fontWeight: 600, color: "#475569" }}>{c.label}:</span>{" "}
+                      <span style={{ fontFamily: "ui-monospace,Menlo,monospace" }}>{c.code}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : null;
+            })()}
           </div>
         )}
       </div>
