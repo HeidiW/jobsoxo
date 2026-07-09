@@ -3,6 +3,7 @@ import request from "supertest";
 import type { Express } from "express";
 import twilio from "twilio";
 import { buildTestApp } from "./test-helpers";
+import { storage } from "./storage";
 import { normalizePhone, parseHoursMessage, twimlReply } from "./sms";
 
 // ── Pure function tests ───────────────────────────────────────────────────────
@@ -165,5 +166,187 @@ describe("POST /api/sms/inbound — auth", () => {
 
     expect(res.type).toMatch(/xml/);
     expect(res.text).toContain("<Response>");
+  });
+});
+
+// ── SMS webhook business logic tests ─────────────────────────────────────────
+
+const SMS_TOKEN = "sms-biz-test-token";
+const SMS_HOST = "localhost:5000";
+const SMS_URL = `http://${SMS_HOST}/api/sms/inbound`;
+
+function signedSmsRequest(app: Express, from: string, body: string) {
+  const fields = { From: from, Body: body };
+  const sig = twilio.getExpectedTwilioSignature(SMS_TOKEN, SMS_URL, fields);
+  const params = new URLSearchParams(fields).toString();
+  return request(app)
+    .post("/api/sms/inbound")
+    .set("Content-Type", "application/x-www-form-urlencoded")
+    .set("X-Twilio-Signature", sig)
+    .set("Host", SMS_HOST)
+    .send(params);
+}
+
+describe("POST /api/sms/inbound — HELP command", () => {
+  let app: Express;
+
+  beforeAll(async () => {
+    process.env.TWILIO_AUTH_TOKEN = SMS_TOKEN;
+    app = await buildTestApp();
+  });
+
+  afterEach(() => {
+    process.env.TWILIO_AUTH_TOKEN = SMS_TOKEN;
+  });
+
+  it("replies with usage instructions for HELP", async () => {
+    const res = await signedSmsRequest(app, "+12025550001", "HELP").expect(200);
+    expect(res.type).toMatch(/xml/);
+    expect(res.text).toContain("time log");
+    expect(res.text).toContain("Max 24h");
+  });
+
+  it("replies with usage instructions for ?", async () => {
+    const res = await signedSmsRequest(app, "+12025550001", "?").expect(200);
+    expect(res.text).toContain("time log");
+  });
+});
+
+describe("POST /api/sms/inbound — unknown number", () => {
+  let app: Express;
+
+  beforeAll(async () => {
+    process.env.TWILIO_AUTH_TOKEN = SMS_TOKEN;
+    app = await buildTestApp();
+  });
+
+  it("tells unregistered numbers they aren't linked", async () => {
+    const res = await signedSmsRequest(app, "+19995550000", "8").expect(200);
+    expect(res.text).toContain("isn");
+    expect(res.text).toContain("linked");
+  });
+});
+
+describe("POST /api/sms/inbound — inactive employee", () => {
+  let app: Express;
+
+  beforeAll(async () => {
+    process.env.TWILIO_AUTH_TOKEN = SMS_TOKEN;
+    app = await buildTestApp();
+  });
+
+  it("tells inactive employees their account is inactive", async () => {
+    await storage.createEmployee({
+      name: "Inactive SMS User",
+      phone: "+13335550100",
+      dayRate: "200",
+      status: "inactive",
+    });
+
+    const res = await signedSmsRequest(app, "+13335550100", "8").expect(200);
+    expect(res.text).toContain("inactive");
+  });
+});
+
+describe("POST /api/sms/inbound — valid hours", () => {
+  let app: Express;
+
+  beforeAll(async () => {
+    process.env.TWILIO_AUTH_TOKEN = SMS_TOKEN;
+    app = await buildTestApp();
+  });
+
+  it("logs hours and replies with a confirmation", async () => {
+    await storage.createEmployee({
+      name: "Active SMS Worker",
+      phone: "+14445550200",
+      dayRate: "200",
+      status: "active",
+    });
+
+    const res = await signedSmsRequest(app, "+14445550200", "6 painting").expect(200);
+    expect(res.text).toContain("Logged 6h");
+    expect(res.text).toContain("Total today");
+  });
+
+  it("includes the description in the time entry", async () => {
+    await storage.createEmployee({
+      name: "Desc SMS Worker",
+      phone: "+14445550201",
+      dayRate: "200",
+      status: "active",
+    });
+
+    await signedSmsRequest(app, "+14445550201", "3 tiling bathroom").expect(200);
+
+    const allEmployees = await storage.getEmployees();
+    const emp = allEmployees.find((e) => e.phone === "+14445550201");
+    const entries = await storage.getTimeEntriesByEmployee(emp!.id);
+    const latest = entries[entries.length - 1];
+    expect(latest.description).toContain("tiling bathroom");
+    expect(latest.description).toContain("via SMS");
+  });
+
+  it("replies with error for unrecognised message format", async () => {
+    await storage.createEmployee({
+      name: "Format SMS Worker",
+      phone: "+14445550202",
+      dayRate: "200",
+      status: "active",
+    });
+
+    const res = await signedSmsRequest(app, "+14445550202", "hello world").expect(200);
+    expect(res.text).toContain("Couldn");
+  });
+});
+
+describe("POST /api/sms/inbound — daily cap exceeded", () => {
+  let app: Express;
+
+  beforeAll(async () => {
+    process.env.TWILIO_AUTH_TOKEN = SMS_TOKEN;
+    app = await buildTestApp();
+  });
+
+  it("rejects hours that would push the daily total past 24h", async () => {
+    const emp = await storage.createEmployee({
+      name: "Cap SMS Worker",
+      phone: "+15555550300",
+      dayRate: "200",
+      status: "active",
+    });
+
+    await storage.createTimeEntry({
+      employeeId: emp.id,
+      jobId: null,
+      date: new Date(),
+      hoursWorked: "20",
+      description: "earlier shift (via SMS)",
+    });
+
+    const res = await signedSmsRequest(app, "+15555550300", "8").expect(200);
+    expect(res.text).toContain("already have");
+    expect(res.text).toContain("exceed 24h");
+  });
+
+  it("allows hours that keep the daily total at exactly 24h", async () => {
+    const emp = await storage.createEmployee({
+      name: "Cap Exact SMS Worker",
+      phone: "+15555550301",
+      dayRate: "200",
+      status: "active",
+    });
+
+    await storage.createTimeEntry({
+      employeeId: emp.id,
+      jobId: null,
+      date: new Date(),
+      hoursWorked: "16",
+      description: "earlier shift (via SMS)",
+    });
+
+    const res = await signedSmsRequest(app, "+15555550301", "8").expect(200);
+    expect(res.text).toContain("Logged 8h");
+    expect(res.text).toContain("Total today: 24");
   });
 });
