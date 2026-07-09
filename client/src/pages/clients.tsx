@@ -286,16 +286,18 @@ export default function Clients() {
     <>
       {/* ── Add/Edit Dialog ── */}
       <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!open) { setIsDialogOpen(false); setEditingClient(null); } }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent className="max-w-lg !flex flex-col max-h-[90dvh] overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>
               {editingClient ? "Edit client" : "Add new client"}
             </DialogTitle>
           </DialogHeader>
-          <ClientForm
-            client={editingClient || undefined}
-            onClose={() => { setIsDialogOpen(false); setEditingClient(null); }}
-          />
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <ClientForm
+              client={editingClient || undefined}
+              onClose={() => { setIsDialogOpen(false); setEditingClient(null); }}
+            />
+          </div>
         </DialogContent>
       </Dialog>
 

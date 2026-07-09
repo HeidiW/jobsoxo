@@ -214,13 +214,14 @@ export default function Invoices() {
     <>
       {/* ── Quick-Pay Dialog ── */}
       <Dialog open={!!quickPayInvoice} onOpenChange={(open) => !open && setQuickPayInvoice(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-sm !flex flex-col max-h-[90dvh] overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-600" />
               Record Payment
             </DialogTitle>
           </DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0">
           {quickPayInvoice && (
             <div className="space-y-4 py-2">
               <div className="rounded-md bg-muted/50 p-3 text-sm space-y-1">
@@ -270,7 +271,8 @@ export default function Invoices() {
               </div>
             </div>
           )}
-          <DialogFooter>
+          </div>
+          <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={() => setQuickPayInvoice(null)} data-testid="button-cancel-quick-pay">Cancel</Button>
             <Button
               className="bg-green-600 hover:bg-green-700 text-white"

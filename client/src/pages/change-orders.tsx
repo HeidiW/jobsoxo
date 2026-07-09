@@ -304,11 +304,13 @@ export default function ChangeOrders() {
     <>
       {/* ── New CO Dialog ── */}
       <Dialog open={isDialogOpen} onOpenChange={open => { if (!open) setIsDialogOpen(false); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
+        <DialogContent className="max-w-lg !flex flex-col max-h-[90dvh] overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>New change order</DialogTitle>
           </DialogHeader>
-          <ChangeOrderForm onClose={() => setIsDialogOpen(false)} />
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <ChangeOrderForm onClose={() => setIsDialogOpen(false)} />
+          </div>
         </DialogContent>
       </Dialog>
 

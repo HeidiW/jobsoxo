@@ -141,17 +141,19 @@ export default function Jobs() {
     <>
       {/* ── New/Edit Job dialog ── */}
       <Dialog open={isDialogOpen} onOpenChange={open => { if (!open) closeDialog(); }}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-lg !flex flex-col max-h-[90dvh] overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>
               {editingJob ? "Edit job" : "New job"}
             </DialogTitle>
           </DialogHeader>
-          <JobForm
-            job={editingJob || undefined}
-            onSuccess={() => {}}
-            onClose={closeDialog}
-          />
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <JobForm
+              job={editingJob || undefined}
+              onSuccess={() => {}}
+              onClose={closeDialog}
+            />
+          </div>
         </DialogContent>
       </Dialog>
 

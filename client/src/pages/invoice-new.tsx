@@ -1176,10 +1176,11 @@ export default function InvoiceNew() {
 
       {/* ── PDF Import Dialog ── */}
       <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-        <DialogContent className="max-w-xl">
-          <DialogHeader>
+        <DialogContent className="max-w-xl !flex flex-col max-h-[90dvh] overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Import line items from document</DialogTitle>
           </DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0">
           {parsedDoc && (() => {
             // Group items by section
             const sectionOrder: string[] = [];
@@ -1217,7 +1218,7 @@ export default function InvoiceNew() {
                   </div>
                 </div>
 
-                <div className="max-h-[460px] overflow-y-auto pr-1 space-y-4">
+                <div className="space-y-4">
                   {sectionOrder.map((sec) => (
                     <div key={sec}>
                       {/* Section header */}
@@ -1260,7 +1261,8 @@ export default function InvoiceNew() {
               </div>
             );
           })()}
-          <DialogFooter className="mt-2">
+          </div>
+          <DialogFooter className="mt-2 shrink-0">
             <Button variant="outline" onClick={() => setShowImportDialog(false)}>Cancel</Button>
             <Button onClick={applyParsedItems} disabled={selectedParsedItems.size === 0}>
               Import {selectedParsedItems.size} item{selectedParsedItems.size !== 1 ? "s" : ""}

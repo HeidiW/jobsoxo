@@ -212,15 +212,17 @@ export default function JobDetail() {
     <>
       {/* Edit dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className="max-w-lg !flex flex-col max-h-[90dvh] overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Edit Job</DialogTitle>
           </DialogHeader>
-          <JobForm
-            job={job}
-            onSuccess={() => {}}
-            onClose={() => setEditOpen(false)}
-          />
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <JobForm
+              job={job}
+              onSuccess={() => {}}
+              onClose={() => setEditOpen(false)}
+            />
+          </div>
         </DialogContent>
       </Dialog>
 

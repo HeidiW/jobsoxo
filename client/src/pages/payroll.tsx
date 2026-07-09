@@ -987,26 +987,38 @@ export default function Payroll() {
     <>
       {/* ── Dialogs ── */}
       <Dialog open={isRunPayrollOpen} onOpenChange={o => { if (!o) setIsRunPayrollOpen(false); }}>
-        <DialogContent className="max-w-md"><DialogHeader><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>Run payroll</DialogTitle></DialogHeader>
-          <RunPayrollForm onClose={() => setIsRunPayrollOpen(false)} /></DialogContent>
+        <DialogContent className="max-w-md !flex flex-col max-h-[90dvh] overflow-hidden">
+          <DialogHeader className="shrink-0"><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>Run payroll</DialogTitle></DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <RunPayrollForm onClose={() => setIsRunPayrollOpen(false)} />
+          </div>
+        </DialogContent>
       </Dialog>
 
       <Dialog open={isEmployeeDialogOpen} onOpenChange={o => { if (!o) { setIsEmployeeDialogOpen(false); setEditingEmployee(null); } }}>
-        <DialogContent className="max-w-lg" style={{ maxHeight: "90vh", overflowY: "auto" }}>
-          <DialogHeader><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>{editingEmployee ? "Edit employee" : "Add employee"}</DialogTitle></DialogHeader>
-          <EmployeeForm employee={editingEmployee || undefined} onClose={() => { setIsEmployeeDialogOpen(false); setEditingEmployee(null); }} />
+        <DialogContent className="max-w-lg !flex flex-col max-h-[90dvh] overflow-hidden">
+          <DialogHeader className="shrink-0"><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>{editingEmployee ? "Edit employee" : "Add employee"}</DialogTitle></DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <EmployeeForm employee={editingEmployee || undefined} onClose={() => { setIsEmployeeDialogOpen(false); setEditingEmployee(null); }} />
+          </div>
         </DialogContent>
       </Dialog>
 
       <Dialog open={isTimeEntryDialogOpen} onOpenChange={o => { if (!o) setIsTimeEntryDialogOpen(false); }}>
-        <DialogContent className="max-w-md"><DialogHeader><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>Log hours</DialogTitle></DialogHeader>
-          <TimeEntryForm onClose={() => setIsTimeEntryDialogOpen(false)} /></DialogContent>
+        <DialogContent className="max-w-md !flex flex-col max-h-[90dvh] overflow-hidden">
+          <DialogHeader className="shrink-0"><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>Log hours</DialogTitle></DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            <TimeEntryForm onClose={() => setIsTimeEntryDialogOpen(false)} />
+          </div>
+        </DialogContent>
       </Dialog>
 
       <Dialog open={!!payStubRecord} onOpenChange={o => { if (!o) setPayStubRecord(null); }}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>Pay Stub</DialogTitle></DialogHeader>
-          {payStubRecord && <PayStubDialog record={payStubRecord} onClose={() => setPayStubRecord(null)} />}
+        <DialogContent className="max-w-md !flex flex-col max-h-[90dvh] overflow-hidden">
+          <DialogHeader className="shrink-0"><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>Pay Stub</DialogTitle></DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            {payStubRecord && <PayStubDialog record={payStubRecord} onClose={() => setPayStubRecord(null)} />}
+          </div>
         </DialogContent>
       </Dialog>
 
