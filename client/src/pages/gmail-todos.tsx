@@ -3,9 +3,9 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { isToday, format, formatDistanceToNow } from "date-fns";
+import { isToday, format, differenceInDays } from "date-fns";
 import type { InboxTask, Client } from "@shared/schema";
-import { PlugZap, RefreshCw } from "lucide-react";
+import { PlugZap, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 
 // ── Color palette for client chips (7 buckets) ───────────────────────────────
 const COLOR_KEYS = ["blue","green","amber","purple","pink","teal","gray"] as const;
@@ -41,12 +41,10 @@ function taskPriority(t: InboxTask): "high" | "medium" | "low" {
 // ── Match task sender to a client ─────────────────────────────────────────
 function matchClient(t: InboxTask, clients: Client[]): Client | null {
   if (!clients.length) return null;
-  // exact email match
   if (t.senderEmail) {
     const m = clients.find(c => c.email && c.email.toLowerCase() === t.senderEmail!.toLowerCase());
     if (m) return m;
   }
-  // substring name match
   const senderLower = t.sender.toLowerCase();
   for (const c of clients) {
     const nameLower = c.name.toLowerCase();
@@ -122,11 +120,21 @@ function NotConnected({ onConnect, connecting }: { onConnect: () => void; connec
   );
 }
 
+// ── Age label for dismissed emails ───────────────────────────────────────
+function dismissedAgeLabel(receivedAt: string): string {
+  const days = differenceInDays(new Date(), new Date(receivedAt));
+  if (days <= 0) return "today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────
 export default function GmailTodos() {
   const { toast } = useToast();
   const [filter, setFilter] = useState<string>("all");
   const [connecting, setConnecting] = useState(false);
+  const [hiddenPanelOpen, setHiddenPanelOpen] = useState(false);
+  const [selectedDismissedIds, setSelectedDismissedIds] = useState<Set<string>>(new Set());
 
   // OAuth redirect handling
   useEffect(() => {
@@ -169,6 +177,13 @@ export default function GmailTodos() {
     queryKey: ["/api/inbox/tasks"],
     refetchInterval: 5 * 60 * 1000,
     refetchIntervalInBackground: false,
+  });
+
+  // Hidden tasks (dismissed + snoozed)
+  const { data: hiddenTasks = [] } = useQuery<InboxTask[]>({
+    queryKey: ["/api/inbox/tasks/hidden"],
+    enabled: status?.connected ?? false,
+    refetchInterval: 60_000,
   });
 
   // Clients for sender matching
@@ -217,6 +232,77 @@ export default function GmailTodos() {
     allTasks.filter(t => !t.dismissed && !t.snoozedUntil && isToday(new Date(t.receivedAt))),
     [allTasks]
   );
+
+  // Dismissed group from hidden tasks
+  const dismissedGroup = useMemo(() =>
+    hiddenTasks.filter(t => t.dismissed),
+    [hiddenTasks]
+  );
+
+  // ── Keep selectedDismissedIds in sync when dismissed emails leave the group ──
+  // After a restore or delete, that email ID is removed from dismissedGroup.
+  // This effect cleans any stale IDs so "Select all" always reflects reality.
+  useEffect(() => {
+    const currentIds = new Set(dismissedGroup.map(t => t.emailId));
+    setSelectedDismissedIds(prev => {
+      const next = new Set([...prev].filter(id => currentIds.has(id)));
+      if (next.size === prev.size) return prev;
+      return next;
+    });
+  }, [dismissedGroup]);
+
+  // Select-all state derived from actual dismissedGroup
+  const allDismissedSelected =
+    dismissedGroup.length > 0 &&
+    dismissedGroup.every(t => selectedDismissedIds.has(t.emailId));
+  const someDismissedSelected =
+    !allDismissedSelected &&
+    dismissedGroup.some(t => selectedDismissedIds.has(t.emailId));
+
+  function toggleSelectAllDismissed() {
+    if (allDismissedSelected) {
+      setSelectedDismissedIds(new Set());
+    } else {
+      setSelectedDismissedIds(new Set(dismissedGroup.map(t => t.emailId)));
+    }
+  }
+
+  // Restore a single dismissed email
+  function handleRestore(emailId: string) {
+    // Immediately remove from selection so Select-all reflects the new state
+    setSelectedDismissedIds(prev => {
+      const next = new Set(prev);
+      next.delete(emailId);
+      return next;
+    });
+    // Optimistic: remove from hidden list and re-add to active tasks
+    queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
+      old.filter(t => t.emailId !== emailId)
+    );
+    queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
+    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/restore`).catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+      toast({ title: "Couldn't restore email", variant: "destructive" });
+    });
+  }
+
+  // Delete a single dismissed email
+  function handleDelete(emailId: string) {
+    // Immediately remove from selection so Select-all reflects the new state
+    setSelectedDismissedIds(prev => {
+      const next = new Set(prev);
+      next.delete(emailId);
+      return next;
+    });
+    // Optimistic: remove from hidden list
+    queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
+      old.filter(t => t.emailId !== emailId)
+    );
+    apiRequest("DELETE", `/api/inbox/tasks/${emailId}`).catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+      toast({ title: "Couldn't delete email", variant: "destructive" });
+    });
+  }
 
   // Enrich tasks with client match + color
   const enrichedTasks = useMemo(() =>
@@ -418,6 +504,123 @@ export default function GmailTodos() {
             {total > 0 && (
               <div style={{ textAlign: "center", marginTop: "22px", fontSize: "12.5px", color: "var(--faint)" }}>
                 That's everything from your client emails today.
+              </div>
+            )}
+
+            {/* ── Hidden panel (Dismissed emails) ── */}
+            {dismissedGroup.length > 0 && (
+              <div style={{ marginTop: "28px" }}>
+                {/* Panel toggle header */}
+                <button
+                  onClick={() => setHiddenPanelOpen(o => !o)}
+                  style={{ display: "flex", alignItems: "center", gap: "8px", width: "100%", background: "none", border: "none", cursor: "pointer", padding: "0", fontFamily: "inherit", marginBottom: hiddenPanelOpen ? "10px" : "0" }}
+                  data-testid="button-toggle-hidden-panel"
+                >
+                  <span style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--faint)" }}>
+                    Dismissed
+                  </span>
+                  <span style={{ fontSize: "11px", fontWeight: 700, padding: "1px 7px", borderRadius: "5px", background: "var(--track)", color: "var(--faint)" }}
+                    data-testid="badge-dismissed-count">
+                    {dismissedGroup.length}
+                  </span>
+                  <span style={{ marginLeft: "auto", color: "var(--faint)" }}>
+                    {hiddenPanelOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                  </span>
+                </button>
+
+                {hiddenPanelOpen && (
+                  <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "13px", overflow: "hidden" }}>
+                    {/* Select-all row */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", borderBottom: "1px solid var(--panel-bd)" }}>
+                      {/* Native checkbox used for indeterminate support */}
+                      <input
+                        type="checkbox"
+                        checked={allDismissedSelected}
+                        ref={el => { if (el) el.indeterminate = someDismissedSelected; }}
+                        onChange={toggleSelectAllDismissed}
+                        style={{ width: "15px", height: "15px", cursor: "pointer", accentColor: "var(--jox-primary)" }}
+                        data-testid="checkbox-select-all-dismissed"
+                      />
+                      <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--faint)" }}>
+                        {allDismissedSelected
+                          ? `All ${dismissedGroup.length} selected`
+                          : someDismissedSelected
+                          ? `${selectedDismissedIds.size} selected`
+                          : "Select all"}
+                      </span>
+                    </div>
+
+                    {/* Dismissed email rows */}
+                    {dismissedGroup.map((task, i) => {
+                      const isLast = i === dismissedGroup.length - 1;
+                      const colorKey = hashColor(task.senderEmail ?? task.sender);
+                      const chip = chipVars(colorKey);
+                      const isSelected = selectedDismissedIds.has(task.emailId);
+                      const ageStr = dismissedAgeLabel(task.receivedAt);
+
+                      return (
+                        <div
+                          key={task.emailId}
+                          style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 14px", borderBottom: isLast ? "none" : "1px solid var(--panel-bd)", background: isSelected ? "var(--track)" : "transparent", transition: "background .1s" }}
+                          data-testid={`dismissed-row-${task.emailId}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {
+                              setSelectedDismissedIds(prev => {
+                                const next = new Set(prev);
+                                if (next.has(task.emailId)) next.delete(task.emailId);
+                                else next.add(task.emailId);
+                                return next;
+                              });
+                            }}
+                            style={{ width: "15px", height: "15px", cursor: "pointer", accentColor: "var(--jox-primary)", flexShrink: 0 }}
+                            data-testid={`checkbox-dismissed-${task.emailId}`}
+                          />
+
+                          {/* Subject + sender */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: "line-through" }}>
+                              {task.subject}
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "7px", marginTop: "3px" }}>
+                              <span style={{ fontSize: "10.5px", fontWeight: 700, padding: "1px 7px", borderRadius: "6px", background: chip.bg, color: chip.fg, flexShrink: 0 }}>
+                                {task.sender}
+                              </span>
+                              <span style={{ fontSize: "11px", color: "var(--faint)" }}
+                                data-testid={`dismissed-age-${task.emailId}`}>
+                                {ageStr}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Restore button */}
+                          <button
+                            onClick={() => handleRestore(task.emailId)}
+                            title="Restore to inbox"
+                            style={{ flexShrink: 0, background: "var(--track)", color: "var(--fg)", border: "1px solid var(--panel-bd)", borderRadius: "7px", padding: "4px 10px", fontSize: "11.5px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
+                            data-testid={`button-restore-${task.emailId}`}
+                          >
+                            Restore
+                          </button>
+
+                          {/* Delete button */}
+                          <button
+                            onClick={() => handleDelete(task.emailId)}
+                            title="Delete permanently"
+                            style={{ flexShrink: 0, border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "4px", display: "flex", alignItems: "center", borderRadius: "6px", lineHeight: 1 }}
+                            data-testid={`button-delete-${task.emailId}`}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </>
