@@ -1,6 +1,6 @@
 import { storage } from "./storage";
 import { db } from "./db";
-import { invoices, clients } from "@shared/schema";
+import { invoices, clients, jobs } from "@shared/schema";
 import { eq, and, sql, lte } from "drizzle-orm";
 
 export interface EmailConfig {
@@ -29,8 +29,16 @@ export async function sendInvoiceEmail(
     const client = await storage.getClient(invoice.clientId);
     const settings = await storage.getSettings();
 
+    let jobReferenceCodes: { label: string; code: string }[] = [];
+    if (invoice.jobId) {
+      const [job] = await db.select().from(jobs).where(eq(jobs.id, invoice.jobId));
+      if (job?.referenceCodes) {
+        jobReferenceCodes = (job.referenceCodes as { label: string; code: string }[]).filter((c) => c.code?.trim());
+      }
+    }
+
     const subject = `Invoice ${invoice.invoiceNumber} from ${settings?.companyName || "Your Painting Company"}`;
-    const body = generateInvoiceEmailBody(invoice, client, settings);
+    const body = generateInvoiceEmailBody(invoice, client, settings, jobReferenceCodes);
 
     if (config.provider === "resend" && config.apiKey) {
       const response = await fetch("https://api.resend.com/emails", {
@@ -192,7 +200,8 @@ export async function processOverdueReminders(): Promise<{
 function generateInvoiceEmailBody(
   invoice: any,
   client: any,
-  settings: any
+  settings: any,
+  referenceCodes: { label: string; code: string }[] = []
 ): string {
   const companyName = settings?.companyName || "Your Painting Company";
   const formatCurrency = (amount: string | number) => {
@@ -201,6 +210,10 @@ function generateInvoiceEmailBody(
       currency: "USD",
     }).format(Number(amount));
   };
+
+  const referenceCodesHtml = referenceCodes.length > 0
+    ? referenceCodes.map((c) => `<p style="margin:4px 0;font-size:13px;"><strong>${c.label}:</strong> <span style="font-family:monospace;">${c.code}</span></p>`).join("")
+    : "";
 
   return `
 <!DOCTYPE html>
@@ -231,6 +244,7 @@ function generateInvoiceEmailBody(
       <p><strong>Invoice #:</strong> ${invoice.invoiceNumber}</p>
       <p><strong>Amount Due:</strong> <span class="amount">${formatCurrency(invoice.balance)}</span></p>
       <p class="due-date"><strong>Due Date:</strong> ${new Date(invoice.dueDate).toLocaleDateString()}</p>
+      ${referenceCodesHtml}
     </div>
     
     ${invoice.notes ? `<p><strong>Notes:</strong> ${invoice.notes}</p>` : ""}
@@ -482,6 +496,10 @@ export async function sendChangeOrderEmail(
             <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#888;margin-bottom:6px;">Project</div>
             ${job?.title ? `<div style="font-size:14px;font-weight:700;">${job.title}</div>` : ""}
             ${job?.address ? `<div style="font-size:12px;color:#555;margin-top:2px;">${job.address}</div>` : ""}
+            ${(() => {
+              const codes = ((job?.referenceCodes ?? []) as { label: string; code: string }[]).filter((c) => c.code?.trim());
+              return codes.map((c) => `<div style="font-size:11px;color:#555;margin-top:3px;"><strong>${c.label}:</strong> <span style="font-family:monospace;">${c.code}</span></div>`).join("");
+            })()}
           </td>
         </tr>
       </table>
