@@ -35,6 +35,8 @@ import {
   type InsertChangeOrder,
   type OnboardingItem,
   type InsertOnboardingItem,
+  type SmsAttempt,
+  type InsertSmsAttempt,
   users,
   clients,
   jobs,
@@ -54,6 +56,7 @@ import {
   jobDocuments,
   changeOrders,
   onboardingItems,
+  smsAttempts,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql, isNull, or, inArray } from "drizzle-orm";
@@ -196,6 +199,10 @@ export interface IStorage {
   getJobDocument(id: string): Promise<JobDocument | undefined>;
   createJobDocument(doc: InsertJobDocument): Promise<JobDocument>;
   deleteJobDocument(id: string): Promise<void>;
+
+  // SMS Attempts
+  getSmsAttempts(): Promise<SmsAttempt[]>;
+  createSmsAttempt(attempt: InsertSmsAttempt): Promise<SmsAttempt>;
 
   // Dashboard
   getDashboardStats(): Promise<{
@@ -910,6 +917,16 @@ export class DatabaseStorage implements IStorage {
       activeJobs: Number(activeJobsResult[0]?.count) || 0,
       overdueInvoices: Number(overdueResult[0]?.count) || 0,
     };
+  }
+
+  // SMS Attempts
+  async getSmsAttempts(): Promise<SmsAttempt[]> {
+    return db.select().from(smsAttempts).orderBy(desc(smsAttempts.createdAt));
+  }
+
+  async createSmsAttempt(attempt: InsertSmsAttempt): Promise<SmsAttempt> {
+    const [row] = await db.insert(smsAttempts).values(attempt).returning();
+    return row;
   }
 }
 

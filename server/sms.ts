@@ -33,14 +33,40 @@ export function twimlReply(message: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${safe}</Message></Response>`;
 }
 
+async function logAttempt(params: {
+  fromPhone: string;
+  body: string;
+  status: string;
+  employeeId?: string | null;
+  employeeName?: string | null;
+  hoursRequested?: number | null;
+  replyMessage?: string | null;
+}): Promise<void> {
+  try {
+    await storage.createSmsAttempt({
+      fromPhone: params.fromPhone,
+      body: params.body,
+      status: params.status,
+      employeeId: params.employeeId ?? null,
+      employeeName: params.employeeName ?? null,
+      hoursRequested: params.hoursRequested != null ? String(params.hoursRequested) : null,
+      replyMessage: params.replyMessage ?? null,
+    });
+  } catch (err) {
+    console.error("Failed to log SMS attempt:", err);
+  }
+}
+
 export async function handleInboundSms(from: string, body: string): Promise<string> {
   const normalizedFrom = normalizePhone(from);
   const upperBody = body.trim().toUpperCase();
 
   if (upperBody === "HELP" || upperBody === "?") {
-    return twimlReply(
+    const reply = twimlReply(
       "JobsOxo time log:\n• Text hours: 8 or 7.5 or 6.5 painting\n• Tag a job: 8 painting job:42 or job:kitchen\n• Adds today's hours to your account\n• Max 24h per day"
     );
+    await logAttempt({ fromPhone: normalizedFrom, body, status: "help", replyMessage: null });
+    return reply;
   }
 
   const allEmployees = await storage.getEmployees();
@@ -50,20 +76,26 @@ export async function handleInboundSms(from: string, body: string): Promise<stri
   });
 
   if (!employee) {
-    return twimlReply(
+    const reply = twimlReply(
       "Your number isn't linked to an employee account. Ask your manager to add it in JobsOxo."
     );
+    await logAttempt({ fromPhone: normalizedFrom, body, status: "unknown_number", replyMessage: reply });
+    return reply;
   }
 
   if (employee.status === "inactive") {
-    return twimlReply(
+    const reply = twimlReply(
       `Hi ${employee.name}, your account is currently inactive. Contact your manager for access.`
     );
+    await logAttempt({ fromPhone: normalizedFrom, body, status: "inactive_employee", employeeId: employee.id, employeeName: employee.name, replyMessage: reply });
+    return reply;
   }
 
   const parsed = parseHoursMessage(body.trim());
   if (!parsed) {
-    return twimlReply("Couldn't read that. Try: 8 or 7.5 or 6 painting kitchen");
+    const reply = twimlReply("Couldn't read that. Try: 8 or 7.5 or 6 painting kitchen");
+    await logAttempt({ fromPhone: normalizedFrom, body, status: "parse_error", employeeId: employee.id, employeeName: employee.name, replyMessage: reply });
+    return reply;
   }
 
   const { hours, description, jobRef } = parsed;
@@ -83,9 +115,11 @@ export async function handleInboundSms(from: string, body: string): Promise<stri
   const newTotal = existingHours + hours;
 
   if (newTotal > 24) {
-    return twimlReply(
+    const reply = twimlReply(
       `Can't log ${hours}h — you already have ${existingHours.toFixed(1)}h logged today (total would exceed 24h).`
     );
+    await logAttempt({ fromPhone: normalizedFrom, body, status: "over_cap", employeeId: employee.id, employeeName: employee.name, hoursRequested: hours, replyMessage: reply });
+    return reply;
   }
 
   const assignedJobs = await storage.getJobsByEmployee(employee.id);
@@ -123,13 +157,16 @@ export async function handleInboundSms(from: string, body: string): Promise<stri
     date: now,
     hoursWorked: String(hours),
     description: entryDescription || "(via SMS)",
+    source: "sms",
   };
   await storage.createTimeEntry(entry);
 
   const dayName = now.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
   const totalStr = newTotal % 1 === 0 ? String(newTotal) : newTotal.toFixed(1);
   const jobLine = resolvedJobName ? ` on "${resolvedJobName}"` : "";
-  return twimlReply(
+  const reply = twimlReply(
     `✓ Logged ${hours}h${jobLine} for ${dayName}. Total today: ${totalStr}h. Reply HELP for tips.`
   );
+  await logAttempt({ fromPhone: normalizedFrom, body, status: "ok", employeeId: employee.id, employeeName: employee.name, hoursRequested: hours, replyMessage: reply });
+  return reply;
 }

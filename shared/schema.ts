@@ -401,6 +401,7 @@ export const timeEntries = pgTable("time_entries", {
   date: timestamp("date").notNull(),
   hoursWorked: decimal("hours_worked", { precision: 5, scale: 2 }).notNull(),
   description: text("description"),
+  source: text("source").notNull().default("manual"), // manual | sms
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -572,3 +573,20 @@ export const jobDocuments = pgTable("job_documents", {
 export const insertJobDocumentSchema = createInsertSchema(jobDocuments).omit({ id: true, uploadedAt: true });
 export type InsertJobDocument = z.infer<typeof insertJobDocumentSchema>;
 export type JobDocument = typeof jobDocuments.$inferSelect;
+
+// SMS Attempts — log every inbound SMS for manager review (success + rejections)
+export const smsAttempts = pgTable("sms_attempts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fromPhone: text("from_phone").notNull(),
+  body: text("body").notNull(),
+  status: text("status").notNull(), // ok | unknown_number | inactive_employee | parse_error | over_cap
+  employeeId: varchar("employee_id").references(() => employees.id, { onDelete: "set null" }),
+  employeeName: text("employee_name"),
+  hoursRequested: decimal("hours_requested", { precision: 5, scale: 2 }),
+  replyMessage: text("reply_message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertSmsAttemptSchema = createInsertSchema(smsAttempts).omit({ id: true, createdAt: true });
+export type InsertSmsAttempt = z.infer<typeof insertSmsAttemptSchema>;
+export type SmsAttempt = typeof smsAttempts.$inferSelect;

@@ -1552,6 +1552,17 @@ export async function registerRoutes(
     }
   });
 
+  // SMS Attempts log (manager view)
+  app.get("/api/sms/attempts", async (_req, res) => {
+    try {
+      const attempts = await storage.getSmsAttempts();
+      res.json(attempts);
+    } catch (error) {
+      console.error("Get SMS attempts error:", error);
+      res.status(500).json({ error: "Failed to get SMS attempts" });
+    }
+  });
+
   // Payroll Records
   app.get("/api/payroll-records", async (req, res) => {
     try {

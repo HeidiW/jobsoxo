@@ -24,9 +24,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
-import { Plus, Play, AlertTriangle, PhoneOff, Edit, Trash2, CheckCircle, ChevronLeft, ChevronRight, FileText, X, Settings2, Download, ClipboardList, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, Play, AlertTriangle, PhoneOff, Edit, Trash2, CheckCircle, ChevronLeft, ChevronRight, FileText, X, Settings2, Download, ClipboardList, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
 import { format, startOfMonth, endOfMonth, subMonths } from "date-fns";
-import type { Employee, TimeEntry, PayrollRecord, Job } from "@shared/schema";
+import type { Employee, TimeEntry, PayrollRecord, Job, SmsAttempt } from "@shared/schema";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface EmployeeDeduction {
@@ -1312,8 +1312,18 @@ function PayrollRegisterPreviewDialog({
   );
 }
 
+// ── SMS status helpers ────────────────────────────────────────────────────────
+const SMS_STATUS: Record<string, { bg: string; fg: string; label: string }> = {
+  ok:                { bg: "var(--b-green-bg)",  fg: "var(--b-green-fg)",  label: "Logged" },
+  unknown_number:    { bg: "#fee2e2",            fg: "#b91c1c",            label: "Unknown #" },
+  inactive_employee: { bg: "var(--b-gray-bg)",   fg: "var(--b-gray-fg)",   label: "Inactive" },
+  parse_error:       { bg: "var(--b-amber-bg)",  fg: "var(--b-amber-fg)",  label: "Bad format" },
+  over_cap:          { bg: "#fef3c7",            fg: "#b45309",            label: "Over 24h cap" },
+  help:              { bg: "var(--b-blue-bg, #eff6ff)", fg: "var(--b-blue-fg, #1d4ed8)", label: "HELP" },
+};
+
 // ── Section tab types ─────────────────────────────────────────────────────────
-type Section = "payroll" | "employees" | "time" | "settings";
+type Section = "payroll" | "employees" | "time" | "smslog" | "settings";
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Payroll() {
@@ -1326,6 +1336,7 @@ export default function Payroll() {
   const [deleteTimeEntryId, setDeleteTimeEntryId] = useState<string | null>(null);
   const [empSearch, setEmpSearch] = useState("");
   const [timeFilter, setTimeFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
   const [payStubRecord, setPayStubRecord] = useState<PayrollRecordWithEmployee | null>(null);
   const [isRegisterPreviewOpen, setIsRegisterPreviewOpen] = useState(false);
   const { toast } = useToast();
@@ -1335,6 +1346,7 @@ export default function Payroll() {
   const { data: payrollRecords, isLoading: payrollLoading } = useQuery<PayrollRecordWithEmployee[]>({ queryKey: ["/api/payroll-records"] });
   const { data: appSettings } = useQuery<{ companyName?: string }>({ queryKey: ["/api/settings"] });
   const companyName = appSettings?.companyName || "JobsOxo";
+  const { data: smsAttempts = [], isLoading: smsLoading } = useQuery<SmsAttempt[]>({ queryKey: ["/api/sms/attempts"] });
 
   // ── Period grouping ────────────────────────────────────────────────────────
   const periods = useMemo(() => {
@@ -1427,6 +1439,7 @@ export default function Payroll() {
   // ── Filtered time entries ──────────────────────────────────────────────────
   const now = new Date();
   const filteredTimeEntries = (timeEntries ?? []).filter(entry => {
+    if (sourceFilter !== "all" && entry.source !== sourceFilter) return false;
     if (timeFilter === "all") return true;
     const d = new Date(entry.date);
     if (timeFilter === "this_month") return d >= startOfMonth(now) && d <= endOfMonth(now);
@@ -1434,6 +1447,9 @@ export default function Payroll() {
     if (timeFilter === "last_7") return d >= new Date(now.getTime() - 7*864e5);
     return true;
   });
+
+  const smsEntryCount = (timeEntries ?? []).filter(e => e.source === "sms").length;
+  const smsRejectedCount = smsAttempts.filter(a => a.status !== "ok" && a.status !== "help").length;
 
   // ── Per-row payroll data ───────────────────────────────────────────────────
   const crewRows = currentRecords.map((r, i) => {
@@ -1453,10 +1469,11 @@ export default function Payroll() {
     };
   });
 
-  const SECTION_TABS: { key: Section; label: string }[] = [
+  const SECTION_TABS: { key: Section; label: string; badge?: number | null }[] = [
     { key: "payroll",   label: "Pay run" },
     { key: "employees", label: "Employees" },
-    { key: "time",      label: "Time entries" },
+    { key: "time",      label: "Time entries", badge: smsEntryCount > 0 ? smsEntryCount : null },
+    { key: "smslog",    label: "SMS log" },
     { key: "settings",  label: "Settings" },
   ];
 
@@ -1611,10 +1628,16 @@ export default function Payroll() {
                 <button key={s.key} onClick={() => setActiveSection(s.key)}
                   style={{ display: "inline-flex", alignItems: "center", gap: "7px", cursor: "pointer", fontFamily: "inherit", fontSize: "13px", fontWeight: 600, padding: "7px 13px", borderRadius: "8px", border: "1px solid " + (active ? "transparent" : "var(--panel-bd)"), background: active ? "var(--jox-primary)" : "var(--panel)", color: active ? "#fff" : "var(--muted)" }}
                   data-testid={`tab-${s.key}`}>
+                  {s.key === "smslog" && <MessageSquare style={{ width: "12px", height: "12px" }} />}
                   {s.label}
                   {s.key === "payroll" && !active && (payrollRecords?.filter(r => r.status === "pending").length ?? 0) > 0 && (
                     <span className="font-mono" style={{ fontSize: "11px", fontWeight: 600, padding: "0 6px", borderRadius: "5px", background: "var(--b-amber-bg)", color: "var(--b-amber-fg)" }}>
                       {payrollRecords!.filter(r => r.status === "pending").length}
+                    </span>
+                  )}
+                  {s.key === "smslog" && !active && smsRejectedCount > 0 && (
+                    <span className="font-mono" style={{ fontSize: "11px", fontWeight: 600, padding: "0 6px", borderRadius: "5px", background: "#fee2e2", color: "#b91c1c" }}>
+                      {smsRejectedCount}
                     </span>
                   )}
                 </button>
@@ -1875,6 +1898,19 @@ export default function Payroll() {
                     </button>
                   );
                 })}
+                <div style={{ width: "1px", height: "20px", background: "var(--panel-bd)", margin: "0 4px" }} />
+                {(["all","manual","sms"] as const).map(f => {
+                  const labels: Record<string, string> = { all: "All sources", manual: "Manual", sms: "SMS" };
+                  const active = sourceFilter === f;
+                  return (
+                    <button key={f} onClick={() => setSourceFilter(f)}
+                      style={{ border: "1px solid " + (active ? "transparent" : "var(--panel-bd)"), background: active ? (f === "sms" ? "#2563eb" : "var(--jox-primary)") : "var(--panel)", color: active ? "#fff" : "var(--muted)", borderRadius: "7px", padding: "5px 12px", fontSize: "12.5px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "5px" }}
+                      data-testid={`filter-source-${f}`}>
+                      {f === "sms" && <MessageSquare style={{ width: "11px", height: "11px" }} />}
+                      {labels[f]}
+                    </button>
+                  );
+                })}
                 <button onClick={() => setIsTimeEntryDialogOpen(true)} style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "6px", border: "none", background: "var(--jox-primary)", color: "#fff", borderRadius: "8px", padding: "7px 14px", fontSize: "12.5px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-log-hours-tab">
                   <Plus style={{ width: "13px", height: "13px" }} />Log hours
                 </button>
@@ -1882,11 +1918,12 @@ export default function Payroll() {
 
               <div style={{ ...TH }}>
                 <span style={{ width: "96px", flexShrink: 0 }}>Date</span>
-                <span style={{ width: "160px", flexShrink: 0 }}>Employee</span>
+                <span style={{ width: "150px", flexShrink: 0 }}>Employee</span>
                 <span style={{ flex: 1, minWidth: 0 }}>Job</span>
+                <span style={{ width: "68px", flexShrink: 0, textAlign: "center" }}>Source</span>
                 <span style={{ width: "80px", flexShrink: 0, textAlign: "right" }}>Hours</span>
                 <span style={{ width: "96px", flexShrink: 0, textAlign: "right" }}>Pay</span>
-                <span style={{ width: "180px", flexShrink: 0 }}>Description</span>
+                <span style={{ width: "160px", flexShrink: 0 }}>Description</span>
                 <span style={{ width: "28px", flexShrink: 0 }}></span>
               </div>
 
@@ -1903,27 +1940,115 @@ export default function Payroll() {
                 </div>
               )}
 
-              {filteredTimeEntries.map((entry) => (
-                <div key={entry.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "11px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-time-${entry.id}`}>
-                  <span style={{ width: "96px", flexShrink: 0, fontSize: "12.5px", color: "var(--muted)" }}>
-                    {format(new Date(entry.date), "MMM d, yyyy")}
-                  </span>
-                  <span style={{ width: "160px", flexShrink: 0, fontSize: "13px", fontWeight: 500 }}>{entry.employee?.name ?? "—"}</span>
-                  <span style={{ flex: 1, minWidth: 0, fontSize: "12.5px", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(entry as any).job?.title ?? "—"}</span>
-                  <span className="font-mono" style={{ width: "80px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 600 }}>{Number(entry.hoursWorked).toFixed(1)} hrs</span>
-                  <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "12.5px" }}>{fmtFull(Number(entry.hoursWorked) * Number(entry.employee?.dayRate ?? 0))}</span>
-                  <span style={{ width: "180px", flexShrink: 0, fontSize: "12px", color: "var(--faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.description || "—"}</span>
-                  <span style={{ width: "28px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
-                    <button onClick={() => setDeleteTimeEntryId(entry.id)} style={{ border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "2px", display: "flex" }} data-testid={`button-delete-time-${entry.id}`}>
-                      <Trash2 style={{ width: "14px", height: "14px" }} />
-                    </button>
-                  </span>
-                </div>
-              ))}
+              {filteredTimeEntries.map((entry) => {
+                const isSms = entry.source === "sms";
+                return (
+                  <div key={entry.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "11px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-time-${entry.id}`}>
+                    <span style={{ width: "96px", flexShrink: 0, fontSize: "12.5px", color: "var(--muted)" }}>
+                      {format(new Date(entry.date), "MMM d, yyyy")}
+                    </span>
+                    <span style={{ width: "150px", flexShrink: 0, fontSize: "13px", fontWeight: 500 }}>{entry.employee?.name ?? "—"}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: "12.5px", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(entry as any).job?.title ?? "—"}</span>
+                    <span style={{ width: "68px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
+                      {isSms ? (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "10.5px", fontWeight: 700, padding: "2px 7px", borderRadius: "5px", background: "var(--b-blue-bg, #eff6ff)", color: "var(--b-blue-fg, #1d4ed8)", whiteSpace: "nowrap" }} data-testid={`badge-source-sms-${entry.id}`}>
+                          <MessageSquare style={{ width: "9px", height: "9px" }} />SMS
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: "10.5px", color: "var(--faint)" }} data-testid={`badge-source-manual-${entry.id}`}>Manual</span>
+                      )}
+                    </span>
+                    <span className="font-mono" style={{ width: "80px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 600 }}>{Number(entry.hoursWorked).toFixed(1)} hrs</span>
+                    <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "12.5px" }}>{fmtFull(Number(entry.hoursWorked) * Number(entry.employee?.dayRate ?? 0))}</span>
+                    <span style={{ width: "160px", flexShrink: 0, fontSize: "12px", color: "var(--faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.description || "—"}</span>
+                    <span style={{ width: "28px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
+                      <button onClick={() => setDeleteTimeEntryId(entry.id)} style={{ border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "2px", display: "flex" }} data-testid={`button-delete-time-${entry.id}`}>
+                        <Trash2 style={{ width: "14px", height: "14px" }} />
+                      </button>
+                    </span>
+                  </div>
+                );
+              })}
 
               {!timeLoading && filteredTimeEntries.length > 0 && (
                 <div style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
                   {filteredTimeEntries.length} entr{filteredTimeEntries.length !== 1 ? "ies" : "y"} · {filteredTimeEntries.reduce((s, e) => s + Number(e.hoursWorked), 0).toFixed(1)} total hours
+                  {smsEntryCount > 0 && <> · <span style={{ color: "var(--b-blue-fg, #1d4ed8)", fontWeight: 600 }}>{smsEntryCount} via SMS</span></>}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══════════════════════════════════════════════════════════════════ */}
+          {/* ── SMS LOG ── */}
+          {activeSection === "smslog" && (
+            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "14px 18px", borderBottom: "1px solid var(--panel-bd)", background: "var(--track)" }}>
+                <MessageSquare style={{ width: "15px", height: "15px", color: "var(--jox-primary)" }} />
+                <div>
+                  <div style={{ fontSize: "13.5px", fontWeight: 700 }}>SMS Activity Log</div>
+                  <div style={{ fontSize: "12px", color: "var(--faint)" }}>All inbound SMS messages — successful logs and rejections</div>
+                </div>
+                {smsRejectedCount > 0 && (
+                  <span style={{ marginLeft: "auto", fontSize: "12px", fontWeight: 600, padding: "4px 10px", borderRadius: "7px", background: "#fee2e2", color: "#b91c1c" }}>
+                    {smsRejectedCount} rejected
+                  </span>
+                )}
+              </div>
+
+              <div style={{ ...TH }}>
+                <span style={{ width: "148px", flexShrink: 0 }}>Time</span>
+                <span style={{ width: "130px", flexShrink: 0 }}>From</span>
+                <span style={{ width: "140px", flexShrink: 0 }}>Employee</span>
+                <span style={{ width: "78px", flexShrink: 0, textAlign: "center" }}>Status</span>
+                <span style={{ width: "64px", flexShrink: 0, textAlign: "right" }}>Hours</span>
+                <span style={{ flex: 1, minWidth: 0 }}>Message</span>
+              </div>
+
+              {smsLoading && <div style={{ padding: "40px", textAlign: "center" as const, color: "var(--faint)", fontSize: "13px" }}>Loading SMS log…</div>}
+
+              {!smsLoading && smsAttempts.length === 0 && (
+                <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
+                  <div style={{ fontSize: "32px", marginBottom: "10px" }}>📱</div>
+                  <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>No SMS activity yet</div>
+                  <div style={{ fontSize: "13px", color: "var(--faint)" }}>When employees text in their hours, all attempts will appear here.</div>
+                </div>
+              )}
+
+              {smsAttempts.map((attempt) => {
+                const badge = SMS_STATUS[attempt.status] ?? { bg: "var(--b-gray-bg)", fg: "var(--b-gray-fg)", label: attempt.status };
+                const isRejected = !["ok", "help"].includes(attempt.status);
+                return (
+                  <div key={attempt.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "10px 18px", borderBottom: "1px solid var(--panel-bd)", background: isRejected ? "rgba(254,226,226,0.18)" : undefined }} data-testid={`row-sms-${attempt.id}`}>
+                    <span style={{ width: "148px", flexShrink: 0, fontSize: "12px", color: "var(--muted)" }}>
+                      {format(new Date(attempt.createdAt), "MMM d, h:mm a")}
+                    </span>
+                    <span className="font-mono" style={{ width: "130px", flexShrink: 0, fontSize: "12px", color: "var(--faint)" }}>
+                      {attempt.fromPhone}
+                    </span>
+                    <span style={{ width: "140px", flexShrink: 0, fontSize: "13px", fontWeight: attempt.employeeName ? 500 : 400, color: attempt.employeeName ? "var(--fg)" : "var(--faint)" }}>
+                      {attempt.employeeName ?? <span style={{ fontStyle: "italic" }}>Unknown</span>}
+                    </span>
+                    <span style={{ width: "78px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
+                      <span style={{ fontSize: "10.5px", fontWeight: 700, padding: "2px 7px", borderRadius: "5px", background: badge.bg, color: badge.fg, whiteSpace: "nowrap" }} data-testid={`badge-sms-status-${attempt.id}`}>
+                        {badge.label}
+                      </span>
+                    </span>
+                    <span className="font-mono" style={{ width: "64px", flexShrink: 0, textAlign: "right", fontSize: "12.5px", color: attempt.hoursRequested ? "var(--fg)" : "var(--faint)" }}>
+                      {attempt.hoursRequested ? `${Number(attempt.hoursRequested).toFixed(1)}h` : "—"}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: "12px", color: "var(--faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingLeft: "16px" }}>
+                      {attempt.body}
+                    </span>
+                  </div>
+                );
+              })}
+
+              {!smsLoading && smsAttempts.length > 0 && (
+                <div style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
+                  {smsAttempts.length} message{smsAttempts.length !== 1 ? "s" : ""}
+                  {" · "}{smsAttempts.filter(a => a.status === "ok").length} logged
+                  {smsRejectedCount > 0 && <> · <span style={{ color: "#b91c1c", fontWeight: 600 }}>{smsRejectedCount} rejected</span></>}
                 </div>
               )}
             </div>
