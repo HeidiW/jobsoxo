@@ -764,24 +764,56 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
             Pay schedule: <strong>{PAY_FREQUENCY_LABELS[payrollSettings.payFrequency]}</strong> — change in Settings tab.
           </div>
         )}
+        {mutation.isPending && (
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: "8px", padding: "9px 12px", fontSize: "12.5px", color: "#0369a1" }} data-testid="banner-payroll-locked">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <span>Payroll run in progress — fields are locked until the run completes.</span>
+          </div>
+        )}
         <div>
           <label style={{ ...lbl, marginBottom: "8px" }}>Quick period</label>
           <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
             {presets.map(p => (
-              <button key={p.label} type="button" onClick={() => { form.setValue("periodStart", p.start); form.setValue("periodEnd", p.end); }}
-                style={{ padding: "6px 12px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "7px", fontSize: "12.5px", fontWeight: 600, color: "#475569", cursor: "pointer", fontFamily: "inherit" }}
-                data-testid={`preset-${p.label.toLowerCase().replace(/ /g,"-")}`}>
-                {p.label}
-              </button>
+              <Tooltip key={p.label} open={mutation.isPending ? undefined : false}>
+                <TooltipTrigger asChild>
+                  <span>
+                    <button type="button" onClick={() => { if (!mutation.isPending) { form.setValue("periodStart", p.start); form.setValue("periodEnd", p.end); } }}
+                      disabled={mutation.isPending}
+                      style={{ padding: "6px 12px", border: "1px solid #cbd5e1", background: mutation.isPending ? "#f1f5f9" : "#fff", borderRadius: "7px", fontSize: "12.5px", fontWeight: 600, color: mutation.isPending ? "#94a3b8" : "#475569", cursor: mutation.isPending ? "not-allowed" : "pointer", fontFamily: "inherit", opacity: mutation.isPending ? 0.6 : 1 }}
+                      data-testid={`preset-${p.label.toLowerCase().replace(/ /g,"-")}`}>
+                      {p.label}
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Payroll run in progress</TooltipContent>
+              </Tooltip>
             ))}
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
           <FormField control={form.control} name="periodStart" render={({ field }) => (
-            <FormItem><label style={lbl}>Period start *</label><FormControl><input {...field} type="date" style={inp} data-testid="input-payroll-start" /></FormControl><FormMessage /></FormItem>
+            <FormItem><label style={{ ...lbl, color: mutation.isPending ? "#94a3b8" : undefined }}>Period start *</label>
+              <Tooltip open={mutation.isPending ? undefined : false}>
+                <TooltipTrigger asChild>
+                  <span style={{ display: "block" }}>
+                    <FormControl><input {...field} type="date" disabled={mutation.isPending} style={{ ...inp, background: mutation.isPending ? "#f1f5f9" : undefined, color: mutation.isPending ? "#94a3b8" : undefined, cursor: mutation.isPending ? "not-allowed" : undefined, pointerEvents: mutation.isPending ? "none" : undefined }} data-testid="input-payroll-start" /></FormControl>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Payroll run in progress</TooltipContent>
+              </Tooltip>
+              <FormMessage /></FormItem>
           )} />
           <FormField control={form.control} name="periodEnd" render={({ field }) => (
-            <FormItem><label style={lbl}>Period end *</label><FormControl><input {...field} type="date" style={inp} data-testid="input-payroll-end" /></FormControl><FormMessage /></FormItem>
+            <FormItem><label style={{ ...lbl, color: mutation.isPending ? "#94a3b8" : undefined }}>Period end *</label>
+              <Tooltip open={mutation.isPending ? undefined : false}>
+                <TooltipTrigger asChild>
+                  <span style={{ display: "block" }}>
+                    <FormControl><input {...field} type="date" disabled={mutation.isPending} style={{ ...inp, background: mutation.isPending ? "#f1f5f9" : undefined, color: mutation.isPending ? "#94a3b8" : undefined, cursor: mutation.isPending ? "not-allowed" : undefined, pointerEvents: mutation.isPending ? "none" : undefined }} data-testid="input-payroll-end" /></FormControl>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Payroll run in progress</TooltipContent>
+              </Tooltip>
+              <FormMessage /></FormItem>
           )} />
         </div>
         {overlapping.length > 0 && (
