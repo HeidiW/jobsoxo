@@ -1,15 +1,5 @@
 import { z } from "zod";
-
-function positiveNumericField(label: string) {
-  return z
-    .string()
-    .min(1, `${label} is required`)
-    .refine(
-      (val) => !isNaN(parseFloat(val)) && isFinite(Number(val)),
-      `${label} must be a valid number`
-    )
-    .refine((val) => parseFloat(val) > 0, `${label} must be greater than zero`);
-}
+import { positiveNumericField } from "./positive-numeric-field";
 
 export const changeOrderSchema = z.object({
   category: z.enum(["materials", "labor", "square_footage", "other"]),

@@ -43,6 +43,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
+import { positiveNumericField } from "@/lib/positive-numeric-field";
 import {
   Plus,
   ArrowLeft,
@@ -62,20 +63,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { Job, Client, LineItem } from "@shared/schema";
 
-// Mirror server-side positiveNumericString validation inline so errors surface
-// without a network round-trip. The exact rules (> 0) come from insertLineItemSchema.
-function positiveNumericField(label: string) {
-  return z
-    .string()
-    .min(1, `${label} is required`)
-    .refine(
-      (val) => !isNaN(parseFloat(val)) && isFinite(Number(val)),
-      `${label} must be a valid number`
-    )
-    .refine((val) => parseFloat(val) > 0, `${label} must be greater than zero`);
-}
-
-const lineItemFormSchema = z
+export const lineItemFormSchema = z
   .object({
     category: z.enum(["materials", "labor", "square_footage", "other"]),
     description: z.string().min(1, "Description is required"),

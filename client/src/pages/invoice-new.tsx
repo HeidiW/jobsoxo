@@ -18,6 +18,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
 import { formatPhone } from "@/lib/formatPhone";
+import { positiveNumericField } from "@/lib/positive-numeric-field";
 import { Plus, FileText, Save, Send } from "lucide-react";
 import { format, addDays } from "date-fns";
 import type { Client, Job, Settings } from "@shared/schema";
@@ -45,13 +46,7 @@ interface ParsedDocument {
   message?: string;
 }
 
-function positiveNumericField(label: string) {
-  return z.string().min(1, `${label} is required`)
-    .refine((v) => !isNaN(parseFloat(v)) && isFinite(Number(v)), `${label} must be a valid number`)
-    .refine((v) => parseFloat(v) > 0, `${label} must be greater than zero`);
-}
-
-const lineItemSchema = z.object({
+export const lineItemSchema = z.object({
   category: z.enum(["materials", "labor", "square_footage", "other"]),
   description: z.string().min(1, "Description is required"),
   quantity: positiveNumericField("Quantity"),
