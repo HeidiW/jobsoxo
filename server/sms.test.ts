@@ -29,27 +29,27 @@ describe("normalizePhone", () => {
 describe("parseHoursMessage", () => {
   it("parses integer hours", () => {
     const result = parseHoursMessage("8");
-    expect(result).toEqual({ hours: 8, description: "" });
+    expect(result).toEqual({ hours: 8, description: "", jobRef: null });
   });
 
   it("parses decimal hours", () => {
     const result = parseHoursMessage("7.5");
-    expect(result).toEqual({ hours: 7.5, description: "" });
+    expect(result).toEqual({ hours: 7.5, description: "", jobRef: null });
   });
 
   it("parses hours with 'h' suffix", () => {
     const result = parseHoursMessage("6h painting");
-    expect(result).toEqual({ hours: 6, description: "painting" });
+    expect(result).toEqual({ hours: 6, description: "painting", jobRef: null });
   });
 
   it("parses hours with 'hrs' suffix", () => {
     const result = parseHoursMessage("4hrs kitchen");
-    expect(result).toEqual({ hours: 4, description: "kitchen" });
+    expect(result).toEqual({ hours: 4, description: "kitchen", jobRef: null });
   });
 
   it("parses hours with description", () => {
     const result = parseHoursMessage("8 painting upstairs");
-    expect(result).toEqual({ hours: 8, description: "painting upstairs" });
+    expect(result).toEqual({ hours: 8, description: "painting upstairs", jobRef: null });
   });
 
   it("returns null for 0 hours", () => {
@@ -70,7 +70,27 @@ describe("parseHoursMessage", () => {
 
   it("accepts exactly 24 hours", () => {
     const result = parseHoursMessage("24");
-    expect(result).toEqual({ hours: 24, description: "" });
+    expect(result).toEqual({ hours: 24, description: "", jobRef: null });
+  });
+
+  it("extracts numeric job reference", () => {
+    const result = parseHoursMessage("8 painting job:42");
+    expect(result).toEqual({ hours: 8, description: "painting", jobRef: "42" });
+  });
+
+  it("extracts named job reference", () => {
+    const result = parseHoursMessage("6 job:kitchen");
+    expect(result).toEqual({ hours: 6, description: "", jobRef: "kitchen" });
+  });
+
+  it("strips job tag from description when job tag appears mid-message", () => {
+    const result = parseHoursMessage("8 drywall job:42 sanding");
+    expect(result).toEqual({ hours: 8, description: "drywall sanding", jobRef: "42" });
+  });
+
+  it("is case-insensitive for job tag", () => {
+    const result = parseHoursMessage("8 Job:Bath");
+    expect(result).toEqual({ hours: 8, description: "", jobRef: "Bath" });
   });
 });
 

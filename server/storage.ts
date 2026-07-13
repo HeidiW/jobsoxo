@@ -115,6 +115,7 @@ export interface IStorage {
 
   // Employee Assignments
   getAssignmentsByJob(jobId: string): Promise<EmployeeAssignment[]>;
+  getJobsByEmployee(employeeId: string): Promise<Job[]>;
   setJobAssignments(jobId: string, employeeIds: string[]): Promise<void>;
 
   // Time Entries
@@ -559,6 +560,16 @@ export class DatabaseStorage implements IStorage {
   // Employee Assignments
   async getAssignmentsByJob(jobId: string): Promise<EmployeeAssignment[]> {
     return db.select().from(employeeAssignments).where(eq(employeeAssignments.jobId, jobId));
+  }
+
+  async getJobsByEmployee(employeeId: string): Promise<Job[]> {
+    const assignments = await db
+      .select()
+      .from(employeeAssignments)
+      .where(eq(employeeAssignments.employeeId, employeeId));
+    if (assignments.length === 0) return [];
+    const jobIds = assignments.map((a) => a.jobId);
+    return db.select().from(jobs).where(inArray(jobs.id, jobIds));
   }
 
   async setJobAssignments(jobId: string, employeeIds: string[]): Promise<void> {

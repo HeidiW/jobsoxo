@@ -8,14 +8,24 @@ export function normalizePhone(phone: string): string {
   return digits;
 }
 
-export function parseHoursMessage(body: string): { hours: number; description: string } | null {
+export function parseHoursMessage(body: string): { hours: number; description: string; jobRef: string | null } | null {
   const trimmed = body.trim();
   const match = trimmed.match(/^(\d+(?:\.\d+)?)\s*(?:h(?:ours?|rs?)?)?\s*(.*)/i);
   if (!match) return null;
   const hours = parseFloat(match[1]);
   if (isNaN(hours) || hours <= 0 || hours > 24) return null;
-  const description = (match[2] || "").trim();
-  return { hours, description };
+
+  let rest = (match[2] || "").trim();
+  let jobRef: string | null = null;
+
+  const jobMatch = rest.match(/\bjob:(\S+)/i);
+  if (jobMatch) {
+    jobRef = jobMatch[1];
+    rest = rest.replace(jobMatch[0], " ").replace(/\s+/g, " ").trim();
+  }
+
+  const description = rest.trim();
+  return { hours, description, jobRef };
 }
 
 export function twimlReply(message: string): string {
@@ -29,7 +39,7 @@ export async function handleInboundSms(from: string, body: string): Promise<stri
 
   if (upperBody === "HELP" || upperBody === "?") {
     return twimlReply(
-      "JobsOxo time log:\n• Text hours: 8 or 7.5 or 6.5 painting\n• Adds today's hours to your account\n• Max 24h per day"
+      "JobsOxo time log:\n• Text hours: 8 or 7.5 or 6.5 painting\n• Tag a job: 8 painting job:42 or job:kitchen\n• Adds today's hours to your account\n• Max 24h per day"
     );
   }
 
@@ -56,7 +66,7 @@ export async function handleInboundSms(from: string, body: string): Promise<stri
     return twimlReply("Couldn't read that. Try: 8 or 7.5 or 6 painting kitchen");
   }
 
-  const { hours, description } = parsed;
+  const { hours, description, jobRef } = parsed;
 
   const now = new Date();
   const dayStart = new Date(now);
@@ -78,10 +88,38 @@ export async function handleInboundSms(from: string, body: string): Promise<stri
     );
   }
 
+  const assignedJobs = await storage.getJobsByEmployee(employee.id);
+  const activeJobs = assignedJobs.filter((j) => j.status === "in_progress" || j.status === "scheduled");
+
+  let resolvedJobId: string | null = null;
+  let resolvedJobName: string | null = null;
+
+  if (jobRef) {
+    const byId = assignedJobs.find((j) => j.id === jobRef);
+    if (byId) {
+      resolvedJobId = byId.id;
+      resolvedJobName = byId.title;
+    } else {
+      const lowerRef = jobRef.toLowerCase();
+      const byName = assignedJobs.find((j) => j.title.toLowerCase().includes(lowerRef));
+      if (byName) {
+        resolvedJobId = byName.id;
+        resolvedJobName = byName.title;
+      } else {
+        return twimlReply(
+          `Couldn't find a job matching "${jobRef}" assigned to you. Check with your manager or omit the job tag.`
+        );
+      }
+    }
+  } else if (activeJobs.length === 1) {
+    resolvedJobId = activeJobs[0].id;
+    resolvedJobName = activeJobs[0].title;
+  }
+
   const entryDescription = [description, "(via SMS)"].filter(Boolean).join(" ").trim();
   const entry: import("@shared/schema").InsertTimeEntry = {
     employeeId: employee.id,
-    jobId: null,
+    jobId: resolvedJobId,
     date: now,
     hoursWorked: String(hours),
     description: entryDescription || "(via SMS)",
@@ -90,7 +128,8 @@ export async function handleInboundSms(from: string, body: string): Promise<stri
 
   const dayName = now.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
   const totalStr = newTotal % 1 === 0 ? String(newTotal) : newTotal.toFixed(1);
+  const jobLine = resolvedJobName ? ` on "${resolvedJobName}"` : "";
   return twimlReply(
-    `✓ Logged ${hours}h for ${dayName}. Total today: ${totalStr}h. Reply HELP for tips.`
+    `✓ Logged ${hours}h${jobLine} for ${dayName}. Total today: ${totalStr}h. Reply HELP for tips.`
   );
 }
