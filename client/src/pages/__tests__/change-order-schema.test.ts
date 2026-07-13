@@ -33,3 +33,28 @@ describe("changeOrderSchema — quantity validation", () => {
     expect(result.success).toBe(true);
   });
 });
+
+describe("changeOrderSchema — rate validation", () => {
+  it('rejects rate = "0" with "Rate must be greater than zero"', () => {
+    const result = changeOrderSchema.safeParse({ ...validBase, quantity: "1", rate: "0" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message);
+      expect(messages).toContain("Rate must be greater than zero");
+    }
+  });
+
+  it('rejects rate = "-5" with "Rate must be greater than zero"', () => {
+    const result = changeOrderSchema.safeParse({ ...validBase, quantity: "1", rate: "-5" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const messages = result.error.issues.map((i) => i.message);
+      expect(messages).toContain("Rate must be greater than zero");
+    }
+  });
+
+  it('accepts rate = "50"', () => {
+    const result = changeOrderSchema.safeParse({ ...validBase, quantity: "1", rate: "50" });
+    expect(result.success).toBe(true);
+  });
+});
