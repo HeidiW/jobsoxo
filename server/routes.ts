@@ -746,25 +746,34 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/jobs/:id/documents", docUpload.single("file"), async (req, res) => {
-    try {
-      const job = await storage.getJob(req.params.id);
-      if (!job) return res.status(404).json({ error: "Job not found" });
-      if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-      const fileData = req.file.buffer.toString("base64");
-      const doc = await storage.createJobDocument({
-        jobId: req.params.id,
-        fileName: req.file.originalname,
-        fileType: req.file.mimetype,
-        fileSize: req.file.size,
-        fileData,
-      });
-      const { fileData: _fd, ...rest } = doc;
-      res.status(201).json(rest);
-    } catch (error) {
-      console.error("Upload document error:", error);
-      res.status(500).json({ error: "Failed to upload document" });
-    }
+  app.post("/api/jobs/:id/documents", (req, res) => {
+    docUpload.single("file")(req, res, async (err) => {
+      if (err) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          return res.status(413).json({ error: "File too large. Maximum size is 10 MB." });
+        }
+        console.error("Upload middleware error:", err);
+        return res.status(500).json({ error: "Failed to upload document" });
+      }
+      try {
+        const job = await storage.getJob(req.params.id);
+        if (!job) return res.status(404).json({ error: "Job not found" });
+        if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+        const fileData = req.file.buffer.toString("base64");
+        const doc = await storage.createJobDocument({
+          jobId: req.params.id,
+          fileName: req.file.originalname,
+          fileType: req.file.mimetype,
+          fileSize: req.file.size,
+          fileData,
+        });
+        const { fileData: _fd, ...rest } = doc;
+        res.status(201).json(rest);
+      } catch (error) {
+        console.error("Upload document error:", error);
+        res.status(500).json({ error: "Failed to upload document" });
+      }
+    });
   });
 
   app.get("/api/job-documents/:docId/download", async (req, res) => {
