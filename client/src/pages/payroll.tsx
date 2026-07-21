@@ -1339,6 +1339,12 @@ export default function Payroll() {
   const [sourceFilter, setSourceFilter] = useState("all");
   const [payStubRecord, setPayStubRecord] = useState<PayrollRecordWithEmployee | null>(null);
   const [isRegisterPreviewOpen, setIsRegisterPreviewOpen] = useState(false);
+  const [isExportRangeOpen, setIsExportRangeOpen] = useState(false);
+  const [exportRangeStart, setExportRangeStart] = useState("");
+  const [exportRangeEnd, setExportRangeEnd] = useState("");
+  const [isRangeRegisterPreviewOpen, setIsRangeRegisterPreviewOpen] = useState(false);
+  const [rangeExportRecords, setRangeExportRecords] = useState<PayrollRecordWithEmployee[]>([]);
+  const [rangeExportPeriod, setRangeExportPeriod] = useState<{ start: string; end: string }>({ start: "", end: "" });
   const { toast } = useToast();
 
   const { data: employees, isLoading: empLoading } = useQuery<EmployeeWithStats[]>({ queryKey: ["/api/employees"] });
@@ -1427,6 +1433,64 @@ export default function Payroll() {
   function exportPDF() {
     if (!currentRecords.length || !currentPeriod) return;
     setIsRegisterPreviewOpen(true);
+  }
+
+  function getRecordsForRange(start: string, end: string): PayrollRecordWithEmployee[] {
+    if (!payrollRecords || !start || !end) return [];
+    return payrollRecords.filter(r => {
+      const ps = toDateStr(r.periodStart);
+      const pe = toDateStr(r.periodEnd);
+      return ps >= start && pe <= end;
+    });
+  }
+
+  function exportRangeCSV() {
+    const records = getRecordsForRange(exportRangeStart, exportRangeEnd);
+    if (!records.length) {
+      toast({ title: "No records in that range", variant: "destructive" });
+      return;
+    }
+    const header = ["Name", "Type", "Period Start", "Period End", "Regular Hours", "Overtime Hours", "Gross Pay", "Tax Withheld", "Deductions", "Net Pay", "Status"];
+    const rows = records.map(r => {
+      const emp = r.employee;
+      const is1099 = (emp as any).employmentType === "1099";
+      const regHrs = Number(r.regularHours ?? Math.max(0, Number(r.totalHours) - Number(r.overtimeHours ?? 0)));
+      const otHrs = Number(r.overtimeHours ?? 0);
+      return [
+        emp.name,
+        is1099 ? "1099" : "W-2",
+        toDateStr(r.periodStart),
+        toDateStr(r.periodEnd),
+        regHrs.toFixed(2),
+        otHrs.toFixed(2),
+        Number(r.grossPay).toFixed(2),
+        Number(r.taxWithheld ?? 0).toFixed(2),
+        Number(r.deductions ?? 0).toFixed(2),
+        Number(r.netPay).toFixed(2),
+        r.status ?? "pending",
+      ];
+    });
+    const csv = [header, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `payroll-register-${exportRangeStart}-to-${exportRangeEnd}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setIsExportRangeOpen(false);
+  }
+
+  function exportRangePDF() {
+    const records = getRecordsForRange(exportRangeStart, exportRangeEnd);
+    if (!records.length) {
+      toast({ title: "No records in that range", variant: "destructive" });
+      return;
+    }
+    setRangeExportRecords(records);
+    setRangeExportPeriod({ start: exportRangeStart, end: exportRangeEnd });
+    setIsExportRangeOpen(false);
+    setIsRangeRegisterPreviewOpen(true);
   }
 
   // ── Filtered employees ─────────────────────────────────────────────────────
@@ -1540,6 +1604,87 @@ export default function Payroll() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={isRangeRegisterPreviewOpen} onOpenChange={o => { if (!o) setIsRangeRegisterPreviewOpen(false); }}>
+        <DialogContent className="max-w-4xl !flex flex-col max-h-[90dvh] overflow-hidden">
+          <DialogHeader className="shrink-0"><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>Payroll Register — Custom Range</DialogTitle></DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0 px-1 pb-1">
+            {isRangeRegisterPreviewOpen && rangeExportPeriod.start && (
+              <PayrollRegisterPreviewDialog
+                records={rangeExportRecords}
+                period={rangeExportPeriod}
+                companyName={companyName}
+                onClose={() => setIsRangeRegisterPreviewOpen(false)}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isExportRangeOpen} onOpenChange={o => { if (!o) setIsExportRangeOpen(false); }}>
+        <DialogContent className="max-w-sm !flex flex-col">
+          <DialogHeader className="shrink-0"><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>Export date range</DialogTitle></DialogHeader>
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px", paddingTop: "4px" }}>
+            <p style={{ margin: 0, fontSize: "13px", color: "var(--muted)" }}>
+              Export all payroll records whose pay period falls within the selected range.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+              <div>
+                <label style={lbl}>Start date</label>
+                <input
+                  type="date"
+                  value={exportRangeStart}
+                  onChange={e => setExportRangeStart(e.target.value)}
+                  style={inp}
+                  data-testid="input-export-range-start"
+                />
+              </div>
+              <div>
+                <label style={lbl}>End date</label>
+                <input
+                  type="date"
+                  value={exportRangeEnd}
+                  onChange={e => setExportRangeEnd(e.target.value)}
+                  style={inp}
+                  data-testid="input-export-range-end"
+                />
+              </div>
+            </div>
+            {exportRangeStart && exportRangeEnd && exportRangeStart > exportRangeEnd && (
+              <p style={{ margin: 0, fontSize: "12px", color: "#dc2626" }}>Start date must be before end date.</p>
+            )}
+            {exportRangeStart && exportRangeEnd && exportRangeStart <= exportRangeEnd && (() => {
+              const count = getRecordsForRange(exportRangeStart, exportRangeEnd).length;
+              return (
+                <p style={{ margin: 0, fontSize: "12px", color: count > 0 ? "#15803d" : "#94a3b8" }}>
+                  {count > 0 ? `${count} payroll record${count !== 1 ? "s" : ""} found in this range.` : "No records found in this range."}
+                </p>
+              );
+            })()}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "4px" }}>
+              <button type="button" onClick={() => setIsExportRangeOpen(false)}
+                style={{ padding: "9px 16px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "9px", fontSize: "13px", fontWeight: 600, color: "#475569", cursor: "pointer", fontFamily: "inherit" }}
+                data-testid="button-export-range-cancel">
+                Cancel
+              </button>
+              <button type="button"
+                disabled={!exportRangeStart || !exportRangeEnd || exportRangeStart > exportRangeEnd}
+                onClick={exportRangeCSV}
+                style={{ padding: "9px 14px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "9px", fontSize: "13px", fontWeight: 600, color: "#0f172a", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "6px", opacity: (!exportRangeStart || !exportRangeEnd || exportRangeStart > exportRangeEnd) ? 0.4 : 1 }}
+                data-testid="button-export-range-csv">
+                <FileText style={{ width: "13px", height: "13px" }} /> CSV
+              </button>
+              <button type="button"
+                disabled={!exportRangeStart || !exportRangeEnd || exportRangeStart > exportRangeEnd}
+                onClick={exportRangePDF}
+                style={{ padding: "9px 14px", border: "none", background: "#0f172a", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "6px", opacity: (!exportRangeStart || !exportRangeEnd || exportRangeStart > exportRangeEnd) ? 0.4 : 1 }}
+                data-testid="button-export-range-pdf">
+                <FileText style={{ width: "13px", height: "13px" }} /> PDF
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <AlertDialog open={!!deleteTimeEntryId} onOpenChange={o => { if (!o) setDeleteTimeEntryId(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>Delete time entry?</AlertDialogTitle><AlertDialogDescription>This cannot be undone.</AlertDialogDescription></AlertDialogHeader>
@@ -1582,7 +1727,7 @@ export default function Payroll() {
                   </button>
                 </div>
               )}
-              {activeSection === "payroll" && currentRecords.length > 0 && (
+              {activeSection === "payroll" && (payrollRecords?.length ?? 0) > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button style={{ display: "flex", alignItems: "center", gap: "6px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-export-payroll">
@@ -1590,11 +1735,18 @@ export default function Payroll() {
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" sideOffset={4}>
-                    <DropdownMenuItem onClick={exportCSV} data-testid="button-export-csv">
-                      <FileText className="h-4 w-4 mr-2" /> Download CSV
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={exportPDF} data-testid="button-export-pdf">
-                      <FileText className="h-4 w-4 mr-2" /> Download PDF
+                    {currentRecords.length > 0 && (
+                      <>
+                        <DropdownMenuItem onClick={exportCSV} data-testid="button-export-csv">
+                          <FileText className="h-4 w-4 mr-2" /> Download CSV
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={exportPDF} data-testid="button-export-pdf">
+                          <FileText className="h-4 w-4 mr-2" /> Download PDF
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                    <DropdownMenuItem onClick={() => { setExportRangeStart(""); setExportRangeEnd(""); setIsExportRangeOpen(true); }} data-testid="button-export-range">
+                      <Download className="h-4 w-4 mr-2" /> Export range…
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
