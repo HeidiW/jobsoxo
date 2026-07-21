@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 import {
   Table,
   TableBody,
@@ -47,6 +46,8 @@ import {
   Download,
   File,
   Paperclip,
+  Copy,
+  Check,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -101,6 +102,7 @@ export default function JobDetail() {
   const [deleteInvoiceId, setDeleteInvoiceId] = useState<string | null>(null);
   const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -347,30 +349,61 @@ export default function JobDetail() {
                 </div>
               </div>
             </div>
-            {(() => {
-              const codes = (job.referenceCodes as { label: string; code: string }[] | null | undefined) ?? [];
-              return codes.length > 0 ? (
-                <>
-                  <Separator className="mt-4 mb-4" />
-                  <div>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                      <Tag className="h-3.5 w-3.5" />
-                      Reference Codes
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {codes.map((rc, i) => (
-                        <div key={i} className="flex items-center gap-1.5 rounded-md border bg-muted/40 px-2.5 py-1" data-testid={`ref-code-${i}`}>
-                          <span className="text-xs text-muted-foreground">{rc.label}:</span>
-                          <span className="text-xs font-mono font-medium">{rc.code}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              ) : null;
-            })()}
           </CardContent>
         </Card>
+
+        {(() => {
+          const codes = (job.referenceCodes as { label: string; code: string }[] | null | undefined) ?? [];
+          const nonEmpty = codes.filter((c) => c.code?.trim());
+          if (nonEmpty.length === 0) return null;
+          return (
+            <Card className="mb-6">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Tag className="h-4 w-4" />
+                  Reference Codes
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="divide-y">
+                  {nonEmpty.map((rc, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
+                      data-testid={`ref-code-${i}`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-sm text-muted-foreground shrink-0">{rc.label}</span>
+                        <span className="font-mono font-semibold text-sm tracking-wide" data-testid={`ref-code-value-${i}`}>{rc.code}</span>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 shrink-0 ml-2"
+                        data-testid={`button-copy-ref-code-${i}`}
+                        onClick={() => {
+                          navigator.clipboard.writeText(rc.code).then(() => {
+                            setCopiedIndex(i);
+                            setTimeout(() => setCopiedIndex(null), 2000);
+                          }).catch(() => {
+                            toast({ title: "Copy failed", description: "Could not access clipboard. Please copy manually.", variant: "destructive" });
+                          });
+                        }}
+                      >
+                        {copiedIndex === i ? (
+                          <Check className="h-4 w-4 text-green-600" />
+                        ) : (
+                          <Copy className="h-4 w-4" />
+                        )}
+                        <span className="ml-1.5 text-xs">{copiedIndex === i ? "Copied!" : "Copy"}</span>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* Assigned Employees */}
         <Card className="mb-6">
