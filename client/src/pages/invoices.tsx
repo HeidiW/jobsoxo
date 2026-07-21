@@ -106,6 +106,7 @@ interface PlaidTransaction {
 interface ReconcileMatch {
   transaction: PlaidTransaction;
   invoice: InvoiceWithRelations;
+  ambiguous: boolean; // true if the transaction amount fell within ±$1 of more than one open invoice
 }
 
 function ReconcileDialog({ open, onClose, invoices }: { open: boolean; onClose: () => void; invoices: InvoiceWithRelations[] }) {
@@ -146,24 +147,52 @@ function ReconcileDialog({ open, onClose, invoices }: { open: boolean; onClose: 
 
   // In Plaid, negative amounts = money flowing INTO the account (deposits/incoming payments).
   // Positive amounts = money flowing OUT (purchases/expenses). We want incoming payments only.
-  const matches: ReconcileMatch[] = [];
-  const usedInvoiceIds = new Set<string>();
-  const usedTxIds = new Set<string>();
+  //
+  // Matching strategy:
+  //   1. Collect every (tx, invoice) candidate pair within ±$1 tolerance.
+  //   2. Sort all candidates by delta ascending so the closest match wins ties.
+  //   3. Assign greedily — once a tx or invoice is claimed, skip it in later pairs.
+  //   4. Flag matches as ambiguous when the winning tx had more than one invoice candidate
+  //      (so the UI can warn the user to double-check before confirming).
+  type Candidate = { tx: PlaidTransaction; inboundAmount: number; inv: InvoiceWithRelations; delta: number };
+  const candidates: Candidate[] = [];
+  const txCandidateCount = new Map<string, number>(); // how many invoices each tx matched
+
   if (transactions) {
     for (const tx of transactions) {
-      if (tx.amount >= 0) continue; // Skip outflows — only match incoming deposits
-      const inboundAmount = Math.abs(tx.amount); // The actual deposit amount (positive)
+      if (tx.amount >= 0) continue;
+      const inboundAmount = Math.abs(tx.amount);
       for (const inv of openInvoices) {
-        if (usedInvoiceIds.has(inv.id) || usedTxIds.has(tx.transactionId)) continue;
         const balance = Number(inv.balance);
-        if (Math.abs(inboundAmount - balance) <= 1.0) {
-          matches.push({ transaction: { ...tx, amount: inboundAmount }, invoice: inv });
-          usedInvoiceIds.add(inv.id);
-          usedTxIds.add(tx.transactionId);
-          break; // Each transaction matches at most one invoice
+        const delta = Math.abs(inboundAmount - balance);
+        if (delta <= 1.0) {
+          candidates.push({ tx, inboundAmount, inv, delta });
+          txCandidateCount.set(tx.transactionId, (txCandidateCount.get(tx.transactionId) ?? 0) + 1);
         }
       }
     }
+  }
+
+  // Sort by delta ascending (closest match wins).
+  // Tie-breaker: oldest due date first (most overdue invoice takes priority),
+  // then invoice number ascending for fully stable ordering.
+  candidates.sort((a, b) => {
+    if (a.delta !== b.delta) return a.delta - b.delta;
+    const dateA = a.inv.dueDate ? new Date(a.inv.dueDate).getTime() : 0;
+    const dateB = b.inv.dueDate ? new Date(b.inv.dueDate).getTime() : 0;
+    if (dateA !== dateB) return dateA - dateB;
+    return (a.inv.invoiceNumber ?? "").localeCompare(b.inv.invoiceNumber ?? "");
+  });
+
+  const matches: ReconcileMatch[] = [];
+  const usedInvoiceIds = new Set<string>();
+  const usedTxIds = new Set<string>();
+  for (const { tx, inboundAmount, inv } of candidates) {
+    if (usedTxIds.has(tx.transactionId) || usedInvoiceIds.has(inv.id)) continue;
+    const ambiguous = (txCandidateCount.get(tx.transactionId) ?? 0) > 1;
+    matches.push({ transaction: { ...tx, amount: inboundAmount }, invoice: inv, ambiguous });
+    usedTxIds.add(tx.transactionId);
+    usedInvoiceIds.add(inv.id);
   }
 
   return (
@@ -201,12 +230,18 @@ function ReconcileDialog({ open, onClose, invoices }: { open: boolean; onClose: 
             </div>
           ) : (
             <div className="p-4 space-y-3">
-              {matches.map(({ transaction, invoice }) => (
+              {matches.map(({ transaction, invoice, ambiguous }) => (
                 <div
                   key={transaction.transactionId + invoice.id}
-                  className="rounded-lg border p-4 space-y-3"
+                  className={`rounded-lg border p-4 space-y-3${ambiguous ? " border-amber-400 dark:border-amber-500" : ""}`}
                   data-testid={`reconcile-match-${transaction.transactionId}`}
                 >
+                  {ambiguous && (
+                    <div className="flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-300" data-testid={`warning-ambiguous-${transaction.transactionId}`}>
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <span>This transaction amount matched multiple open invoices. The closest match is shown — verify before confirming.</span>
+                    </div>
+                  )}
                   <div className="flex items-start justify-between gap-4">
                     <div className="space-y-1 min-w-0">
                       <div className="flex items-center gap-2 text-sm font-medium">
