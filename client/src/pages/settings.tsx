@@ -36,7 +36,12 @@ import {
   Check,
   RefreshCw,
   MessageSquare,
+  Bell,
+  BellOff,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import type { Settings, Invite } from "@shared/schema";
@@ -215,6 +220,185 @@ function InvitePanel() {
         <p className="text-xs text-muted-foreground">
           Each code can only be used once. Share it directly with the person you want to invite.
         </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+const STAGE_LABELS = ["Friendly Reminder", "Firm Notice", "Final Notice"];
+const DEFAULT_SUBJECTS = [
+  "Friendly Reminder: Invoice {{invoiceNumber}} is Past Due",
+  "Second Notice: Invoice {{invoiceNumber}} Payment Overdue",
+  "Final Notice: Invoice {{invoiceNumber}} Requires Immediate Attention",
+];
+const DEFAULT_BODIES = [
+  "Hi {{clientName}},\n\nThis is a friendly reminder that invoice {{invoiceNumber}} for {{balance}} is now past due.\n\nPlease remit payment at your earliest convenience. If you have any questions, don't hesitate to reach out.\n\nThank you,\n{{companyName}}",
+  "Dear {{clientName}},\n\nWe have not yet received payment for invoice {{invoiceNumber}} in the amount of {{balance}}, which is now {{daysOverdue}} days overdue.\n\nPlease remit payment as soon as possible. Contact us if you need to discuss payment arrangements.\n\n{{companyName}}",
+  "{{clientName}},\n\nThis is our final notice regarding invoice {{invoiceNumber}} for {{balance}}, now {{daysOverdue}} days past due.\n\nImmediate payment is required to avoid further action.\n\n{{companyName}}",
+];
+
+function CollectionsAgentCard({ settings }: { settings: Settings | undefined }) {
+  const { toast } = useToast();
+  const [enabled, setEnabled] = useState<boolean>(true);
+  const [intervals, setIntervals] = useState<number[]>([7, 14, 30]);
+  const [tones, setTones] = useState<{ stage: number; label: string; subject: string; body: string }[]>([]);
+  const [expandedStage, setExpandedStage] = useState<number | null>(null);
+  const [initialized, setInitialized] = useState(false);
+
+  useEffect(() => {
+    if (!settings || initialized) return;
+    setInitialized(true);
+    setEnabled((settings as any).collectionsEnabled !== false);
+    const savedIntervals = (settings?.reminderIntervals as number[] | null) || [7, 14, 30];
+    setIntervals(savedIntervals);
+    const savedTones = ((settings as any).reminderTones as { stage: number; label: string; subject: string; body: string }[] | null) || [];
+    setTones(
+      [1, 2, 3].map((stage) => {
+        const existing = savedTones.find((t) => t.stage === stage);
+        return existing ?? {
+          stage,
+          label: STAGE_LABELS[stage - 1],
+          subject: DEFAULT_SUBJECTS[stage - 1],
+          body: DEFAULT_BODIES[stage - 1],
+        };
+      })
+    );
+  }, [settings, initialized]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", "/api/settings", {
+        collectionsEnabled: enabled,
+        reminderIntervals: intervals,
+        reminderTones: tones,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({ title: "Collections settings saved" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to save", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const updateTone = (stage: number, field: "subject" | "body", value: string) => {
+    setTones((prev) => prev.map((t) => (t.stage === stage ? { ...t, [field]: value } : t)));
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Bell className="h-5 w-5" />
+          Collections Agent
+        </CardTitle>
+        <CardDescription>
+          Automatically chase overdue invoices via email and SMS on a configurable schedule
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {/* Global toggle */}
+        <div className="flex items-center justify-between p-3 rounded-md border">
+          <div>
+            <p className="font-medium text-sm">Agent enabled</p>
+            <p className="text-xs text-muted-foreground">When off, no automated reminders are sent</p>
+          </div>
+          <Switch
+            checked={enabled}
+            onCheckedChange={setEnabled}
+            data-testid="switch-collections-enabled"
+          />
+        </div>
+
+        {/* Reminder intervals */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Reminder intervals (days past due)</p>
+          <div className="grid grid-cols-3 gap-3">
+            {intervals.map((val, idx) => (
+              <div key={idx}>
+                <label className="text-xs text-muted-foreground mb-1 block">Stage {idx + 1}</label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={val}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value);
+                    setIntervals((prev) => {
+                      const copy = [...prev];
+                      copy[idx] = isNaN(n) ? val : n;
+                      return copy;
+                    });
+                  }}
+                  data-testid={`input-reminder-interval-${idx + 1}`}
+                />
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Available merge fields: <code className="rounded bg-muted px-1 text-xs">{"{{clientName}}"}</code>{" "}
+            <code className="rounded bg-muted px-1 text-xs">{"{{invoiceNumber}}"}</code>{" "}
+            <code className="rounded bg-muted px-1 text-xs">{"{{balance}}"}</code>{" "}
+            <code className="rounded bg-muted px-1 text-xs">{"{{daysOverdue}}"}</code>{" "}
+            <code className="rounded bg-muted px-1 text-xs">{"{{companyName}}"}</code>
+          </p>
+        </div>
+
+        {/* Per-stage message templates */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Message templates per stage</p>
+          {tones.map((tone, idx) => (
+            <div key={tone.stage} className="border rounded-md overflow-hidden">
+              <button
+                type="button"
+                className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium hover:bg-muted/50 transition-colors"
+                onClick={() => setExpandedStage(expandedStage === tone.stage ? null : tone.stage)}
+                data-testid={`button-expand-tone-${tone.stage}`}
+              >
+                <span>Stage {tone.stage} — {STAGE_LABELS[idx]}</span>
+                {expandedStage === tone.stage ? (
+                  <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                )}
+              </button>
+              {expandedStage === tone.stage && (
+                <div className="px-3 pb-3 space-y-2 border-t">
+                  <div className="mt-2">
+                    <label className="text-xs text-muted-foreground mb-1 block">Email subject</label>
+                    <Input
+                      value={tone.subject}
+                      onChange={(e) => updateTone(tone.stage, "subject", e.target.value)}
+                      data-testid={`input-tone-subject-${tone.stage}`}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">Email body / SMS text</label>
+                    <Textarea
+                      value={tone.body}
+                      onChange={(e) => updateTone(tone.stage, "body", e.target.value)}
+                      className="min-h-28 font-mono text-xs"
+                      data-testid={`textarea-tone-body-${tone.stage}`}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending}
+            data-testid="button-save-collections-settings"
+          >
+            <Save className="h-4 w-4 mr-2" />
+            {saveMutation.isPending ? "Saving…" : "Save Collections Settings"}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
@@ -505,45 +689,7 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                Payment Reminders
-              </CardTitle>
-              <CardDescription>
-                Automated reminder settings for overdue invoices
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between p-3 rounded-md bg-muted/50">
-                  <div>
-                    <span className="font-medium">First Reminder</span>
-                    <p className="text-muted-foreground">7 days after due date</p>
-                  </div>
-                  <Badge variant="outline">Active</Badge>
-                </div>
-                <div className="flex items-center justify-between p-3 rounded-md bg-muted/50">
-                  <div>
-                    <span className="font-medium">Second Reminder</span>
-                    <p className="text-muted-foreground">14 days after due date</p>
-                  </div>
-                  <Badge variant="outline">Active</Badge>
-                </div>
-                <div className="flex items-center justify-between p-3 rounded-md bg-muted/50">
-                  <div>
-                    <span className="font-medium">Final Notice</span>
-                    <p className="text-muted-foreground">30 days after due date</p>
-                  </div>
-                  <Badge variant="outline">Active</Badge>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-4">
-                Reminders are sent automatically when invoices become overdue. Configure email settings to enable sending.
-              </p>
-            </CardContent>
-          </Card>
+          <CollectionsAgentCard settings={settings} />
 
           {user?.isAdmin && (
             <Card>

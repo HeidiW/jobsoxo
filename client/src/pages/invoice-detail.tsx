@@ -29,6 +29,7 @@ import {
 import {
   ArrowLeft, Mail, Download, DollarSign, CheckCircle, FileText, Printer,
   Plus, X, Trash2, Pencil, Check, Ban, AlertTriangle, Save,
+  Bell, BellOff, PauseCircle, PlayCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 import type {
@@ -817,6 +818,152 @@ function ChangeOrdersPanel({
   );
 }
 
+// ── CollectionsPanel ──────────────────────────────────────────────────────────
+
+type ReminderLog = {
+  id: string;
+  invoiceId: string;
+  channel: string;
+  stage: number;
+  sentAt: string;
+  success: boolean;
+  errorMessage: string | null;
+};
+
+function CollectionsPanel({ invoice }: { invoice: Invoice & { remindersPaused?: boolean; reminderCount?: number; lastReminderSent?: string | null } }) {
+  const { toast } = useToast();
+  const { data: logs = [], isLoading } = useQuery<ReminderLog[]>({
+    queryKey: ["/api/invoices", invoice.id, "reminder-logs"],
+    queryFn: async () => {
+      const res = await fetch(`/api/invoices/${invoice.id}/reminder-logs`);
+      if (!res.ok) throw new Error("Failed to fetch reminder logs");
+      return res.json();
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async (paused: boolean) => {
+      const res = await apiRequest("PATCH", `/api/invoices/${invoice.id}/collections`, { remindersPaused: paused });
+      if (!res.ok) throw new Error("Failed to update collections status");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices", invoice.id, "reminder-logs"] });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const isPaused = (invoice as any).remindersPaused ?? false;
+  const reminderCount = (invoice as any).reminderCount ?? 0;
+  const lastSent = (invoice as any).lastReminderSent;
+
+  // Compute next scheduled reminder date from settings
+  const { data: settings } = useQuery<any>({ queryKey: ["/api/settings"] });
+  const reminderIntervals: number[] = (settings?.reminderIntervals as number[]) || [7, 14, 30];
+  const nextStageIdx = reminderCount; // 0-based index into intervals
+  const nextIntervalDays = reminderIntervals[nextStageIdx] ?? null;
+  const nextReminderDate = nextIntervalDays != null && invoice.dueDate
+    ? new Date(new Date(invoice.dueDate).getTime() + nextIntervalDays * 24 * 60 * 60 * 1000)
+    : null;
+  const isDueSoon = nextReminderDate && nextReminderDate.getTime() <= Date.now() + 2 * 24 * 60 * 60 * 1000;
+
+  return (
+    <Card className="mt-4 print:hidden">
+      <CardHeader className="flex flex-row items-center justify-between pb-3">
+        <div className="flex items-center gap-2">
+          <Bell className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-base">Collections Agent</CardTitle>
+          {isPaused ? (
+            <Badge variant="secondary" className="text-xs"><BellOff className="h-3 w-3 mr-1" />Paused</Badge>
+          ) : (
+            <Badge variant="outline" className="text-xs text-green-600 border-green-300"><Bell className="h-3 w-3 mr-1" />Active</Badge>
+          )}
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => toggleMutation.mutate(!isPaused)}
+          disabled={toggleMutation.isPending}
+          data-testid="button-toggle-reminders"
+        >
+          {isPaused ? (
+            <><PlayCircle className="h-4 w-4 mr-1" />Resume</>
+          ) : (
+            <><PauseCircle className="h-4 w-4 mr-1" />Pause</>
+          )}
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-4 gap-3 text-sm">
+          <div className="rounded-md bg-muted/50 p-2 text-center">
+            <p className="text-xs text-muted-foreground">Reminders sent</p>
+            <p className="font-semibold" data-testid="text-reminder-count">{reminderCount}</p>
+          </div>
+          <div className="rounded-md bg-muted/50 p-2 text-center">
+            <p className="text-xs text-muted-foreground">Last contact</p>
+            <p className="font-semibold text-xs" data-testid="text-last-reminder">
+              {lastSent ? format(new Date(lastSent), "MMM d") : "—"}
+            </p>
+          </div>
+          <div className="rounded-md bg-muted/50 p-2 text-center">
+            <p className="text-xs text-muted-foreground">Stage</p>
+            <p className="font-semibold" data-testid="text-reminder-stage">
+              {reminderCount === 0 ? "Pending" : reminderCount >= 3 ? "Final" : `${reminderCount}/3`}
+            </p>
+          </div>
+          <div className={`rounded-md p-2 text-center ${isDueSoon ? "bg-orange-50 dark:bg-orange-950/30" : "bg-muted/50"}`}>
+            <p className="text-xs text-muted-foreground">Next reminder</p>
+            <p className={`font-semibold text-xs ${isDueSoon ? "text-orange-600 dark:text-orange-400" : ""}`} data-testid="text-next-reminder">
+              {reminderCount >= 3
+                ? "Complete"
+                : nextReminderDate
+                  ? format(nextReminderDate, "MMM d")
+                  : "—"}
+            </p>
+          </div>
+        </div>
+
+        {/* Reminder log history */}
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading history…</p>
+        ) : logs.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No reminders sent yet.</p>
+        ) : (
+          <div className="rounded-md border text-sm">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Channel</TableHead>
+                  <TableHead>Stage</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {logs.map((log) => (
+                  <TableRow key={log.id} data-testid={`row-reminder-log-${log.id}`}>
+                    <TableCell>{format(new Date(log.sentAt), "MMM d, yyyy h:mm a")}</TableCell>
+                    <TableCell className="capitalize">{log.channel}</TableCell>
+                    <TableCell>{log.stage}</TableCell>
+                    <TableCell>
+                      {log.success ? (
+                        <Badge variant="outline" className="text-green-600 border-green-300 text-xs">Sent</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-red-600 border-red-300 text-xs" title={log.errorMessage ?? ""}>Failed</Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── InvoiceDetail (main page) ─────────────────────────────────────────────────
 
 export default function InvoiceDetail() {
@@ -1429,6 +1576,11 @@ export default function InvoiceDetail() {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* ── Collections Agent Panel ── */}
+        {invoice.status !== "paid" && invoice.status !== "draft" && (
+          <CollectionsPanel invoice={invoice} />
         )}
 
         {/* ── Mark as Paid ── */}

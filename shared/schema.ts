@@ -205,6 +205,7 @@ export const invoices = pgTable("invoices", {
   termsAndConditions: text("terms_and_conditions"),
   lastReminderSent: timestamp("last_reminder_sent"),
   reminderCount: integer("reminder_count").default(0),
+  remindersPaused: boolean("reminders_paused").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -234,6 +235,7 @@ export const insertInvoiceSchema = createInsertSchema(invoices)
     total: nonNegativeNumericString("Total"),
     amountPaid: z.coerce.string().optional(),
     balance: nonNegativeNumericString("Balance"),
+    remindersPaused: z.boolean().optional(),
   });
 export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
 export type Invoice = typeof invoices.$inferSelect;
@@ -548,7 +550,24 @@ export const settings = pgTable("settings", {
   emailSettings: jsonb("email_settings"),
   lastInboxSync: timestamp("last_inbox_sync"),
   inboxSyncHour: integer("inbox_sync_hour").default(8), // 0-23, hour of day for daily inbox sync
+  collectionsEnabled: boolean("collections_enabled").default(true).notNull(),
+  reminderTones: jsonb("reminder_tones").$type<{ stage: number; label: string; subject: string; body: string }[]>(),
 });
+
+// Reminder Logs — history of every outbound reminder sent per invoice
+export const reminderLogs = pgTable("reminder_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  channel: text("channel").notNull(), // email | sms
+  stage: integer("stage").notNull(), // 1 = friendly, 2 = firm, 3 = final
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+  success: boolean("success").notNull().default(true),
+  errorMessage: text("error_message"),
+});
+
+export const insertReminderLogSchema = createInsertSchema(reminderLogs).omit({ id: true, sentAt: true });
+export type InsertReminderLog = z.infer<typeof insertReminderLogSchema>;
+export type ReminderLog = typeof reminderLogs.$inferSelect;
 
 export const insertSettingsSchema = createInsertSchema(settings)
   .omit({ id: true })

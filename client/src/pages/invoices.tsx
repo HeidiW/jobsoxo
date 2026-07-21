@@ -43,6 +43,11 @@ import {
   FileText,
   Building2,
   CreditCard,
+  Bell,
+  BellOff,
+  PauseCircle,
+  PlayCircle,
+  AlertTriangle,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { Invoice, Client, Job } from "@shared/schema";
@@ -73,6 +78,7 @@ const TABS = [
   { key: "partial", label: "Partial" },
   { key: "paid", label: "Paid" },
   { key: "overdue", label: "Overdue" },
+  { key: "collections", label: "Collections" },
 ];
 
 const PAGE_SIZE = 12;
@@ -84,6 +90,222 @@ function fmtMoney(n: number, decimals = 0) {
 function fmtDate(d: string | null | undefined) {
   if (!d) return "—";
   try { return format(new Date(d), "MMM d"); } catch { return "—"; }
+}
+
+type CollectionsEntry = {
+  id: string;
+  invoiceNumber: string;
+  status: string;
+  balance: string;
+  dueDate: string;
+  lastReminderSent: string | null;
+  reminderCount: number;
+  remindersPaused: boolean;
+  clientName: string | null;
+  clientEmail: string | null;
+  clientPhone: string | null;
+  jobTitle: string | null;
+  daysOverdue: number;
+  currentStage: number;
+  nextActionDate: string | null;
+};
+
+function CollectionsView() {
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
+  const [stageFilter, setStageFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"daysOverdue" | "balance" | "clientName">("daysOverdue");
+
+  const { data: entries = [], isLoading, refetch } = useQuery<CollectionsEntry[]>({
+    queryKey: ["/api/collections"],
+    queryFn: async () => {
+      const res = await fetch("/api/collections");
+      if (!res.ok) throw new Error("Failed to fetch collections");
+      return res.json();
+    },
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, paused }: { id: string; paused: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/invoices/${id}/collections`, { remindersPaused: paused });
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json();
+    },
+    onSuccess: () => { refetch(); queryClient.invalidateQueries({ queryKey: ["/api/invoices"] }); },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const processMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/reminders/process");
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      refetch();
+      toast({ title: "Reminders processed", description: `${data.sent ?? 0} sent, ${data.processed ?? 0} checked` });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const fmtBalance = (b: string) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(b));
+
+  const filteredEntries = entries
+    .filter((e) => stageFilter === "all" || String(e.currentStage) === stageFilter)
+    .sort((a, b) => {
+      if (sortBy === "daysOverdue") return b.daysOverdue - a.daysOverdue;
+      if (sortBy === "balance") return Number(b.balance) - Number(a.balance);
+      return (a.clientName ?? "").localeCompare(b.clientName ?? "");
+    });
+
+  return (
+    <div style={{ padding: "0" }}>
+      {/* Header row */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)", background: "var(--track)", flexWrap: "wrap" as const, gap: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" as const }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <Bell style={{ width: 15, height: 15, color: "var(--faint)" }} />
+            <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", letterSpacing: ".04em" }}>
+              {filteredEntries.length}/{entries.length} invoice{entries.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+          {/* Stage filter */}
+          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+            {[
+              { key: "all", label: "All stages" },
+              { key: "0", label: "Stage 0" },
+              { key: "1", label: "Stage 1" },
+              { key: "2", label: "Stage 2" },
+              { key: "3", label: "Stage 3" },
+            ].map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setStageFilter(opt.key)}
+                style={{
+                  border: "none", cursor: "pointer", fontFamily: "inherit",
+                  fontSize: "11.5px", fontWeight: 600, padding: "4px 9px", borderRadius: "6px",
+                  background: stageFilter === opt.key ? "var(--jox-primary)" : "var(--track)",
+                  color: stageFilter === opt.key ? "#fff" : "var(--faint)",
+                }}
+                data-testid={`filter-stage-${opt.key}`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {/* Sort */}
+          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+            <span style={{ fontSize: "11px", color: "var(--faint)", fontWeight: 600 }}>Sort:</span>
+            {([["daysOverdue", "Days overdue"], ["balance", "Balance"], ["clientName", "Client"]] as const).map(([k, lbl]) => (
+              <button
+                key={k}
+                onClick={() => setSortBy(k)}
+                style={{
+                  border: "none", cursor: "pointer", fontFamily: "inherit",
+                  fontSize: "11.5px", fontWeight: 600, padding: "4px 9px", borderRadius: "6px",
+                  background: sortBy === k ? "var(--jox-primary)" : "var(--track)",
+                  color: sortBy === k ? "#fff" : "var(--faint)",
+                }}
+                data-testid={`sort-${k}`}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button
+          onClick={() => processMutation.mutate()}
+          disabled={processMutation.isPending}
+          style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "8px", padding: "7px 13px", fontSize: "12.5px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", opacity: processMutation.isPending ? 0.6 : 1 }}
+          data-testid="button-process-reminders"
+        >
+          {processMutation.isPending ? "Sending…" : "Run Reminders Now"}
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div style={{ padding: "40px", textAlign: "center", color: "var(--faint)", fontSize: "13px" }}>Loading…</div>
+      ) : entries.length === 0 ? (
+        <div style={{ padding: "56px 24px", textAlign: "center" }}>
+          <div style={{ fontSize: "32px", marginBottom: "10px" }}>✅</div>
+          <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--fg)", marginBottom: "4px" }}>No overdue invoices</div>
+          <div style={{ fontSize: "13px", color: "var(--faint)" }}>All invoices are up to date.</div>
+        </div>
+      ) : filteredEntries.length === 0 ? (
+        <div style={{ padding: "40px", textAlign: "center", color: "var(--faint)", fontSize: "13px" }}>No invoices match the current filter.</div>
+      ) : (
+        <>
+          {/* Table header */}
+          <div style={{ display: "flex", alignItems: "center", fontSize: "10.5px", fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" as const, color: "var(--faint)", padding: "11px 18px", background: "var(--track)", borderBottom: "1px solid var(--panel-bd)" }}>
+            <span style={{ width: "104px", flexShrink: 0 }}>Invoice</span>
+            <span style={{ flex: 1, minWidth: 0 }}>Client</span>
+            <span style={{ width: "72px", flexShrink: 0, textAlign: "center" as const }}>Overdue</span>
+            <span style={{ width: "64px", flexShrink: 0, textAlign: "center" as const }}>Stage</span>
+            <span style={{ width: "96px", flexShrink: 0, textAlign: "right" as const }}>Balance</span>
+            <span style={{ width: "88px", flexShrink: 0 }}>Last Contact</span>
+            <span style={{ width: "88px", flexShrink: 0 }}>Next Action</span>
+            <span style={{ width: "80px", flexShrink: 0, textAlign: "center" as const }}>Status</span>
+            <span style={{ width: "40px", flexShrink: 0 }}></span>
+          </div>
+
+          {filteredEntries.map((entry) => (
+            <div
+              key={entry.id}
+              className="rowhover"
+              style={{ display: "flex", alignItems: "center", padding: "13px 18px", borderBottom: "1px solid var(--panel-bd)", cursor: "pointer" }}
+              onClick={() => setLocation(`/invoices/${entry.id}`)}
+              data-testid={`row-collections-${entry.id}`}
+            >
+              <span style={{ width: "104px", flexShrink: 0, fontFamily: "monospace", fontSize: "13px", fontWeight: 600 }}>{entry.invoiceNumber}</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, fontSize: "13px" }}>
+                {entry.clientName ?? "—"}
+                {entry.jobTitle && <span style={{ color: "var(--faint)", marginLeft: "6px", fontSize: "12px" }}>{entry.jobTitle}</span>}
+              </span>
+              <span style={{ width: "72px", flexShrink: 0, textAlign: "center" as const, fontSize: "13px", fontWeight: 600, color: entry.daysOverdue > 30 ? "#dc2626" : entry.daysOverdue > 14 ? "#ea580c" : "inherit" }}>
+                {entry.daysOverdue}d
+              </span>
+              <span style={{ width: "64px", flexShrink: 0, textAlign: "center" as const, fontSize: "12px" }}>
+                {entry.currentStage === 0 ? "—" : `${entry.currentStage}/3`}
+              </span>
+              <span style={{ width: "96px", flexShrink: 0, textAlign: "right" as const, fontFamily: "monospace", fontSize: "13px", fontWeight: 600, color: "#dc2626" }}>
+                {fmtBalance(entry.balance)}
+              </span>
+              <span style={{ width: "88px", flexShrink: 0, fontSize: "12px", color: "var(--faint)", paddingLeft: "4px" }} data-testid={`text-last-contact-${entry.id}`}>
+                {entry.lastReminderSent ? format(new Date(entry.lastReminderSent), "MMM d") : "—"}
+              </span>
+              <span style={{ width: "88px", flexShrink: 0, fontSize: "12px", color: "var(--faint)", paddingLeft: "4px" }}>
+                {entry.nextActionDate ? format(new Date(entry.nextActionDate), "MMM d") : entry.reminderCount >= 3 ? "Complete" : "—"}
+              </span>
+              <span style={{ width: "88px", flexShrink: 0, textAlign: "center" as const }}>
+                {entry.remindersPaused ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 600, color: "var(--faint)", background: "var(--track)", borderRadius: "5px", padding: "2px 8px" }}>
+                    <BellOff style={{ width: 11, height: 11 }} /> Paused
+                  </span>
+                ) : (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 600, color: "#15a35a", background: "rgba(21,163,90,.1)", borderRadius: "5px", padding: "2px 8px" }}>
+                    <Bell style={{ width: 11, height: 11 }} /> Active
+                  </span>
+                )}
+              </span>
+              <span style={{ width: "40px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleMutation.mutate({ id: entry.id, paused: !entry.remindersPaused }); }}
+                  disabled={toggleMutation.isPending}
+                  title={entry.remindersPaused ? "Resume reminders" : "Pause reminders"}
+                  style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", borderRadius: "4px", color: "var(--faint)" }}
+                  data-testid={`button-toggle-collections-${entry.id}`}
+                >
+                  {entry.remindersPaused
+                    ? <PlayCircle style={{ width: 15, height: 15 }} />
+                    : <PauseCircle style={{ width: 15, height: 15 }} />}
+                </button>
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function Invoices() {
@@ -183,6 +405,7 @@ export default function Invoices() {
   })();
 
   const countByStatus = (s: string) => {
+    if (s === "collections") return null;
     if (!invoices) return 0;
     if (s === "all") return invoices.length;
     return invoices.filter(i => i.status === s).length;
@@ -382,16 +605,18 @@ export default function Invoices() {
                     }}
                   >
                     {tab.label}
-                    <span
-                      className="font-mono"
-                      style={{
-                        fontSize: "11px", fontWeight: 600, padding: "0 6px", borderRadius: "5px",
-                        background: active ? "rgba(255,255,255,.22)" : "var(--track)",
-                        color: active ? "#fff" : "var(--faint)",
-                      }}
-                    >
-                      {count}
-                    </span>
+                    {count !== null && (
+                      <span
+                        className="font-mono"
+                        style={{
+                          fontSize: "11px", fontWeight: 600, padding: "0 6px", borderRadius: "5px",
+                          background: active ? "rgba(255,255,255,.22)" : "var(--track)",
+                          color: active ? "#fff" : "var(--faint)",
+                        }}
+                      >
+                        {count}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -410,8 +635,11 @@ export default function Invoices() {
               </div>
             </div>
 
+            {/* Collections view */}
+            {statusFilter === "collections" && <CollectionsView />}
+
             {/* Table header */}
-            <div style={{ display: "flex", alignItems: "center", fontSize: "10.5px", fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" as const, color: "var(--faint)", padding: "11px 18px", background: "var(--track)", borderBottom: "1px solid var(--panel-bd)" }}>
+            {statusFilter !== "collections" && <div style={{ display: "flex", alignItems: "center", fontSize: "10.5px", fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" as const, color: "var(--faint)", padding: "11px 18px", background: "var(--track)", borderBottom: "1px solid var(--panel-bd)" }}>
               <span style={{ width: "104px", flexShrink: 0 }}>Invoice</span>
               <span style={{ flex: 1, minWidth: 0 }}>Client / Project</span>
               <span style={{ width: "88px", flexShrink: 0 }}>Issued</span>
@@ -419,10 +647,10 @@ export default function Invoices() {
               <span style={{ width: "104px", textAlign: "right" as const, flexShrink: 0 }}>Amount</span>
               <span style={{ width: "92px", textAlign: "center" as const, flexShrink: 0 }}>Status</span>
               <span style={{ width: "34px", flexShrink: 0 }}></span>
-            </div>
+            </div>}
 
             {/* Rows */}
-            {isLoading ? (
+            {statusFilter !== "collections" && (isLoading ? (
               <div style={{ padding: "40px", textAlign: "center", color: "var(--faint)", fontSize: "13px" }}>Loading invoices…</div>
             ) : pageInvoices.length === 0 ? (
               <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
@@ -556,10 +784,10 @@ export default function Invoices() {
                   </span>
                 </div>
               ))
-            )}
+            ))}
 
             {/* Footer / pagination */}
-            {filteredInvoices.length > 0 && (
+            {statusFilter !== "collections" && filteredInvoices.length > 0 && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px" }}>
                 <span style={{ fontSize: "12.5px", color: "var(--faint)" }}>
                   Showing {Math.min((safePageNum - 1) * PAGE_SIZE + 1, filteredInvoices.length)}–{Math.min(safePageNum * PAGE_SIZE, filteredInvoices.length)} of {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? "s" : ""}

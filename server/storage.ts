@@ -37,6 +37,8 @@ import {
   type InsertOnboardingItem,
   type SmsAttempt,
   type InsertSmsAttempt,
+  type ReminderLog,
+  type InsertReminderLog,
   users,
   clients,
   jobs,
@@ -57,6 +59,7 @@ import {
   changeOrders,
   onboardingItems,
   smsAttempts,
+  reminderLogs,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql, isNull, or, inArray } from "drizzle-orm";
@@ -203,6 +206,10 @@ export interface IStorage {
   // SMS Attempts
   getSmsAttempts(): Promise<SmsAttempt[]>;
   createSmsAttempt(attempt: InsertSmsAttempt): Promise<SmsAttempt>;
+
+  // Reminder Logs
+  getReminderLogsByInvoice(invoiceId: string): Promise<ReminderLog[]>;
+  insertReminderLog(log: InsertReminderLog): Promise<ReminderLog>;
 
   // Dashboard
   getDashboardStats(): Promise<{
@@ -926,6 +933,20 @@ export class DatabaseStorage implements IStorage {
 
   async createSmsAttempt(attempt: InsertSmsAttempt): Promise<SmsAttempt> {
     const [row] = await db.insert(smsAttempts).values(attempt).returning();
+    return row;
+  }
+
+  // Reminder Logs
+  async getReminderLogsByInvoice(invoiceId: string): Promise<ReminderLog[]> {
+    return db
+      .select()
+      .from(reminderLogs)
+      .where(eq(reminderLogs.invoiceId, invoiceId))
+      .orderBy(desc(reminderLogs.sentAt));
+  }
+
+  async insertReminderLog(log: InsertReminderLog): Promise<ReminderLog> {
+    const [row] = await db.insert(reminderLogs).values(log).returning();
     return row;
   }
 }

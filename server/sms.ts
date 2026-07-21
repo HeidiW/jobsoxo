@@ -1,5 +1,92 @@
 import { storage } from "./storage";
 
+export interface SmsConfig {
+  accountSid?: string;
+  authToken?: string;
+  fromPhone?: string;
+}
+
+const DEFAULT_REMINDER_MESSAGES: Record<number, (params: { clientName: string; invoiceNumber: string; balance: string; daysOverdue: number; companyName: string }) => string> = {
+  1: ({ clientName, invoiceNumber, balance, companyName }) =>
+    `Hi ${clientName}, a friendly reminder that invoice ${invoiceNumber} for ${balance} is past due. Please contact ${companyName} if you have any questions.`,
+  2: ({ clientName, invoiceNumber, balance, daysOverdue, companyName }) =>
+    `${clientName}, invoice ${invoiceNumber} for ${balance} is now ${daysOverdue} days overdue. Please remit payment at your earliest convenience. Contact ${companyName} with questions.`,
+  3: ({ clientName, invoiceNumber, balance, daysOverdue, companyName }) =>
+    `FINAL NOTICE: ${clientName}, invoice ${invoiceNumber} for ${balance} is ${daysOverdue} days past due. Immediate payment is required. Contact ${companyName} to avoid further action.`,
+};
+
+export async function sendSmsReminder(
+  invoiceId: string,
+  stage: number,
+  config: SmsConfig,
+  customBody?: string
+): Promise<{ success: boolean; error?: string }> {
+  const invoice = await storage.getInvoice(invoiceId);
+  if (!invoice) return { success: false, error: "Invoice not found" };
+
+  const client = await storage.getClient(invoice.clientId);
+  if (!client?.phone) {
+    return { success: false, error: "No phone number on client record" };
+  }
+
+  const settings = await storage.getSettings();
+  const companyName = settings?.companyName || "Your Company";
+  const balance = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(invoice.balance));
+  const daysOverdue = Math.floor((Date.now() - new Date(invoice.dueDate).getTime()) / (1000 * 60 * 60 * 24));
+
+  const messageBody = customBody
+    ? customBody
+        .replace(/\{\{clientName\}\}/g, client.name)
+        .replace(/\{\{invoiceNumber\}\}/g, invoice.invoiceNumber)
+        .replace(/\{\{balance\}\}/g, balance)
+        .replace(/\{\{daysOverdue\}\}/g, String(daysOverdue))
+        .replace(/\{\{companyName\}\}/g, companyName)
+    : (DEFAULT_REMINDER_MESSAGES[stage] || DEFAULT_REMINDER_MESSAGES[3])({
+        clientName: client.name,
+        invoiceNumber: invoice.invoiceNumber,
+        balance,
+        daysOverdue,
+        companyName,
+      });
+
+  const toPhone = normalizePhone(client.phone);
+
+  if (!config.accountSid || !config.authToken || !config.fromPhone) {
+    console.log(`[SMS Reminder] Would send stage-${stage} SMS to ${toPhone}: ${messageBody}`);
+    return { success: true };
+  }
+
+  try {
+    const credentials = Buffer.from(`${config.accountSid}:${config.authToken}`).toString("base64");
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${config.accountSid}/Messages.json`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${credentials}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          From: config.fromPhone,
+          To: toPhone,
+          Body: messageBody,
+        }).toString(),
+      }
+    );
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("[SMS Reminder] Twilio error:", errText);
+      return { success: false, error: `Twilio error ${response.status}: ${errText}` };
+    }
+
+    return { success: true };
+  } catch (err) {
+    console.error("[SMS Reminder] Send error:", err);
+    return { success: false, error: String(err) };
+  }
+}
+
 export function normalizePhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   if (digits.length === 10) return `+1${digits}`;

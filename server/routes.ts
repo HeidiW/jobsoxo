@@ -1258,6 +1258,93 @@ export async function registerRoutes(
     }
   });
 
+  // Collections Agent — reminder logs per invoice
+  app.get("/api/invoices/:id/reminder-logs", async (req, res) => {
+    try {
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+      const logs = await storage.getReminderLogsByInvoice(req.params.id);
+      res.json(logs);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch reminder logs" });
+    }
+  });
+
+  // Collections Agent — pause / resume reminders for an invoice
+  app.patch("/api/invoices/:id/collections", async (req, res) => {
+    try {
+      const invoice = await storage.getInvoice(req.params.id);
+      if (!invoice) return res.status(404).json({ error: "Invoice not found" });
+      const { remindersPaused } = req.body as { remindersPaused: boolean };
+      if (typeof remindersPaused !== "boolean") {
+        return res.status(400).json({ error: "remindersPaused must be a boolean" });
+      }
+      const updated = await storage.updateInvoice(req.params.id, { remindersPaused });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update collections status" });
+    }
+  });
+
+  // Collections Agent — overview list of all invoices being monitored
+  app.get("/api/collections", async (req, res) => {
+    try {
+      const today = new Date();
+      const allInvoices = await db
+        .select({
+          id: invoices.id,
+          invoiceNumber: invoices.invoiceNumber,
+          status: invoices.status,
+          balance: invoices.balance,
+          total: invoices.total,
+          dueDate: invoices.dueDate,
+          lastReminderSent: invoices.lastReminderSent,
+          reminderCount: invoices.reminderCount,
+          remindersPaused: invoices.remindersPaused,
+          clientId: invoices.clientId,
+          jobId: invoices.jobId,
+          clientName: clients.name,
+          clientPhone: clients.phone,
+          clientEmail: clients.email,
+          jobTitle: jobs.title,
+        })
+        .from(invoices)
+        .leftJoin(clients, eq(invoices.clientId, clients.id))
+        .leftJoin(jobs, eq(invoices.jobId, jobs.id))
+        .where(
+          sql`${invoices.status} IN ('sent', 'overdue', 'partial') AND ${invoices.balance}::numeric > 0 AND ${invoices.dueDate} <= ${today}`
+        );
+
+      const settings = await storage.getSettings();
+      const intervals = (settings?.reminderIntervals as number[]) || [7, 14, 30];
+
+      const result = allInvoices.map((inv) => {
+        const daysOverdue = Math.floor(
+          (today.getTime() - new Date(inv.dueDate).getTime()) / (1000 * 60 * 60 * 24)
+        );
+        const reminderCount = inv.reminderCount || 0;
+        const currentStage = Math.min(reminderCount, intervals.length);
+        const nextStageIdx = reminderCount;
+        const nextIntervalDays = intervals[nextStageIdx] ?? null;
+        const nextActionDate = nextIntervalDays != null
+          ? new Date(new Date(inv.dueDate).getTime() + nextIntervalDays * 24 * 60 * 60 * 1000)
+          : null;
+
+        return {
+          ...inv,
+          daysOverdue,
+          currentStage,
+          nextActionDate: nextActionDate?.toISOString() ?? null,
+        };
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error("Collections overview error:", error);
+      res.status(500).json({ error: "Failed to fetch collections overview" });
+    }
+  });
+
   app.post("/api/invoices/:id/mark-paid", async (req, res) => {
     try {
       const invoice = await storage.getInvoice(req.params.id);

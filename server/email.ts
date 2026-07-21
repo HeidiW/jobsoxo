@@ -2,6 +2,7 @@ import { storage } from "./storage";
 import { db } from "./db";
 import { invoices, clients, jobs } from "@shared/schema";
 import { eq, and, sql, lte } from "drizzle-orm";
+import { sendSmsReminder, type SmsConfig } from "./sms";
 
 export interface EmailConfig {
   apiKey?: string;
@@ -75,7 +76,8 @@ export async function sendInvoiceEmail(
 export async function sendPaymentReminder(
   invoiceId: string,
   reminderNumber: number,
-  config: EmailConfig
+  config: EmailConfig,
+  tone?: { stage: number; label: string; subject: string; body: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const invoice = await storage.getInvoice(invoiceId);
@@ -90,8 +92,13 @@ export async function sendPaymentReminder(
     }
 
     const settings = await storage.getSettings();
-    const subject = getReminderSubject(invoice.invoiceNumber, reminderNumber, settings?.companyName ?? undefined);
-    const body = generateReminderEmailBody(invoice, client, reminderNumber, settings);
+    const subject = tone?.subject
+      ? tone.subject
+          .replace(/\{\{invoiceNumber\}\}/g, invoice.invoiceNumber)
+          .replace(/\{\{companyName\}\}/g, settings?.companyName || "Your Company")
+          .replace(/\{\{clientName\}\}/g, client.name || "Client")
+      : getReminderSubject(invoice.invoiceNumber, reminderNumber, settings?.companyName ?? undefined);
+    const body = generateReminderEmailBody(invoice, client, reminderNumber, settings, tone?.body);
 
     if (config.apiKey && config.provider === "resend") {
       const response = await fetch("https://api.resend.com/emails", {
@@ -117,11 +124,9 @@ export async function sendPaymentReminder(
       console.log(`[Reminder] Would send reminder ${reminderNumber} for invoice ${invoice.invoiceNumber} to ${client.email}`);
     }
 
-    await storage.updateInvoice(invoiceId, {
-      lastReminderSent: new Date(),
-      reminderCount: reminderNumber,
-    });
-
+    // NOTE: stage advancement (reminderCount / lastReminderSent) is handled
+    // by processOverdueReminders after all channels have been attempted, so
+    // it can advance when EITHER channel succeeds.
     return { success: true };
   } catch (error) {
     console.error("[Reminder] Send error:", error);
@@ -138,10 +143,24 @@ export async function processOverdueReminders(): Promise<{
   
   try {
     const settings = await storage.getSettings();
+
+    // Respect the global collections agent toggle
+    if (settings?.collectionsEnabled === false) {
+      console.log("[Reminders] Collections agent disabled — skipping run");
+      return result;
+    }
+
     const reminderIntervals = (settings?.reminderIntervals as number[]) || [7, 14, 30];
+    const reminderTones = (settings?.reminderTones as { stage: number; label: string; subject: string; body: string }[]) || [];
+
     const emailConfig: EmailConfig = {
       apiKey: process.env.RESEND_API_KEY,
       provider: "resend",
+    };
+    const smsConfig: SmsConfig = {
+      accountSid: process.env.TWILIO_ACCOUNT_SID,
+      authToken: process.env.TWILIO_AUTH_TOKEN,
+      fromPhone: process.env.TWILIO_PHONE_NUMBER,
     };
 
     const today = new Date();
@@ -153,7 +172,8 @@ export async function processOverdueReminders(): Promise<{
         and(
           sql`${invoices.status} IN ('sent', 'overdue', 'partial')`,
           sql`${invoices.balance}::numeric > 0`,
-          lte(invoices.dueDate, today)
+          lte(invoices.dueDate, today),
+          eq(invoices.remindersPaused, false)
         )
       );
 
@@ -177,15 +197,46 @@ export async function processOverdueReminders(): Promise<{
       }
       
       if (shouldSendReminder) {
-        const sendResult = await sendPaymentReminder(invoice.id, reminderNumber, emailConfig);
-        if (sendResult.success) {
+        // Find custom tone for this stage
+        const tone = reminderTones.find((t) => t.stage === reminderNumber);
+
+        // --- Email ---
+        const emailResult = await sendPaymentReminder(invoice.id, reminderNumber, emailConfig, tone);
+        await storage.insertReminderLog({
+          invoiceId: invoice.id,
+          channel: "email",
+          stage: reminderNumber,
+          success: emailResult.success,
+          errorMessage: emailResult.error ?? null,
+        });
+        if (emailResult.error) {
+          result.errors.push(`Invoice ${invoice.invoiceNumber} (email): ${emailResult.error}`);
+        }
+
+        // --- SMS ---
+        const customSmsBody = tone?.body;
+        const smsResult = await sendSmsReminder(invoice.id, reminderNumber, smsConfig, customSmsBody);
+        await storage.insertReminderLog({
+          invoiceId: invoice.id,
+          channel: "sms",
+          stage: reminderNumber,
+          success: smsResult.success,
+          errorMessage: smsResult.error ?? null,
+        });
+        if (!smsResult.success && smsResult.error && smsResult.error !== "No phone number on client record") {
+          result.errors.push(`Invoice ${invoice.invoiceNumber} (sms): ${smsResult.error}`);
+        }
+
+        // --- Advance stage when EITHER channel succeeded ---
+        // This prevents the same stage from re-triggering if only one channel
+        // failed (e.g. email domain unverified but SMS sent successfully).
+        if (emailResult.success || smsResult.success) {
           result.sent++;
-          
-          if (invoice.status !== "overdue") {
-            await storage.updateInvoice(invoice.id, { status: "overdue" });
-          }
-        } else if (sendResult.error) {
-          result.errors.push(`Invoice ${invoice.invoiceNumber}: ${sendResult.error}`);
+          await storage.updateInvoice(invoice.id, {
+            reminderCount: reminderNumber,
+            lastReminderSent: new Date(),
+            status: invoice.status !== "overdue" ? "overdue" : invoice.status,
+          });
         }
       }
     }
@@ -280,7 +331,8 @@ function generateReminderEmailBody(
   invoice: any,
   client: any,
   reminderNumber: number,
-  settings: any
+  settings: any,
+  customBodyTemplate?: string
 ): string {
   const companyName = settings?.companyName || "Your Painting Company";
   const formatCurrency = (amount: string | number) => {
@@ -289,6 +341,21 @@ function generateReminderEmailBody(
       currency: "USD",
     }).format(Number(amount));
   };
+
+  // If a custom body template is provided, use it with merge field substitution
+  if (customBodyTemplate) {
+    const daysOverdueVal = Math.floor(
+      (new Date().getTime() - new Date(invoice.dueDate).getTime()) / (1000 * 60 * 60 * 24)
+    );
+    const rendered = customBodyTemplate
+      .replace(/\{\{clientName\}\}/g, client?.name || "Valued Client")
+      .replace(/\{\{invoiceNumber\}\}/g, invoice.invoiceNumber)
+      .replace(/\{\{balance\}\}/g, formatCurrency(invoice.balance))
+      .replace(/\{\{daysOverdue\}\}/g, String(daysOverdueVal))
+      .replace(/\{\{companyName\}\}/g, companyName)
+      .replace(/\n/g, "<br>");
+    return `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.6;color:#333;padding:20px;max-width:600px;margin:0 auto;">${rendered}<hr style="border:none;border-top:1px solid #eee;margin-top:24px;"/><p style="font-size:12px;color:#666;">${companyName}${settings?.companyEmail ? ` · ${settings.companyEmail}` : ""}${settings?.companyPhone ? ` · ${settings.companyPhone}` : ""}</p></body></html>`;
+  }
 
   const daysOverdue = Math.floor(
     (new Date().getTime() - new Date(invoice.dueDate).getTime()) / (1000 * 60 * 60 * 24)
