@@ -206,6 +206,8 @@ export const invoices = pgTable("invoices", {
   lastReminderSent: timestamp("last_reminder_sent"),
   reminderCount: integer("reminder_count").default(0),
   remindersPaused: boolean("reminders_paused").default(false).notNull(),
+  payToken: text("pay_token").unique(),
+  payTokenExpiresAt: timestamp("pay_token_expires_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

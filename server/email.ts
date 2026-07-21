@@ -3,6 +3,47 @@ import { db } from "./db";
 import { invoices, clients, jobs } from "@shared/schema";
 import { eq, and, sql, lte } from "drizzle-orm";
 import { sendSmsReminder, type SmsConfig } from "./sms";
+import { randomUUID } from "crypto";
+
+function getAppBaseUrl(): string {
+  const url = process.env.APP_URL?.replace(/\/$/, "");
+  if (!url) {
+    console.warn("[Email] APP_URL is not set — payment links in reminder emails will be relative paths and may not work. Set APP_URL to the public base URL of the app.");
+  }
+  return url ?? "";
+}
+
+async function ensurePayToken(invoiceId: string): Promise<string> {
+  const [existing] = await db
+    .select({ payToken: invoices.payToken, payTokenExpiresAt: invoices.payTokenExpiresAt })
+    .from(invoices)
+    .where(eq(invoices.id, invoiceId))
+    .limit(1);
+
+  const now = new Date();
+  const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+  const needsNewToken =
+    !existing?.payToken ||
+    (existing.payTokenExpiresAt && existing.payTokenExpiresAt < now);
+
+  if (needsNewToken) {
+    const token = randomUUID();
+    await db
+      .update(invoices)
+      .set({ payToken: token, payTokenExpiresAt: thirtyDaysOut })
+      .where(eq(invoices.id, invoiceId));
+    return token;
+  }
+
+  // Refresh expiry window each time a reminder is sent
+  await db
+    .update(invoices)
+    .set({ payTokenExpiresAt: thirtyDaysOut })
+    .where(eq(invoices.id, invoiceId));
+
+  return existing.payToken!;
+}
 
 export interface EmailConfig {
   apiKey?: string;
@@ -77,7 +118,8 @@ export async function sendPaymentReminder(
   invoiceId: string,
   reminderNumber: number,
   config: EmailConfig,
-  tone?: { stage: number; label: string; subject: string; body: string }
+  tone?: { stage: number; label: string; subject: string; body: string },
+  precomputedPaymentLink?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const invoice = await storage.getInvoice(invoiceId);
@@ -92,13 +134,21 @@ export async function sendPaymentReminder(
     }
 
     const settings = await storage.getSettings();
+
+    let paymentLink = precomputedPaymentLink;
+    if (!paymentLink) {
+      const payToken = await ensurePayToken(invoiceId);
+      const baseUrl = getAppBaseUrl();
+      paymentLink = baseUrl ? `${baseUrl}/pay/${payToken}` : `/pay/${payToken}`;
+    }
+
     const subject = tone?.subject
       ? tone.subject
           .replace(/\{\{invoiceNumber\}\}/g, invoice.invoiceNumber)
           .replace(/\{\{companyName\}\}/g, settings?.companyName || "Your Company")
           .replace(/\{\{clientName\}\}/g, client.name || "Client")
       : getReminderSubject(invoice.invoiceNumber, reminderNumber, settings?.companyName ?? undefined);
-    const body = generateReminderEmailBody(invoice, client, reminderNumber, settings, tone?.body);
+    const body = generateReminderEmailBody(invoice, client, reminderNumber, settings, tone?.body, paymentLink);
 
     if (config.apiKey && config.provider === "resend") {
       const response = await fetch("https://api.resend.com/emails", {
@@ -200,8 +250,13 @@ export async function processOverdueReminders(): Promise<{
         // Find custom tone for this stage
         const tone = reminderTones.find((t) => t.stage === reminderNumber);
 
+        // Build the payment link once so both email and SMS can use it
+        const payToken = await ensurePayToken(invoice.id);
+        const baseUrl = getAppBaseUrl();
+        const paymentLink = baseUrl ? `${baseUrl}/pay/${payToken}` : `/pay/${payToken}`;
+
         // --- Email ---
-        const emailResult = await sendPaymentReminder(invoice.id, reminderNumber, emailConfig, tone);
+        const emailResult = await sendPaymentReminder(invoice.id, reminderNumber, emailConfig, tone, paymentLink);
         await storage.insertReminderLog({
           invoiceId: invoice.id,
           channel: "email",
@@ -215,7 +270,7 @@ export async function processOverdueReminders(): Promise<{
 
         // --- SMS ---
         const customSmsBody = tone?.body;
-        const smsResult = await sendSmsReminder(invoice.id, reminderNumber, smsConfig, customSmsBody);
+        const smsResult = await sendSmsReminder(invoice.id, reminderNumber, smsConfig, customSmsBody, paymentLink);
         await storage.insertReminderLog({
           invoiceId: invoice.id,
           channel: "sms",
@@ -332,7 +387,8 @@ function generateReminderEmailBody(
   client: any,
   reminderNumber: number,
   settings: any,
-  customBodyTemplate?: string
+  customBodyTemplate?: string,
+  paymentLink?: string
 ): string {
   const companyName = settings?.companyName || "Your Painting Company";
   const formatCurrency = (amount: string | number) => {
@@ -341,6 +397,10 @@ function generateReminderEmailBody(
       currency: "USD",
     }).format(Number(amount));
   };
+
+  const payButtonHtml = paymentLink
+    ? `<p style="margin:20px 0;"><a href="${paymentLink}" style="display:inline-block;padding:12px 28px;background:#dc3545;color:#fff;text-decoration:none;border-radius:6px;font-size:15px;font-weight:600;">Pay Now</a></p>`
+    : "";
 
   // If a custom body template is provided, use it with merge field substitution
   if (customBodyTemplate) {
@@ -353,8 +413,11 @@ function generateReminderEmailBody(
       .replace(/\{\{balance\}\}/g, formatCurrency(invoice.balance))
       .replace(/\{\{daysOverdue\}\}/g, String(daysOverdueVal))
       .replace(/\{\{companyName\}\}/g, companyName)
+      .replace(/\{\{paymentLink\}\}/g, paymentLink
+        ? `<a href="${paymentLink}" style="color:#dc3545;font-weight:600;">Pay Now</a>`
+        : "")
       .replace(/\n/g, "<br>");
-    return `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.6;color:#333;padding:20px;max-width:600px;margin:0 auto;">${rendered}<hr style="border:none;border-top:1px solid #eee;margin-top:24px;"/><p style="font-size:12px;color:#666;">${companyName}${settings?.companyEmail ? ` · ${settings.companyEmail}` : ""}${settings?.companyPhone ? ` · ${settings.companyPhone}` : ""}</p></body></html>`;
+    return `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;line-height:1.6;color:#333;padding:20px;max-width:600px;margin:0 auto;">${rendered}${paymentLink && !customBodyTemplate.includes("{{paymentLink}}") ? payButtonHtml : ""}<hr style="border:none;border-top:1px solid #eee;margin-top:24px;"/><p style="font-size:12px;color:#666;">${companyName}${settings?.companyEmail ? ` · ${settings.companyEmail}` : ""}${settings?.companyPhone ? ` · ${settings.companyPhone}` : ""}</p></body></html>`;
   }
 
   const daysOverdue = Math.floor(
@@ -398,6 +461,8 @@ function generateReminderEmailBody(
       <p><strong>Original Due Date:</strong> ${new Date(invoice.dueDate).toLocaleDateString()}</p>
       <p class="overdue"><strong>Days Overdue:</strong> ${daysOverdue} days</p>
     </div>
+    
+    ${payButtonHtml}
     
     <p>If you have already sent payment, please disregard this notice. If you have any questions regarding this invoice, please contact us.</p>
     

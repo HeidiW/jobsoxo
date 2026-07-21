@@ -29,6 +29,7 @@ import Login from "@/pages/login";
 import ResetPassword from "@/pages/reset-password";
 import Privacy from "@/pages/privacy";
 import Terms from "@/pages/terms";
+import InvoicePay from "@/pages/invoice-pay";
 
 function Router() {
   return (
@@ -127,6 +128,9 @@ function AppContent() {
   }
   if (window.location.pathname === "/terms") {
     return <Terms />;
+  }
+  if (window.location.pathname.startsWith("/pay/")) {
+    return <InvoicePay />;
   }
 
   if (isLoading) {

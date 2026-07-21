@@ -460,7 +460,11 @@ function CollectionsAgentCard({ settings }: { settings: Settings | undefined }) 
             <code className="rounded bg-muted px-1 text-xs">{"{{invoiceNumber}}"}</code>{" "}
             <code className="rounded bg-muted px-1 text-xs">{"{{balance}}"}</code>{" "}
             <code className="rounded bg-muted px-1 text-xs">{"{{daysOverdue}}"}</code>{" "}
-            <code className="rounded bg-muted px-1 text-xs">{"{{companyName}}"}</code>
+            <code className="rounded bg-muted px-1 text-xs">{"{{companyName}}"}</code>{" "}
+            <code className="rounded bg-muted px-1 text-xs">{"{{paymentLink}}"}</code>
+            <span className="block mt-1 text-xs text-muted-foreground">
+              <strong>{"{{paymentLink}}"}</strong> inserts a clickable Pay Now link unique to that invoice (valid 30 days).
+            </span>
           </p>
         </div>
 

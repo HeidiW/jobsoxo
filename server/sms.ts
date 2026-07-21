@@ -19,7 +19,8 @@ export async function sendSmsReminder(
   invoiceId: string,
   stage: number,
   config: SmsConfig,
-  customBody?: string
+  customBody?: string,
+  paymentLink?: string
 ): Promise<{ success: boolean; error?: string }> {
   const invoice = await storage.getInvoice(invoiceId);
   if (!invoice) return { success: false, error: "Invoice not found" };
@@ -41,6 +42,7 @@ export async function sendSmsReminder(
         .replace(/\{\{balance\}\}/g, balance)
         .replace(/\{\{daysOverdue\}\}/g, String(daysOverdue))
         .replace(/\{\{companyName\}\}/g, companyName)
+        .replace(/\{\{paymentLink\}\}/g, paymentLink ?? "")
     : (DEFAULT_REMINDER_MESSAGES[stage] || DEFAULT_REMINDER_MESSAGES[3])({
         clientName: client.name,
         invoiceNumber: invoice.invoiceNumber,

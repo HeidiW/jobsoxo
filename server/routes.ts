@@ -404,6 +404,125 @@ export async function registerRoutes(
     }
   });
 
+  // ── Public pay-by-token routes ── registered BEFORE the auth middleware ──────
+
+  async function resolvePayToken(token: string) {
+    const [invoice] = await db
+      .select({
+        id: invoices.id,
+        invoiceNumber: invoices.invoiceNumber,
+        clientId: invoices.clientId,
+        status: invoices.status,
+        balance: invoices.balance,
+        total: invoices.total,
+        amountPaid: invoices.amountPaid,
+        dueDate: invoices.dueDate,
+        payToken: invoices.payToken,
+        payTokenExpiresAt: invoices.payTokenExpiresAt,
+      })
+      .from(invoices)
+      .where(eq(invoices.payToken, token))
+      .limit(1);
+    return invoice ?? null;
+  }
+
+  app.get("/api/pay/:token", async (req, res) => {
+    try {
+      const invoice = await resolvePayToken(req.params.token);
+      if (!invoice) {
+        return res.status(404).json({ error: "Payment link not found or expired" });
+      }
+      if (invoice.payTokenExpiresAt && new Date() > invoice.payTokenExpiresAt) {
+        return res.status(410).json({ error: "Payment link has expired" });
+      }
+
+      const client = await storage.getClient(invoice.clientId);
+      const settingsResult = await db.execute(
+        sql`SELECT company_name, company_email, company_phone FROM settings LIMIT 1`
+      );
+      const settingsRow = (settingsResult as any).rows?.[0] ?? settingsResult[0] ?? null;
+
+      res.json({
+        invoiceNumber: invoice.invoiceNumber,
+        balance: invoice.balance,
+        total: invoice.total,
+        amountPaid: invoice.amountPaid,
+        dueDate: invoice.dueDate,
+        status: invoice.status,
+        clientName: client?.name ?? null,
+        companyName: settingsRow?.company_name ?? null,
+        companyEmail: settingsRow?.company_email ?? null,
+        companyPhone: settingsRow?.company_phone ?? null,
+        stripeEnabled: !!process.env.STRIPE_SECRET_KEY,
+      });
+    } catch (error) {
+      console.error("Pay token lookup error:", error);
+      res.status(500).json({ error: "Failed to load payment details" });
+    }
+  });
+
+  // Create a Stripe Checkout session for the invoice and return the redirect URL
+  app.post("/api/pay/:token/checkout", async (req, res) => {
+    try {
+      const stripeKey = process.env.STRIPE_SECRET_KEY;
+      if (!stripeKey) {
+        return res.status(503).json({ error: "Online payment is not configured for this account." });
+      }
+
+      const invoice = await resolvePayToken(req.params.token);
+      if (!invoice) {
+        return res.status(404).json({ error: "Payment link not found or expired" });
+      }
+      if (invoice.payTokenExpiresAt && new Date() > invoice.payTokenExpiresAt) {
+        return res.status(410).json({ error: "Payment link has expired" });
+      }
+
+      const balanceCents = Math.round(Number(invoice.balance) * 100);
+      if (balanceCents <= 0) {
+        return res.status(400).json({ error: "Invoice is already fully paid." });
+      }
+
+      const settingsResult = await db.execute(
+        sql`SELECT company_name FROM settings LIMIT 1`
+      );
+      const settingsRow = (settingsResult as any).rows?.[0] ?? settingsResult[0] ?? null;
+      const companyName: string = settingsRow?.company_name ?? "Your Company";
+
+      const baseUrl = process.env.APP_URL?.replace(/\/$/, "") ?? `${req.protocol}://${req.get("host")}`;
+      const successUrl = `${baseUrl}/pay/${req.params.token}?payment=success`;
+      const cancelUrl = `${baseUrl}/pay/${req.params.token}`;
+
+      const Stripe = (await import("stripe")).default;
+      const stripe = new Stripe(stripeKey, { apiVersion: "2025-04-30.basil" as any });
+
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        mode: "payment",
+        line_items: [
+          {
+            quantity: 1,
+            price_data: {
+              currency: "usd",
+              unit_amount: balanceCents,
+              product_data: {
+                name: `Invoice #${invoice.invoiceNumber}`,
+                description: `Payment to ${companyName}`,
+              },
+            },
+          },
+        ],
+        metadata: { invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber },
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+      });
+
+      res.json({ url: session.url });
+    } catch (error) {
+      console.error("Stripe checkout error:", error);
+      res.status(500).json({ error: "Failed to create checkout session" });
+    }
+  });
+
   // All routes below require authentication
   app.use("/api", requireAuth);
 
