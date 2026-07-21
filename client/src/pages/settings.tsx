@@ -40,11 +40,15 @@ import {
   BellOff,
   ChevronDown,
   ChevronUp,
+  Landmark,
+  Unlink,
+  AlertCircle,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import type { Settings, Invite } from "@shared/schema";
+import { usePlaidLink, type PlaidAccountMeta } from "@/hooks/use-plaid-link";
 
 const settingsFormSchema = z.object({
   companyName: z.string().optional(),
@@ -74,6 +78,121 @@ function SettingsSkeleton() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function BusinessBankAccountCard() {
+  const { toast } = useToast();
+  const [localAccount, setLocalAccount] = useState<PlaidAccountMeta | null | undefined>(undefined);
+
+  const { data: plaidStatus } = useQuery<{ configured: boolean }>({
+    queryKey: ["/api/plaid/status"],
+  });
+
+  const { data: accountData, isLoading } = useQuery<PlaidAccountMeta | null>({
+    queryKey: ["/api/plaid/bank-account", "business"],
+    queryFn: async () => {
+      const res = await fetch("/api/plaid/bank-account?entityType=business", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load bank account");
+      return res.json();
+    },
+  });
+
+  useEffect(() => {
+    if (accountData !== undefined && localAccount === undefined) {
+      setLocalAccount(accountData);
+    }
+  }, [accountData]);
+
+  const account = localAccount !== undefined ? localAccount : accountData;
+
+  const disconnectMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/plaid/bank-accounts/${id}`);
+    },
+    onSuccess: () => {
+      setLocalAccount(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/plaid/bank-account", "business"] });
+      toast({ title: "Bank account disconnected" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to disconnect", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const { open, isLoading: linkLoading } = usePlaidLink({
+    entityType: "business",
+    onSuccess: (acct) => {
+      setLocalAccount(acct);
+      queryClient.invalidateQueries({ queryKey: ["/api/plaid/bank-account", "business"] });
+      toast({ title: "Bank account connected", description: `${acct.institutionName} ••••${acct.accountMask}` });
+    },
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Landmark className="h-5 w-5" />
+          Business Bank Account
+        </CardTitle>
+        <CardDescription>
+          Connect your business bank account via Plaid to enable payroll balance checks and invoice reconciliation
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!plaidStatus?.configured ? (
+          <div className="flex items-start gap-3 rounded-md border border-dashed p-4 text-sm text-muted-foreground" data-testid="plaid-not-configured">
+            <AlertCircle className="h-5 w-5 mt-0.5 shrink-0 text-amber-500" />
+            <div>
+              <p className="font-medium text-foreground">Plaid not configured</p>
+              <p className="mt-1">Add your <code className="rounded bg-muted px-1 text-xs font-mono">PLAID_CLIENT_ID</code> and <code className="rounded bg-muted px-1 text-xs font-mono">PLAID_SECRET</code> secrets (Sandbox mode) to enable bank account connections.</p>
+            </div>
+          </div>
+        ) : isLoading ? (
+          <div className="flex gap-3 items-center p-3 rounded-md bg-muted/50">
+            <div className="h-4 w-4 rounded-full bg-muted animate-pulse" />
+            <div className="h-4 w-48 rounded bg-muted animate-pulse" />
+          </div>
+        ) : account ? (
+          <div className="flex items-center justify-between rounded-md border bg-muted/30 px-4 py-3" data-testid="connected-bank-account">
+            <div className="flex items-center gap-3">
+              <Landmark className="h-5 w-5 text-muted-foreground shrink-0" />
+              <div>
+                <p className="font-medium text-sm" data-testid="text-bank-institution">{account.institutionName}</p>
+                <p className="text-xs text-muted-foreground" data-testid="text-bank-account-mask">{account.accountName} ••••{account.accountMask}</p>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={() => disconnectMutation.mutate(account.id)}
+              disabled={disconnectMutation.isPending}
+              data-testid="button-disconnect-bank"
+            >
+              <Unlink className="h-4 w-4 mr-1.5" />
+              {disconnectMutation.isPending ? "Disconnecting…" : "Disconnect"}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">No bank account connected. Connect one to enable balance checks and payment reconciliation.</p>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={open}
+              disabled={linkLoading}
+              data-testid="button-connect-bank"
+            >
+              <Landmark className="h-4 w-4 mr-2" />
+              {linkLoading ? "Opening…" : "Connect bank account"}
+            </Button>
+            <p className="text-xs text-muted-foreground">Uses Plaid Sandbox — no real banking credentials required for testing.</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -688,6 +807,8 @@ export default function SettingsPage() {
               />
             </CardContent>
           </Card>
+
+          <BusinessBankAccountCard />
 
           <CollectionsAgentCard settings={settings} />
 

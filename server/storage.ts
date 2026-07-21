@@ -39,6 +39,8 @@ import {
   type InsertSmsAttempt,
   type ReminderLog,
   type InsertReminderLog,
+  type BankAccount,
+  type InsertBankAccount,
   users,
   clients,
   jobs,
@@ -60,6 +62,7 @@ import {
   onboardingItems,
   smsAttempts,
   reminderLogs,
+  bankAccounts,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql, isNull, or, inArray } from "drizzle-orm";
@@ -210,6 +213,13 @@ export interface IStorage {
   // Reminder Logs
   getReminderLogsByInvoice(invoiceId: string): Promise<ReminderLog[]>;
   insertReminderLog(log: InsertReminderLog): Promise<ReminderLog>;
+
+  // Bank Accounts (Plaid)
+  getBankAccountByEntity(userId: string, entityType: string, entityId?: string): Promise<BankAccount | undefined>;
+  getBankAccountById(id: string): Promise<BankAccount | undefined>;
+  createBankAccount(account: InsertBankAccount): Promise<BankAccount>;
+  deleteBankAccount(id: string): Promise<void>;
+  getBusinessBankAccount(userId: string): Promise<BankAccount | undefined>;
 
   // Dashboard
   getDashboardStats(): Promise<{
@@ -948,6 +958,36 @@ export class DatabaseStorage implements IStorage {
   async insertReminderLog(log: InsertReminderLog): Promise<ReminderLog> {
     const [row] = await db.insert(reminderLogs).values(log).returning();
     return row;
+  }
+
+  // Bank Accounts (Plaid)
+  async getBankAccountByEntity(userId: string, entityType: string, entityId?: string): Promise<BankAccount | undefined> {
+    const conditions = [eq(bankAccounts.userId, userId), eq(bankAccounts.entityType, entityType)];
+    if (entityId) {
+      conditions.push(eq(bankAccounts.entityId, entityId));
+    } else {
+      conditions.push(sql`${bankAccounts.entityId} IS NULL`);
+    }
+    const [row] = await db.select().from(bankAccounts).where(and(...conditions)).limit(1);
+    return row ?? undefined;
+  }
+
+  async getBankAccountById(id: string): Promise<BankAccount | undefined> {
+    const [row] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, id));
+    return row ?? undefined;
+  }
+
+  async createBankAccount(account: InsertBankAccount): Promise<BankAccount> {
+    const [row] = await db.insert(bankAccounts).values(account).returning();
+    return row;
+  }
+
+  async deleteBankAccount(id: string): Promise<void> {
+    await db.delete(bankAccounts).where(eq(bankAccounts.id, id));
+  }
+
+  async getBusinessBankAccount(userId: string): Promise<BankAccount | undefined> {
+    return this.getBankAccountByEntity(userId, "business");
   }
 }
 

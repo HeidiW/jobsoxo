@@ -593,6 +593,27 @@ export const insertJobDocumentSchema = createInsertSchema(jobDocuments).omit({ i
 export type InsertJobDocument = z.infer<typeof insertJobDocumentSchema>;
 export type JobDocument = typeof jobDocuments.$inferSelect;
 
+// Bank Accounts — Plaid-connected bank accounts (business or employee)
+export const bankAccounts = pgTable("bank_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  entityType: text("entity_type").notNull().default("business"), // business | employee
+  entityId: varchar("entity_id"), // employee ID when entityType = employee
+  plaidItemId: text("plaid_item_id").notNull(),
+  plaidAccessToken: text("plaid_access_token").notNull(),
+  plaidAccountId: text("plaid_account_id").notNull(),
+  institutionName: text("institution_name").notNull(),
+  accountName: text("account_name").notNull(),
+  accountMask: text("account_mask").notNull(),
+  accountType: text("account_type"),
+  routingNumber: text("routing_number"), // From Plaid Auth; stored server-side only
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertBankAccountSchema = createInsertSchema(bankAccounts).omit({ id: true, createdAt: true });
+export type InsertBankAccount = z.infer<typeof insertBankAccountSchema>;
+export type BankAccount = typeof bankAccounts.$inferSelect;
+
 // SMS Attempts — log every inbound SMS for manager review (success + rejections)
 export const smsAttempts = pgTable("sms_attempts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

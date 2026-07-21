@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { createLinkToken, exchangePublicToken, getAccountInfo, getBalance, getTransactions, isPlaidConfigured } from "./plaid";
 // Function declaration (not const) so it's hoisted and immune to TDZ in circular-dep scenarios.
 // import.meta.url is valid in ESM (dev/tsx) but undefined in CJS bundles (production build).
 // Falls back to process.cwd() path so createRequire can still resolve node_modules.
@@ -2438,6 +2439,147 @@ export async function registerRoutes(
   // ── SMS config (authenticated — returns phone number for display) ────────
   app.get("/api/sms/config", async (_req, res) => {
     res.json({ phoneNumber: process.env.TWILIO_PHONE_NUMBER ?? null });
+  });
+
+  // ── Plaid routes ─────────────────────────────────────────────────────────
+  app.get("/api/plaid/status", (req, res) => {
+    res.json({ configured: isPlaidConfigured() });
+  });
+
+  // Create a Plaid Link token
+  app.post("/api/plaid/link-token", async (req, res) => {
+    try {
+      if (!isPlaidConfigured()) {
+        return res.status(503).json({ error: "Plaid is not configured. Add PLAID_CLIENT_ID and PLAID_SECRET secrets." });
+      }
+      const userId = req.session.userId!;
+      const linkToken = await createLinkToken(userId);
+      res.json({ link_token: linkToken });
+    } catch (error: any) {
+      console.error("Plaid link-token error:", error?.response?.data || error);
+      res.status(500).json({ error: "Failed to create Plaid link token" });
+    }
+  });
+
+  // Exchange public token for access token and save bank account
+  app.post("/api/plaid/exchange-token", async (req, res) => {
+    try {
+      if (!isPlaidConfigured()) {
+        return res.status(503).json({ error: "Plaid is not configured." });
+      }
+      const { publicToken, entityType = "business", entityId } = req.body;
+      if (!publicToken) return res.status(400).json({ error: "publicToken is required" });
+
+      const userId = req.session.userId!;
+      const { accessToken, itemId } = await exchangePublicToken(publicToken);
+      const accountInfo = await getAccountInfo(accessToken);
+
+      // Replace any existing account for this entity
+      const existing = await storage.getBankAccountByEntity(userId, entityType, entityId || undefined);
+      if (existing) {
+        await storage.deleteBankAccount(existing.id);
+      }
+
+      const bankAccount = await storage.createBankAccount({
+        userId,
+        entityType,
+        entityId: entityId || null,
+        plaidItemId: itemId,
+        plaidAccessToken: accessToken,
+        plaidAccountId: accountInfo.accountId,
+        institutionName: accountInfo.institutionName,
+        accountName: accountInfo.accountName,
+        accountMask: accountInfo.accountMask,
+        accountType: accountInfo.accountType,
+        routingNumber: accountInfo.routingNumber,
+      });
+
+      // Return safe metadata only — never expose access token or full routing number
+      res.json({
+        id: bankAccount.id,
+        institutionName: bankAccount.institutionName,
+        accountName: bankAccount.accountName,
+        accountMask: bankAccount.accountMask,
+        accountType: bankAccount.accountType,
+        routingNumberMask: bankAccount.routingNumber ? `••••${bankAccount.routingNumber.slice(-4)}` : null,
+      });
+    } catch (error: any) {
+      console.error("Plaid exchange-token error:", error?.response?.data || error);
+      res.status(500).json({ error: "Failed to connect bank account" });
+    }
+  });
+
+  // Get connected bank account metadata for an entity
+  app.get("/api/plaid/bank-account", async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const entityType = (req.query.entityType as string) || "business";
+      const entityId = req.query.entityId as string | undefined;
+
+      const account = await storage.getBankAccountByEntity(userId, entityType, entityId);
+      if (!account) return res.json(null);
+
+      res.json({
+        id: account.id,
+        institutionName: account.institutionName,
+        accountName: account.accountName,
+        accountMask: account.accountMask,
+        accountType: account.accountType,
+        routingNumberMask: account.routingNumber ? `••••${account.routingNumber.slice(-4)}` : null,
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get bank account" });
+    }
+  });
+
+  // Disconnect a bank account
+  app.delete("/api/plaid/bank-accounts/:id", async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const account = await storage.getBankAccountById(req.params.id);
+      if (!account) return res.status(404).json({ error: "Not found" });
+      if (account.userId !== userId) return res.status(403).json({ error: "Forbidden" });
+      await storage.deleteBankAccount(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to disconnect bank account" });
+    }
+  });
+
+  // Get balance for the business bank account
+  app.get("/api/plaid/balance", async (req, res) => {
+    try {
+      if (!isPlaidConfigured()) {
+        return res.status(503).json({ error: "Plaid is not configured." });
+      }
+      const userId = req.session.userId!;
+      const account = await storage.getBusinessBankAccount(userId);
+      if (!account) return res.json({ connected: false });
+
+      const balance = await getBalance(account.plaidAccessToken);
+      res.json({ connected: true, ...balance, institutionName: account.institutionName, accountMask: account.accountMask });
+    } catch (error: any) {
+      console.error("Plaid balance error:", error?.response?.data || error);
+      res.status(500).json({ error: "Failed to fetch balance" });
+    }
+  });
+
+  // Get last 30 days of transactions for reconciliation
+  app.get("/api/plaid/transactions", async (req, res) => {
+    try {
+      if (!isPlaidConfigured()) {
+        return res.status(503).json({ error: "Plaid is not configured." });
+      }
+      const userId = req.session.userId!;
+      const account = await storage.getBusinessBankAccount(userId);
+      if (!account) return res.json([]);
+
+      const transactions = await getTransactions(account.plaidAccessToken, 30);
+      res.json(transactions);
+    } catch (error: any) {
+      console.error("Plaid transactions error:", error?.response?.data || error);
+      res.status(500).json({ error: "Failed to fetch transactions" });
+    }
   });
 
   // Settings

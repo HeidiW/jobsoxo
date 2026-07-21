@@ -24,7 +24,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
-import { Plus, Play, AlertTriangle, PhoneOff, Edit, Trash2, CheckCircle, ChevronLeft, ChevronRight, FileText, X, Settings2, Download, ClipboardList, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
+import { Plus, Play, AlertTriangle, PhoneOff, Edit, Trash2, CheckCircle, ChevronLeft, ChevronRight, FileText, X, Settings2, Download, ClipboardList, ChevronDown, ChevronUp, MessageSquare, Landmark, Unlink, AlertCircle } from "lucide-react";
+import { usePlaidLink, type PlaidAccountMeta } from "@/hooks/use-plaid-link";
+import { Button } from "@/components/ui/button";
 import { format, startOfMonth, endOfMonth, subMonths } from "date-fns";
 import type { Employee, TimeEntry, PayrollRecord, Job, SmsAttempt } from "@shared/schema";
 
@@ -640,6 +642,11 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
           <DeductionsSection employeeId={employee.id} />
         )}
 
+        {/* Direct Deposit — only shown in edit mode */}
+        {isEdit && employee?.id && (
+          <DirectDepositSection employeeId={employee.id} />
+        )}
+
         {/* Onboarding — only shown in edit mode */}
         {isEdit && employee?.id && (
           <OnboardingSection employeeId={employee.id} />
@@ -704,6 +711,151 @@ function TimeEntryForm({ onClose }: { onClose: () => void }) {
         </div>
       </form>
     </Form>
+  );
+}
+
+// ── Balance Pre-flight Banner ─────────────────────────────────────────────────
+function BalancePreflightBanner({ estimatedPayroll }: { estimatedPayroll: number }) {
+  const { data: balance, isLoading } = useQuery<{
+    connected: boolean;
+    available?: number;
+    current?: number;
+    institutionName?: string;
+    accountMask?: string;
+  }>({
+    queryKey: ["/api/plaid/balance"],
+    queryFn: async () => {
+      const res = await fetch("/api/plaid/balance", { credentials: "include" });
+      if (!res.ok) return { connected: false };
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+
+  if (isLoading) return (
+    <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--track)", borderRadius: "8px", padding: "10px 12px", fontSize: "12.5px", color: "var(--muted)" }}>
+      <Landmark style={{ width: "14px", height: "14px", flexShrink: 0 }} />
+      Checking bank balance…
+    </div>
+  );
+
+  if (!balance?.connected) return (
+    <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--track)", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "10px 12px", fontSize: "12.5px", color: "var(--muted)" }} data-testid="balance-preflight-no-account">
+      <Landmark style={{ width: "14px", height: "14px", flexShrink: 0 }} />
+      <span>No bank account connected — <a href="/settings" style={{ color: "var(--jox-primary)", fontWeight: 600, textDecoration: "none" }}>connect one in Settings</a> to enable balance checks before payroll.</span>
+    </div>
+  );
+
+  const avail = balance.available ?? balance.current ?? 0;
+  const sufficient = avail >= estimatedPayroll;
+
+  return (
+    <div style={{
+      display: "flex", alignItems: "flex-start", gap: "10px", borderRadius: "8px", padding: "10px 12px",
+      background: sufficient ? "#f0fdf4" : "#fef2f2",
+      border: `1px solid ${sufficient ? "#bbf7d0" : "#fecaca"}`,
+      fontSize: "12.5px",
+    }} data-testid="balance-preflight-banner">
+      {sufficient
+        ? <CheckCircle style={{ width: "15px", height: "15px", color: "#16a34a", flexShrink: 0, marginTop: "1px" }} />
+        : <AlertCircle style={{ width: "15px", height: "15px", color: "#dc2626", flexShrink: 0, marginTop: "1px" }} />}
+      <div style={{ color: sufficient ? "#166534" : "#991b1b" }}>
+        <span style={{ fontWeight: 700 }}>{balance.institutionName} ••••{balance.accountMask}</span>
+        {" — "}
+        <span>Available: <strong>${avail.toLocaleString("en-US", { minimumFractionDigits: 2 })}</strong></span>
+        {" · "}
+        <span>Est. payroll: <strong>${estimatedPayroll.toLocaleString("en-US", { minimumFractionDigits: 2 })}</strong></span>
+        {!sufficient && <div style={{ marginTop: "3px", fontWeight: 600 }}>⚠ Insufficient balance — fund your account before running payroll.</div>}
+      </div>
+    </div>
+  );
+}
+
+// ── Direct Deposit Section ────────────────────────────────────────────────────
+function DirectDepositSection({ employeeId }: { employeeId: string }) {
+  const { toast } = useToast();
+  const [localAccount, setLocalAccount] = useState<PlaidAccountMeta | null | undefined>(undefined);
+
+  const { data: accountData, isLoading } = useQuery<PlaidAccountMeta | null>({
+    queryKey: ["/api/plaid/bank-account", "employee", employeeId],
+    queryFn: async () => {
+      const res = await fetch(`/api/plaid/bank-account?entityType=employee&entityId=${employeeId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
+
+  const account = localAccount !== undefined ? localAccount : accountData;
+
+  const disconnectMutation = useMutation({
+    mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/plaid/bank-accounts/${id}`); },
+    onSuccess: () => {
+      setLocalAccount(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/plaid/bank-account", "employee", employeeId] });
+      toast({ title: "Direct deposit account removed" });
+    },
+    onError: (err: Error) => toast({ title: "Failed to disconnect", description: err.message, variant: "destructive" }),
+  });
+
+  const { open, isLoading: linkLoading } = usePlaidLink({
+    entityType: "employee",
+    entityId: employeeId,
+    onSuccess: (acct) => {
+      setLocalAccount(acct);
+      queryClient.invalidateQueries({ queryKey: ["/api/plaid/bank-account", "employee", employeeId] });
+      toast({ title: "Direct deposit set up", description: `${acct.institutionName} ••••${acct.accountMask}` });
+    },
+  });
+
+  return (
+    <div style={{ marginTop: "16px", borderTop: "1px solid var(--panel-bd)", paddingTop: "16px" }}>
+      <div style={{ fontSize: "11.5px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "10px" }}>Direct Deposit</div>
+      {isLoading ? (
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", padding: "10px 12px", borderRadius: "8px", background: "var(--track)", fontSize: "12.5px", color: "var(--muted)" }}>
+          <Landmark style={{ width: "13px", height: "13px" }} />
+          Loading…
+        </div>
+      ) : account ? (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", border: "1px solid var(--panel-bd)", borderRadius: "8px", background: "var(--panel)", gap: "10px" }} data-testid={`direct-deposit-connected-${employeeId}`}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+            <Landmark style={{ width: "14px", height: "14px", flexShrink: 0, color: "var(--muted)" }} />
+            <div>
+              <div style={{ fontSize: "12.5px", fontWeight: 600 }}>{account.institutionName}</div>
+              <div style={{ fontSize: "11.5px", color: "var(--muted)" }}>
+                {account.accountName} ••••{account.accountMask}
+                {account.routingNumberMask && (
+                  <span style={{ marginLeft: "8px" }}>· Routing: {account.routingNumberMask}</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => disconnectMutation.mutate(account.id)}
+            disabled={disconnectMutation.isPending}
+            style={{ display: "flex", alignItems: "center", gap: "5px", border: "1px solid #fecaca", borderRadius: "7px", padding: "5px 10px", background: "#fff5f5", color: "#dc2626", fontSize: "12px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}
+            data-testid={`button-remove-direct-deposit-${employeeId}`}
+          >
+            <Unlink style={{ width: "12px", height: "12px" }} />
+            {disconnectMutation.isPending ? "Removing…" : "Remove"}
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <p style={{ fontSize: "12.5px", color: "var(--muted)", margin: 0 }}>No direct deposit account connected for this employee.</p>
+          <button
+            type="button"
+            onClick={open}
+            disabled={linkLoading}
+            style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "8px 14px", background: "var(--panel)", fontSize: "12.5px", fontWeight: 600, cursor: linkLoading ? "wait" : "pointer", fontFamily: "inherit", color: "var(--fg)", width: "fit-content" }}
+            data-testid={`button-setup-direct-deposit-${employeeId}`}
+          >
+            <Landmark style={{ width: "13px", height: "13px" }} />
+            {linkLoading ? "Opening…" : "Set up direct deposit"}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -816,6 +968,15 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
               <FormMessage /></FormItem>
           )} />
         </div>
+        {/* Balance pre-flight check */}
+        {watchStart && watchEnd && (
+          <BalancePreflightBanner estimatedPayroll={
+            (employees?.filter(e => e.status === "active") ?? []).reduce((sum, e) => {
+              const days = Math.ceil((new Date(watchEnd).getTime() - new Date(watchStart).getTime()) / (1000 * 60 * 60 * 24)) / 7 * 5;
+              return sum + (Number((e as any).dayRate ?? 0) * Math.max(1, days));
+            }, 0)
+          } />
+        )}
         {overlapping.length > 0 && (
           <div style={{ display: "flex", gap: "10px", background: "#fefce8", border: "1px solid #fde68a", borderRadius: "8px", padding: "12px" }} data-testid="warning-payroll-overlap">
             <AlertTriangle style={{ width: "16px", height: "16px", flexShrink: 0, color: "#b45309", marginTop: "1px" }} />

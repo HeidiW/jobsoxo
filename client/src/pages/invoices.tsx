@@ -48,6 +48,9 @@ import {
   PauseCircle,
   PlayCircle,
   AlertTriangle,
+  RefreshCw,
+  Landmark,
+  AlertCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { Invoice, Client, Job } from "@shared/schema";
@@ -90,6 +93,171 @@ function fmtMoney(n: number, decimals = 0) {
 function fmtDate(d: string | null | undefined) {
   if (!d) return "—";
   try { return format(new Date(d), "MMM d"); } catch { return "—"; }
+}
+
+interface PlaidTransaction {
+  transactionId: string;
+  date: string;
+  amount: number;
+  name: string;
+  merchantName?: string;
+}
+
+interface ReconcileMatch {
+  transaction: PlaidTransaction;
+  invoice: InvoiceWithRelations;
+}
+
+function ReconcileDialog({ open, onClose, invoices }: { open: boolean; onClose: () => void; invoices: InvoiceWithRelations[] }) {
+  const { toast } = useToast();
+  const [confirming, setConfirming] = useState<string | null>(null);
+
+  const { data: transactions, isLoading, error, refetch } = useQuery<PlaidTransaction[]>({
+    queryKey: ["/api/plaid/transactions"],
+    enabled: open,
+    queryFn: async () => {
+      const res = await fetch("/api/plaid/transactions", { credentials: "include" });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed to fetch"); }
+      return res.json();
+    },
+  });
+
+  const confirmPaymentMutation = useMutation({
+    mutationFn: async ({ invoiceId, amount, transactionId, date }: { invoiceId: string; amount: number; transactionId: string; date: string }) => {
+      const res = await apiRequest("POST", `/api/invoices/${invoiceId}/mark-paid`, {
+        paymentMethod: "bank_transfer",
+        paymentDate: new Date(date + "T12:00:00").toISOString(),
+        referenceNumber: transactionId,
+      });
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      setConfirming(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      toast({ title: "Payment confirmed", description: "Invoice marked as paid from bank transaction." });
+      refetch();
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to confirm payment", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const openInvoices = invoices.filter(inv => inv.status !== "paid" && inv.status !== "draft");
+
+  // In Plaid, negative amounts = money flowing INTO the account (deposits/incoming payments).
+  // Positive amounts = money flowing OUT (purchases/expenses). We want incoming payments only.
+  const matches: ReconcileMatch[] = [];
+  const usedInvoiceIds = new Set<string>();
+  const usedTxIds = new Set<string>();
+  if (transactions) {
+    for (const tx of transactions) {
+      if (tx.amount >= 0) continue; // Skip outflows — only match incoming deposits
+      const inboundAmount = Math.abs(tx.amount); // The actual deposit amount (positive)
+      for (const inv of openInvoices) {
+        if (usedInvoiceIds.has(inv.id) || usedTxIds.has(tx.transactionId)) continue;
+        const balance = Number(inv.balance);
+        if (Math.abs(inboundAmount - balance) <= 1.0) {
+          matches.push({ transaction: { ...tx, amount: inboundAmount }, invoice: inv });
+          usedInvoiceIds.add(inv.id);
+          usedTxIds.add(tx.transactionId);
+          break; // Each transaction matches at most one invoice
+        }
+      }
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden">
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <Landmark className="h-5 w-5" />
+            Reconcile Payments
+          </DialogTitle>
+          <p className="text-sm text-muted-foreground">Last 30 days of bank transactions matched to open invoices (±$1 tolerance)</p>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {isLoading ? (
+            <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              Fetching transactions…
+            </div>
+          ) : error ? (
+            <div className="flex items-start gap-3 rounded-md border border-dashed p-4 m-4 text-sm">
+              <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">Unable to fetch transactions</p>
+                <p className="text-muted-foreground mt-1">{(error as Error).message}</p>
+                {(error as Error).message.includes("not configured") && (
+                  <p className="text-muted-foreground mt-1">Add your <code className="rounded bg-muted px-1 text-xs font-mono">PLAID_CLIENT_ID</code> and <code className="rounded bg-muted px-1 text-xs font-mono">PLAID_SECRET</code> secrets, then connect a bank account in Settings.</p>
+                )}
+              </div>
+            </div>
+          ) : matches.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground text-sm px-6">
+              <CheckCircle className="h-10 w-10 text-muted-foreground/40" />
+              <p className="font-medium text-foreground">No matches found</p>
+              <p>No bank transactions in the last 30 days matched any open invoice balances within ±$1.</p>
+            </div>
+          ) : (
+            <div className="p-4 space-y-3">
+              {matches.map(({ transaction, invoice }) => (
+                <div
+                  key={transaction.transactionId + invoice.id}
+                  className="rounded-lg border p-4 space-y-3"
+                  data-testid={`reconcile-match-${transaction.transactionId}`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <span className="text-muted-foreground">{format(new Date(transaction.date + "T12:00:00"), "MMM d, yyyy")}</span>
+                        <span>·</span>
+                        <span className="truncate">{transaction.merchantName || transaction.name}</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">{transaction.name}</div>
+                    </div>
+                    <span className="font-mono font-semibold text-green-700 dark:text-green-400 shrink-0">
+                      ${transaction.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2 text-sm">
+                    <span className="text-muted-foreground">Matches invoice</span>
+                    <span className="font-mono font-medium">{invoice.invoiceNumber}</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span>{invoice.client?.name}</span>
+                    <span className="font-mono font-semibold">${Number(invoice.balance).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="w-full bg-green-600 hover:bg-green-700 text-white"
+                    disabled={confirmPaymentMutation.isPending && confirming === transaction.transactionId}
+                    onClick={() => {
+                      setConfirming(transaction.transactionId);
+                      confirmPaymentMutation.mutate({
+                        invoiceId: invoice.id,
+                        amount: transaction.amount,
+                        transactionId: transaction.transactionId,
+                        date: transaction.date,
+                      });
+                    }}
+                    data-testid={`button-confirm-reconcile-${transaction.transactionId}`}
+                  >
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    {confirmPaymentMutation.isPending && confirming === transaction.transactionId
+                      ? "Confirming…"
+                      : "Confirm as payment"}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <DialogFooter className="shrink-0">
+          <Button variant="outline" onClick={onClose} data-testid="button-close-reconcile">Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 type CollectionsEntry = {
@@ -319,6 +487,7 @@ export default function Invoices() {
   const [quickPayMethod, setQuickPayMethod] = useState<string>("cash");
   const [quickPayDate, setQuickPayDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
   const [deleteInvoiceId, setDeleteInvoiceId] = useState<string | null>(null);
+  const [showReconcile, setShowReconcile] = useState(false);
 
   const { data: invoices, isLoading } = useQuery<InvoiceWithRelations[]>({
     queryKey: ["/api/invoices"],
@@ -435,6 +604,9 @@ export default function Invoices() {
 
   return (
     <>
+      {/* ── Reconcile Dialog ── */}
+      <ReconcileDialog open={showReconcile} onClose={() => setShowReconcile(false)} invoices={invoices ?? []} />
+
       {/* ── Quick-Pay Dialog ── */}
       <Dialog open={!!quickPayInvoice} onOpenChange={(open) => !open && setQuickPayInvoice(null)}>
         <DialogContent className="sm:max-w-sm !flex flex-col max-h-[90dvh] overflow-hidden">
@@ -551,6 +723,14 @@ export default function Invoices() {
               >
                 <Download style={{ width: "15px", height: "15px" }} />
                 Export
+              </button>
+              <button
+                onClick={() => setShowReconcile(true)}
+                style={{ display: "flex", alignItems: "center", gap: "7px", background: "var(--panel)", color: "var(--fg)", border: "1px solid var(--panel-bd)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+                data-testid="button-reconcile-payments"
+              >
+                <Landmark style={{ width: "15px", height: "15px" }} />
+                Reconcile
               </button>
               <button
                 onClick={() => setLocation("/invoices/new")}
