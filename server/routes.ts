@@ -1774,10 +1774,16 @@ export async function registerRoutes(
   app.get("/api/payroll-records", async (req, res) => {
     try {
       const records = await storage.getPayrollRecords();
+      const userId = req.session.userId;
       const enriched = await Promise.all(
         records.map(async (r) => {
           const employee = await storage.getEmployee(r.employeeId);
-          return { ...r, employee };
+          let hasDirectDeposit = false;
+          if (userId && r.employeeId) {
+            const bankAccount = await storage.getBankAccountByEntity(userId, "employee", r.employeeId);
+            hasDirectDeposit = !!bankAccount;
+          }
+          return { ...r, employee, hasDirectDeposit };
         })
       );
       res.json(enriched);

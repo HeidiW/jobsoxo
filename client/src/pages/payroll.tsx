@@ -1972,6 +1972,7 @@ export default function Payroll() {
                 <span style={{ width: "86px", flexShrink: 0, textAlign: "right" }}>Deductions</span>
                 <span style={{ width: "96px", flexShrink: 0, textAlign: "right" }}>Net pay</span>
                 <span style={{ width: "88px", flexShrink: 0, textAlign: "center" }}>Status</span>
+                <span style={{ width: "104px", flexShrink: 0, textAlign: "center" }}>Payment</span>
                 <span style={{ width: "28px", flexShrink: 0 }}></span>
               </div>
 
@@ -2033,6 +2034,23 @@ export default function Payroll() {
                     <span style={{ width: "88px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
                       <span style={{ background: r.badge.bg, color: r.badge.fg, fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px", textTransform: "capitalize", whiteSpace: "nowrap" }}>{r.badge.label}</span>
                     </span>
+                    {/* Payment method */}
+                    <span style={{ width: "104px", flexShrink: 0, display: "flex", justifyContent: "center" }} onClick={e => e.stopPropagation()}>
+                      <button
+                        data-testid={`payment-method-${r.id}`}
+                        onClick={() => { setEditingEmployee(r.employee as any); setIsEmployeeDialogOpen(true); }}
+                        title={`Click to edit employee${(r as any).hasDirectDeposit ? " (Direct Deposit)" : " (Check)"}`}
+                        style={{ border: "none", cursor: "pointer", padding: "3px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 600, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "4px", ...(
+                          (r as any).hasDirectDeposit
+                            ? { background: "var(--b-green-bg, #dcfce7)", color: "var(--b-green-fg, #15803d)" }
+                            : { background: "var(--b-gray-bg, #f1f5f9)", color: "var(--b-gray-fg, #475569)" }
+                        ) }}>
+                        {(r as any).hasDirectDeposit
+                          ? <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>Direct Deposit</>
+                          : <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M2 10h20"/><path d="M6 14h4"/></svg>Check</>
+                        }
+                      </button>
+                    </span>
                     {/* Actions */}
                     <span style={{ width: "28px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
                       {r.status !== "paid" && (
@@ -2074,6 +2092,7 @@ export default function Payroll() {
                   <span style={{ width: "86px", flexShrink: 0 }}></span>
                   <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "14px", fontWeight: 800, color: "#15803d" }}>{fmt(netTotal)}</span>
                   <span style={{ width: "88px", flexShrink: 0 }}></span>
+                  <span style={{ width: "104px", flexShrink: 0 }}></span>
                   <span style={{ width: "28px", flexShrink: 0 }}></span>
                 </div>
               )}
