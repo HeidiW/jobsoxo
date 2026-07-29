@@ -132,6 +132,10 @@ export interface PlaidTransaction {
   merchantName?: string;
 }
 
+export type TransactionResult =
+  | { ready: true; transactions: PlaidTransaction[] }
+  | { ready: false; reason: "product_not_ready" | "no_account" };
+
 export async function getTransactions(accessToken: string, days: number = 30): Promise<PlaidTransaction[]> {
   const client = getPlaidClient();
   if (!client) throw new Error("Plaid is not configured.");
@@ -140,17 +144,25 @@ export async function getTransactions(accessToken: string, days: number = 30): P
   const startDate = new Date();
   startDate.setDate(startDate.getDate() - days);
 
-  const response = await client.transactionsGet({
-    access_token: accessToken,
-    start_date: startDate.toISOString().split("T")[0],
-    end_date: endDate.toISOString().split("T")[0],
-  });
+  try {
+    const response = await client.transactionsGet({
+      access_token: accessToken,
+      start_date: startDate.toISOString().split("T")[0],
+      end_date: endDate.toISOString().split("T")[0],
+    });
 
-  return response.data.transactions.map((t) => ({
-    transactionId: t.transaction_id,
-    date: t.date,
-    amount: t.amount,
-    name: t.name,
-    merchantName: t.merchant_name ?? undefined,
-  }));
+    return response.data.transactions.map((t) => ({
+      transactionId: t.transaction_id,
+      date: t.date,
+      amount: t.amount,
+      name: t.name,
+      merchantName: t.merchant_name ?? undefined,
+    }));
+  } catch (error: any) {
+    const code = error?.response?.data?.error_code;
+    if (code === "PRODUCT_NOT_READY" || code === "PRODUCTS_NOT_READY") {
+      throw Object.assign(new Error("Transactions are still being prepared by your bank. Please try again in a moment."), { code: "PRODUCT_NOT_READY" });
+    }
+    throw error;
+  }
 }

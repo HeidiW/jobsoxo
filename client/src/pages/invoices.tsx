@@ -109,19 +109,29 @@ interface ReconcileMatch {
   ambiguous: boolean; // true if the transaction amount fell within ±$1 of more than one open invoice
 }
 
+interface TransactionResponse {
+  connected: boolean;
+  ready: boolean;
+  transactions: PlaidTransaction[];
+  reason?: "no_account" | "not_configured" | "product_not_ready";
+}
+
 function ReconcileDialog({ open, onClose, invoices }: { open: boolean; onClose: () => void; invoices: InvoiceWithRelations[] }) {
   const { toast } = useToast();
   const [confirming, setConfirming] = useState<string | null>(null);
 
-  const { data: transactions, isLoading, error, refetch } = useQuery<PlaidTransaction[]>({
+  const { data: txData, isLoading, error, refetch } = useQuery<TransactionResponse>({
     queryKey: ["/api/plaid/transactions"],
     enabled: open,
+    staleTime: 0,
     queryFn: async () => {
       const res = await fetch("/api/plaid/transactions", { credentials: "include" });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed to fetch"); }
       return res.json();
     },
   });
+
+  const transactions = txData?.transactions;
 
   const confirmPaymentMutation = useMutation({
     mutationFn: async ({ invoiceId, amount, transactionId, date }: { invoiceId: string; amount: number; transactionId: string; date: string }) => {
@@ -217,13 +227,35 @@ function ReconcileDialog({ open, onClose, invoices }: { open: boolean; onClose: 
               <div>
                 <p className="font-medium">Unable to fetch transactions</p>
                 <p className="text-muted-foreground mt-1">{(error as Error).message}</p>
-                {(error as Error).message.includes("not configured") && (
-                  <p className="text-muted-foreground mt-1">Add your <code className="rounded bg-muted px-1 text-xs font-mono">PLAID_CLIENT_ID</code> and <code className="rounded bg-muted px-1 text-xs font-mono">PLAID_SECRET</code> secrets, then connect a bank account in Settings.</p>
-                )}
+              </div>
+            </div>
+          ) : !txData?.connected ? (
+            <div className="flex items-start gap-3 rounded-md border border-dashed p-4 m-4 text-sm" data-testid="reconcile-no-account">
+              <Landmark className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-foreground">No bank account connected</p>
+                <p className="text-muted-foreground mt-1">
+                  <a href="/settings" className="text-primary font-medium hover:underline">Connect a bank account in Settings</a> to enable payment reconciliation.
+                </p>
+              </div>
+            </div>
+          ) : !txData?.ready ? (
+            <div className="flex items-start gap-3 rounded-md border border-dashed p-4 m-4 text-sm" data-testid="reconcile-syncing">
+              <RefreshCw className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium text-foreground">Transactions syncing</p>
+                <p className="text-muted-foreground mt-1">Your bank is still preparing transaction data. This usually takes a moment — close and reopen to retry.</p>
+                <button
+                  className="mt-2 text-xs text-primary font-medium hover:underline"
+                  onClick={() => refetch()}
+                  data-testid="button-retry-transactions"
+                >
+                  Retry now
+                </button>
               </div>
             </div>
           ) : matches.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground text-sm px-6">
+            <div className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground text-sm px-6" data-testid="reconcile-no-matches">
               <CheckCircle className="h-10 w-10 text-muted-foreground/40" />
               <p className="font-medium text-foreground">No matches found</p>
               <p>No bank transactions in the last 30 days matched any open invoice balances within ±$1.</p>

@@ -2693,14 +2693,21 @@ export async function registerRoutes(
   app.get("/api/plaid/transactions", async (req, res) => {
     try {
       if (!isPlaidConfigured()) {
-        return res.status(503).json({ error: "Plaid is not configured." });
+        return res.json({ connected: false, ready: false, transactions: [], reason: "not_configured" });
       }
       const userId = req.session.userId!;
       const account = await storage.getBusinessBankAccount(userId);
-      if (!account) return res.json([]);
+      if (!account) return res.json({ connected: false, ready: false, transactions: [], reason: "no_account" });
 
-      const transactions = await getTransactions(account.plaidAccessToken, 30);
-      res.json(transactions);
+      try {
+        const transactions = await getTransactions(account.plaidAccessToken, 30);
+        res.json({ connected: true, ready: true, transactions });
+      } catch (txError: any) {
+        if (txError?.code === "PRODUCT_NOT_READY") {
+          return res.json({ connected: true, ready: false, transactions: [], reason: "product_not_ready" });
+        }
+        throw txError;
+      }
     } catch (error: any) {
       console.error("Plaid transactions error:", error?.response?.data || error);
       res.status(500).json({ error: "Failed to fetch transactions" });
