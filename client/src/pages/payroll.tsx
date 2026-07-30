@@ -644,7 +644,7 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
 
         {/* Direct Deposit — only shown in edit mode */}
         {isEdit && employee?.id && (
-          <DirectDepositSection employeeId={employee.id} />
+          <DirectDepositSection employeeId={employee.id} employeeEmail={employee.email} employeeName={employee.name} />
         )}
 
         {/* Onboarding — only shown in edit mode */}
@@ -772,9 +772,11 @@ function BalancePreflightBanner({ estimatedPayroll }: { estimatedPayroll: number
 }
 
 // ── Direct Deposit Section ────────────────────────────────────────────────────
-function DirectDepositSection({ employeeId }: { employeeId: string }) {
+function DirectDepositSection({ employeeId, employeeEmail, employeeName }: { employeeId: string; employeeEmail?: string | null; employeeName?: string }) {
   const { toast } = useToast();
   const [localAccount, setLocalAccount] = useState<PlaidAccountMeta | null | undefined>(undefined);
+  const [sendingLink, setSendingLink] = useState(false);
+  const [linkSent, setLinkSent] = useState(false);
 
   const { data: accountData, isLoading } = useQuery<PlaidAccountMeta | null>({
     queryKey: ["/api/plaid/bank-account", "employee", employeeId],
@@ -792,6 +794,7 @@ function DirectDepositSection({ employeeId }: { employeeId: string }) {
     onSuccess: () => {
       setLocalAccount(null);
       queryClient.invalidateQueries({ queryKey: ["/api/plaid/bank-account", "employee", employeeId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/plaid/employee-bank-accounts"] });
       toast({ title: "Direct deposit account removed" });
     },
     onError: (err: Error) => toast({ title: "Failed to disconnect", description: err.message, variant: "destructive" }),
@@ -803,9 +806,25 @@ function DirectDepositSection({ employeeId }: { employeeId: string }) {
     onSuccess: (acct) => {
       setLocalAccount(acct);
       queryClient.invalidateQueries({ queryKey: ["/api/plaid/bank-account", "employee", employeeId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/plaid/employee-bank-accounts"] });
       toast({ title: "Direct deposit set up", description: `${acct.institutionName} ••••${acct.accountMask}` });
     },
   });
+
+  async function sendSetupLink() {
+    setSendingLink(true);
+    try {
+      const res = await apiRequest("POST", `/api/employees/${employeeId}/send-deposit-link`, {});
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to send link");
+      setLinkSent(true);
+      toast({ title: "Setup link sent", description: `Email sent to ${employeeEmail}` });
+    } catch (err: any) {
+      toast({ title: "Failed to send link", description: err.message, variant: "destructive" });
+    } finally {
+      setSendingLink(false);
+    }
+  }
 
   return (
     <div style={{ marginTop: "16px", borderTop: "1px solid var(--panel-bd)", paddingTop: "16px" }}>
@@ -843,16 +862,35 @@ function DirectDepositSection({ employeeId }: { employeeId: string }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           <p style={{ fontSize: "12.5px", color: "var(--muted)", margin: 0 }}>No direct deposit account connected for this employee.</p>
-          <button
-            type="button"
-            onClick={open}
-            disabled={linkLoading}
-            style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "8px 14px", background: "var(--panel)", fontSize: "12.5px", fontWeight: 600, cursor: linkLoading ? "wait" : "pointer", fontFamily: "inherit", color: "var(--fg)", width: "fit-content" }}
-            data-testid={`button-setup-direct-deposit-${employeeId}`}
-          >
-            <Landmark style={{ width: "13px", height: "13px" }} />
-            {linkLoading ? "Opening…" : "Set up direct deposit"}
-          </button>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={open}
+              disabled={linkLoading}
+              style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "8px 14px", background: "var(--panel)", fontSize: "12.5px", fontWeight: 600, cursor: linkLoading ? "wait" : "pointer", fontFamily: "inherit", color: "var(--fg)" }}
+              data-testid={`button-setup-direct-deposit-${employeeId}`}
+            >
+              <Landmark style={{ width: "13px", height: "13px" }} />
+              {linkLoading ? "Opening…" : "Connect bank"}
+            </button>
+            {employeeEmail && (
+              <button
+                type="button"
+                onClick={sendSetupLink}
+                disabled={sendingLink || linkSent}
+                style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid #bfdbfe", borderRadius: "8px", padding: "8px 14px", background: linkSent ? "#eff6ff" : "var(--panel)", fontSize: "12.5px", fontWeight: 600, cursor: (sendingLink || linkSent) ? "default" : "pointer", fontFamily: "inherit", color: linkSent ? "#2563eb" : "#2563eb", opacity: (sendingLink || linkSent) ? 0.75 : 1 }}
+                data-testid={`button-send-deposit-link-${employeeId}`}
+              >
+                {linkSent ? <CheckCircle style={{ width: "13px", height: "13px" }} /> : <MessageSquare style={{ width: "13px", height: "13px" }} />}
+                {sendingLink ? "Sending…" : linkSent ? "Link sent" : "Send setup link"}
+              </button>
+            )}
+          </div>
+          {!employeeEmail && (
+            <p style={{ fontSize: "11.5px", color: "var(--muted)", margin: 0 }}>
+              Add an email address to send the employee a self-service setup link.
+            </p>
+          )}
         </div>
       )}
     </div>
@@ -865,6 +903,7 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
   const { data: employees } = useQuery<EmployeeWithStats[]>({ queryKey: ["/api/employees"] });
   const { data: payrollRecords } = useQuery<PayrollRecordWithEmployee[]>({ queryKey: ["/api/payroll-records"] });
   const { data: payrollSettings } = useQuery<PayrollSettings>({ queryKey: ["/api/payroll-settings"] });
+  const { data: empBankAccounts } = useQuery<{ entityId: string }[]>({ queryKey: ["/api/plaid/employee-bank-accounts"] });
   const activeCount = employees?.filter(e => e.status === "active").length ?? 0;
   const w2Count = employees?.filter(e => e.status === "active" && (e as any).employmentType !== "1099").length ?? 0;
   const presets = periodPresets();
@@ -993,6 +1032,26 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
             <div>{watchStart} → {watchEnd}</div>
             <div>{activeCount} active employee{activeCount !== 1 ? "s" : ""} will get pay records.</div>
             {w2Count > 0 && <div>{w2Count} W-2 employees will have federal + state tax withheld automatically.</div>}
+            {empBankAccounts !== undefined && activeCount > 0 && (() => {
+              const connectedIds = new Set((empBankAccounts ?? []).map(a => a.entityId));
+              const connectedCount = (employees?.filter(e => e.status === "active" && connectedIds.has(e.id)) ?? []).length;
+              const missingCount = activeCount - connectedCount;
+              return (
+                <div style={{ marginTop: "6px", display: "flex", alignItems: "center", gap: "6px", fontSize: "12.5px" }}>
+                  <Landmark style={{ width: "12px", height: "12px", flexShrink: 0 }} />
+                  {connectedCount === activeCount
+                    ? <span style={{ color: "#16a34a", fontWeight: 600 }}>All {activeCount} employees have direct deposit connected.</span>
+                    : <span>
+                        <span style={{ color: "#16a34a", fontWeight: 600 }}>{connectedCount}</span>
+                        {" of "}
+                        <span style={{ fontWeight: 600, color: "var(--fg)" }}>{activeCount}</span>
+                        {" employees have direct deposit connected"}
+                        {missingCount > 0 && <span style={{ color: "#b45309" }}> — {missingCount} not set up</span>}
+                      </span>
+                  }
+                </div>
+              );
+            })()}
             <div style={{ marginTop: "4px", fontSize: "12px", color: "#64748b" }}>OT calculated per work week (Mon–Sun). Recurring deductions applied per employee.</div>
           </div>
         )}

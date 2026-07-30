@@ -319,6 +319,10 @@ export const employees = pgTable("employees", {
   stateCode: text("state_code").default("CA"),
   taxpayerIdNumber: text("taxpayer_id_number"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  // Direct deposit self-service token
+  directDepositToken: text("direct_deposit_token"),
+  directDepositTokenExpiry: timestamp("direct_deposit_token_expiry"),
+  directDepositLinkUserId: varchar("direct_deposit_link_user_id"),
 });
 
 export const employeesRelations = relations(employees, ({ many }) => ({

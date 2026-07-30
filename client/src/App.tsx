@@ -30,6 +30,7 @@ import ResetPassword from "@/pages/reset-password";
 import Privacy from "@/pages/privacy";
 import Terms from "@/pages/terms";
 import InvoicePay from "@/pages/invoice-pay";
+import EmployeeBankSetup from "@/pages/employee-bank-setup";
 
 function Router() {
   return (
@@ -131,6 +132,9 @@ function AppContent() {
   }
   if (window.location.pathname.startsWith("/pay/")) {
     return <InvoicePay />;
+  }
+  if (window.location.pathname === "/employee-bank-setup") {
+    return <EmployeeBankSetup />;
   }
 
   if (isLoading) {

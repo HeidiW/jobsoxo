@@ -23,7 +23,7 @@ import {
 } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { sendInvoiceEmail, processOverdueReminders, sendPasswordResetEmail } from "./email";
+import { sendInvoiceEmail, processOverdueReminders, sendPasswordResetEmail, sendDirectDepositEmail } from "./email";
 import bcrypt from "bcryptjs";
 import { passport, setupOAuthStrategies, getEnabledProviders, callbackUrl } from "./oauth";
 import {
@@ -520,6 +520,101 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Stripe checkout error:", error);
       res.status(500).json({ error: "Failed to create checkout session" });
+    }
+  });
+
+  // ── Public employee bank-setup routes (token-authenticated, no session) ──────
+
+  // Validate a direct deposit setup token and return employee info
+  app.get("/api/employee-bank-setup/:token", async (req, res) => {
+    try {
+      const employee = await storage.getEmployeeByDirectDepositToken(req.params.token);
+      if (!employee) return res.status(404).json({ error: "Setup link not found or already used" });
+      const tokenExpiry = (employee as any).directDepositTokenExpiry;
+      if (tokenExpiry && new Date() > new Date(tokenExpiry)) {
+        return res.status(410).json({ error: "This setup link has expired. Ask your manager to send a new one." });
+      }
+      res.json({ employeeId: employee.id, employeeName: employee.name });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to validate setup link" });
+    }
+  });
+
+  // Create a Plaid link token for the employee self-service flow
+  app.post("/api/employee-bank-setup/:token/link-token", async (req, res) => {
+    try {
+      if (!isPlaidConfigured()) {
+        return res.status(503).json({ error: "Plaid is not configured." });
+      }
+      const employee = await storage.getEmployeeByDirectDepositToken(req.params.token);
+      if (!employee) return res.status(404).json({ error: "Setup link not found" });
+      const tokenExpiry = (employee as any).directDepositTokenExpiry;
+      if (tokenExpiry && new Date() > new Date(tokenExpiry)) {
+        return res.status(410).json({ error: "Setup link has expired" });
+      }
+      const linkUserId = (employee as any).directDepositLinkUserId ?? "employee";
+      const linkToken = await createLinkToken(linkUserId);
+      res.json({ link_token: linkToken });
+    } catch (error: any) {
+      console.error("Employee link-token error:", error?.response?.data || error);
+      res.status(500).json({ error: "Failed to create link token" });
+    }
+  });
+
+  // Exchange Plaid public token for the employee (no session required)
+  app.post("/api/employee-bank-setup/:token/exchange", async (req, res) => {
+    try {
+      if (!isPlaidConfigured()) {
+        return res.status(503).json({ error: "Plaid is not configured." });
+      }
+      const employee = await storage.getEmployeeByDirectDepositToken(req.params.token);
+      if (!employee) return res.status(404).json({ error: "Setup link not found" });
+      const tokenExpiry = (employee as any).directDepositTokenExpiry;
+      if (tokenExpiry && new Date() > new Date(tokenExpiry)) {
+        return res.status(410).json({ error: "Setup link has expired" });
+      }
+
+      const { publicToken } = req.body;
+      if (!publicToken) return res.status(400).json({ error: "publicToken is required" });
+
+      const linkUserId = (employee as any).directDepositLinkUserId;
+      if (!linkUserId) return res.status(400).json({ error: "Setup link is missing user context" });
+
+      const { accessToken, itemId } = await exchangePublicToken(publicToken);
+      const accountInfo = await getAccountInfo(accessToken);
+
+      // Replace any existing employee account
+      const existing = await storage.getBankAccountByEntity(linkUserId, "employee", employee.id);
+      if (existing) await storage.deleteBankAccount(existing.id);
+
+      const bankAccount = await storage.createBankAccount({
+        userId: linkUserId,
+        entityType: "employee",
+        entityId: employee.id,
+        plaidItemId: itemId,
+        plaidAccessToken: accessToken,
+        plaidAccountId: accountInfo.accountId,
+        institutionName: accountInfo.institutionName,
+        accountName: accountInfo.accountName,
+        accountMask: accountInfo.accountMask,
+        accountType: accountInfo.accountType,
+        routingNumber: accountInfo.routingNumber,
+      });
+
+      // Clear the token so it can't be reused
+      await storage.clearEmployeeDirectDepositToken(employee.id);
+
+      res.json({
+        id: bankAccount.id,
+        institutionName: bankAccount.institutionName,
+        accountName: bankAccount.accountName,
+        accountMask: bankAccount.accountMask,
+        accountType: bankAccount.accountType,
+        routingNumberMask: bankAccount.routingNumber ? `••••${bankAccount.routingNumber.slice(-4)}` : null,
+      });
+    } catch (error: any) {
+      console.error("Employee exchange-token error:", error?.response?.data || error);
+      res.status(500).json({ error: "Failed to connect bank account" });
     }
   });
 
@@ -2668,6 +2763,57 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to disconnect bank account" });
+    }
+  });
+
+  // Send a direct deposit setup link to an employee via email
+  app.post("/api/employees/:id/send-deposit-link", async (req, res) => {
+    try {
+      const employee = await storage.getEmployee(req.params.id);
+      if (!employee) return res.status(404).json({ error: "Employee not found" });
+      if (!employee.email) return res.status(400).json({ error: "Employee has no email address on file" });
+
+      const token = crypto.randomUUID();
+      const expiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+      const userId = req.session.userId!;
+      await storage.setEmployeeDirectDepositToken(employee.id, token, expiry, userId);
+
+      const proto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0].trim() ?? req.protocol;
+      const host = (req.headers["x-forwarded-host"] as string | undefined)?.split(",")[0].trim() ?? req.headers.host ?? "localhost:5000";
+      const appBase = process.env.APP_URL?.replace(/\/$/, "") ?? `${proto}://${host}`;
+      const setupLink = `${appBase}/employee-bank-setup?token=${token}`;
+
+      const settingsResult = await db.execute(sql`SELECT company_name FROM settings LIMIT 1`);
+      const settingsRow = (settingsResult as any).rows?.[0] ?? settingsResult[0] ?? null;
+      const companyName: string = settingsRow?.company_name ?? "Your Company";
+
+      await sendDirectDepositEmail(employee.email, employee.name, setupLink, companyName, {
+        apiKey: process.env.RESEND_API_KEY,
+        provider: "resend",
+      });
+
+      res.json({ success: true, message: `Setup link sent to ${employee.email}` });
+    } catch (error: any) {
+      console.error("Send deposit link error:", error);
+      res.status(500).json({ error: "Failed to send setup link" });
+    }
+  });
+
+  // Get all employee bank accounts (for manager payroll view)
+  app.get("/api/plaid/employee-bank-accounts", async (req, res) => {
+    try {
+      const userId = req.session.userId!;
+      const accounts = await storage.getEmployeeBankAccounts(userId);
+      res.json(accounts.map(a => ({
+        id: a.id,
+        entityId: a.entityId,
+        institutionName: a.institutionName,
+        accountName: a.accountName,
+        accountMask: a.accountMask,
+        accountType: a.accountType,
+      })));
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get employee bank accounts" });
     }
   });
 

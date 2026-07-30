@@ -121,6 +121,9 @@ export interface IStorage {
   createEmployee(employee: InsertEmployee): Promise<Employee>;
   updateEmployee(id: string, employee: Partial<InsertEmployee>): Promise<Employee | undefined>;
   deleteEmployee(id: string): Promise<void>;
+  setEmployeeDirectDepositToken(employeeId: string, token: string, expiry: Date, linkUserId: string): Promise<void>;
+  getEmployeeByDirectDepositToken(token: string): Promise<Employee | undefined>;
+  clearEmployeeDirectDepositToken(employeeId: string): Promise<void>;
 
   // Employee Assignments
   getAssignmentsByJob(jobId: string): Promise<EmployeeAssignment[]>;
@@ -450,6 +453,26 @@ export class DatabaseStorage implements IStorage {
 
   async deleteEmployee(id: string): Promise<void> {
     await db.delete(employees).where(eq(employees.id, id));
+  }
+
+  async setEmployeeDirectDepositToken(employeeId: string, token: string, expiry: Date, linkUserId: string): Promise<void> {
+    await db.update(employees).set({
+      directDepositToken: token,
+      directDepositTokenExpiry: expiry,
+      directDepositLinkUserId: linkUserId,
+    } as any).where(eq(employees.id, employeeId));
+  }
+
+  async getEmployeeByDirectDepositToken(token: string): Promise<Employee | undefined> {
+    const [row] = await db.select().from(employees).where(eq((employees as any).directDepositToken, token));
+    return row ?? undefined;
+  }
+
+  async clearEmployeeDirectDepositToken(employeeId: string): Promise<void> {
+    await db.update(employees).set({
+      directDepositToken: null,
+      directDepositTokenExpiry: null,
+    } as any).where(eq(employees.id, employeeId));
   }
 
   // Time Entries
@@ -988,6 +1011,18 @@ export class DatabaseStorage implements IStorage {
 
   async getBusinessBankAccount(userId: string): Promise<BankAccount | undefined> {
     return this.getBankAccountByEntity(userId, "business");
+  }
+
+  async getEmployeeBankAccounts(userId: string): Promise<BankAccount[]> {
+    return db.select().from(bankAccounts)
+      .where(and(eq(bankAccounts.userId, userId), eq(bankAccounts.entityType, "employee")));
+  }
+
+  async getBankAccountByEntityPublic(entityType: string, entityId: string): Promise<BankAccount | undefined> {
+    const [row] = await db.select().from(bankAccounts)
+      .where(and(eq(bankAccounts.entityType, entityType), eq(bankAccounts.entityId, entityId)))
+      .limit(1);
+    return row ?? undefined;
   }
 }
 

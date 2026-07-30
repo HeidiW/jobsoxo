@@ -534,6 +534,64 @@ export async function sendPasswordResetEmail(
   }
 }
 
+export async function sendDirectDepositEmail(
+  toEmail: string,
+  employeeName: string,
+  setupLink: string,
+  companyName: string,
+  config: EmailConfig
+): Promise<{ success: boolean; error?: string }> {
+  const subject = `Set up your direct deposit — ${companyName}`;
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:480px;margin:40px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+    <div style="background:#2563eb;padding:28px 32px;">
+      <h1 style="margin:0;color:#fff;font-size:20px;font-weight:600;">${companyName}</h1>
+      <p style="margin:6px 0 0;color:#bfdbfe;font-size:13px;">Direct Deposit Setup</p>
+    </div>
+    <div style="padding:32px;">
+      <p style="margin:0 0 16px;color:#374151;font-size:15px;">Hi <strong>${employeeName}</strong>,</p>
+      <p style="margin:0 0 24px;color:#374151;font-size:15px;">${companyName} uses direct deposit for payroll. Click the button below to securely connect your bank account.</p>
+      <p style="margin:0 0 24px;color:#374151;font-size:15px;">This link expires in <strong>7 days</strong>. Your banking credentials are handled securely by Plaid and are never shared with ${companyName}.</p>
+      <a href="${setupLink}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:13px 28px;border-radius:8px;font-size:15px;font-weight:600;">Connect my bank account</a>
+      <p style="margin:24px 0 0;color:#6b7280;font-size:13px;">If you weren't expecting this email, you can safely ignore it.</p>
+      <p style="margin:12px 0 0;color:#9ca3af;font-size:12px;word-break:break-all;">Or copy this link: ${setupLink}</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  if (!config.apiKey) {
+    console.log(`[Email] Direct deposit setup link for ${toEmail}: ${setupLink}`);
+    return { success: true };
+  }
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: config.fromEmail || `${companyName} <noreply@resend.dev>`,
+        to: [toEmail],
+        subject,
+        html,
+      }),
+    });
+    if (!response.ok) {
+      const err = await response.text();
+      return { success: false, error: `Email failed: ${response.status} ${err}` };
+    }
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
 export async function sendChangeOrderEmail(
   invoiceId: string,
   toEmail: string,
