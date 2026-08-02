@@ -1,3 +1,4 @@
+import { encrypt, decrypt } from "./encryption";
 import {
   type User,
   type InsertUser,
@@ -984,6 +985,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Bank Accounts (Plaid)
+
+  /** Encrypt the three sensitive fields before persisting. */
+  private encryptBankAccount(account: InsertBankAccount): InsertBankAccount {
+    return {
+      ...account,
+      plaidAccessToken: encrypt(account.plaidAccessToken),
+      plaidItemId: encrypt(account.plaidItemId),
+      routingNumber: account.routingNumber != null ? encrypt(account.routingNumber) : account.routingNumber,
+    };
+  }
+
+  /** Decrypt the three sensitive fields after reading from the database. */
+  private decryptBankAccount(row: BankAccount): BankAccount {
+    return {
+      ...row,
+      plaidAccessToken: decrypt(row.plaidAccessToken),
+      plaidItemId: decrypt(row.plaidItemId),
+      routingNumber: row.routingNumber != null ? decrypt(row.routingNumber) : row.routingNumber,
+    };
+  }
+
   async getBankAccountByEntity(userId: string, entityType: string, entityId?: string): Promise<BankAccount | undefined> {
     const conditions = [eq(bankAccounts.userId, userId), eq(bankAccounts.entityType, entityType)];
     if (entityId) {
@@ -992,17 +1014,17 @@ export class DatabaseStorage implements IStorage {
       conditions.push(sql`${bankAccounts.entityId} IS NULL`);
     }
     const [row] = await db.select().from(bankAccounts).where(and(...conditions)).limit(1);
-    return row ?? undefined;
+    return row ? this.decryptBankAccount(row) : undefined;
   }
 
   async getBankAccountById(id: string): Promise<BankAccount | undefined> {
     const [row] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, id));
-    return row ?? undefined;
+    return row ? this.decryptBankAccount(row) : undefined;
   }
 
   async createBankAccount(account: InsertBankAccount): Promise<BankAccount> {
-    const [row] = await db.insert(bankAccounts).values(account).returning();
-    return row;
+    const [row] = await db.insert(bankAccounts).values(this.encryptBankAccount(account)).returning();
+    return this.decryptBankAccount(row);
   }
 
   async deleteBankAccount(id: string): Promise<void> {
@@ -1014,15 +1036,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getEmployeeBankAccounts(userId: string): Promise<BankAccount[]> {
-    return db.select().from(bankAccounts)
+    const rows = await db.select().from(bankAccounts)
       .where(and(eq(bankAccounts.userId, userId), eq(bankAccounts.entityType, "employee")));
+    return rows.map((r) => this.decryptBankAccount(r));
   }
 
   async getBankAccountByEntityPublic(entityType: string, entityId: string): Promise<BankAccount | undefined> {
     const [row] = await db.select().from(bankAccounts)
       .where(and(eq(bankAccounts.entityType, entityType), eq(bankAccounts.entityId, entityId)))
       .limit(1);
-    return row ?? undefined;
+    return row ? this.decryptBankAccount(row) : undefined;
   }
 }
 

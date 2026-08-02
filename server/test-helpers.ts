@@ -1,3 +1,9 @@
+// Provide a deterministic dummy key so the encryption module works in tests
+// without needing a real ENCRYPTION_KEY secret.
+if (!process.env.ENCRYPTION_KEY) {
+  process.env.ENCRYPTION_KEY = "0".repeat(64);
+}
+
 import express from "express";
 import session from "express-session";
 import { createServer } from "http";

@@ -11,7 +11,7 @@
 
 import { storage } from "./storage";
 import { fetchUserGmailInbox } from "./gmail";
-import { log } from "./index";
+import { log } from "./logger";
 
 let schedulerTimer: ReturnType<typeof setTimeout> | null = null;
 

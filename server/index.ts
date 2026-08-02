@@ -6,6 +6,10 @@ import { createServer } from "http";
 import { processOverdueReminders } from "./email";
 import { startInboxScheduler } from "./scheduler";
 import { seedDemoData } from "./seed";
+import { validateEncryptionKey } from "./encryption";
+import { migrateEncryptBankAccounts } from "./migrate-encrypt-bank-accounts";
+export { log } from "./logger";
+import { log } from "./logger";
 
 declare module "express-session" {
   interface SessionData {
@@ -47,17 +51,6 @@ app.use(
   }),
 );
 
-export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-
-  console.log(`${formattedTime} [${source}] ${message}`);
-}
-
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -85,6 +78,22 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Validate required secrets before touching the database.
+  try {
+    validateEncryptionKey();
+  } catch (err: any) {
+    console.error(`[startup] ${err.message}`);
+    process.exit(1);
+  }
+
+  // Encrypt any bank_accounts rows that were written before encryption was added.
+  try {
+    await migrateEncryptBankAccounts();
+  } catch (err) {
+    console.error("[startup] Bank account encryption migration failed:", err);
+    process.exit(1);
+  }
+
   await registerRoutes(httpServer, app);
   await seedDemoData();
 
