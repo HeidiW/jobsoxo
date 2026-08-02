@@ -29,7 +29,7 @@ import {
 import {
   ArrowLeft, Mail, Download, DollarSign, CheckCircle, FileText, Printer,
   Plus, X, Trash2, Pencil, Check, Ban, AlertTriangle, Save,
-  Bell, BellOff, PauseCircle, PlayCircle,
+  Bell, BellOff, PauseCircle, PlayCircle, Copy,
 } from "lucide-react";
 import { format } from "date-fns";
 import type {
@@ -120,6 +120,9 @@ function InvoiceDocument({
   settings: Settings | undefined;
   coApprovedTotal?: number;
 }) {
+  const { toast } = useToast();
+  const [copiedRefCodeIndex, setCopiedRefCodeIndex] = useState<number | null>(null);
+
   const baseItems = invoice.lineItems?.filter((i) => !i.isChangeOrder) ?? [];
   const legacyCOs = invoice.lineItems?.filter((i) => i.isChangeOrder) ?? [];
 
@@ -215,9 +218,44 @@ function InvoiceDocument({
               return nonEmpty.length > 0 ? (
                 <div style={{ marginTop: "6px" }}>
                   {nonEmpty.map((c, i) => (
-                    <div key={i} style={{ fontSize: "11.5px", color: "#64748b", lineHeight: 1.6 }}>
+                    <div key={i} style={{ fontSize: "11.5px", color: "#64748b", lineHeight: 1.6, display: "flex", alignItems: "center", gap: "6px" }}
+                      data-testid={`ref-code-pdf-${i}`}
+                    >
                       <span style={{ fontWeight: 600, color: "#475569" }}>{c.label}:</span>{" "}
-                      <span style={{ fontFamily: "ui-monospace,Menlo,monospace" }}>{c.code}</span>
+                      <span style={{ fontFamily: "ui-monospace,Menlo,monospace" }} data-testid={`ref-code-pdf-value-${i}`}>{c.code}</span>
+                      <button
+                        className="no-print"
+                        data-testid={`button-copy-ref-code-pdf-${i}`}
+                        onClick={() => {
+                          navigator.clipboard.writeText(c.code).then(() => {
+                            setCopiedRefCodeIndex(i);
+                            setTimeout(() => setCopiedRefCodeIndex(null), 2000);
+                          }).catch(() => {
+                            toast({ title: "Copy failed", description: "Could not access clipboard. Please copy manually.", variant: "destructive" });
+                          });
+                        }}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "3px",
+                          padding: "1px 6px",
+                          fontSize: "10.5px",
+                          fontFamily: "inherit",
+                          color: copiedRefCodeIndex === i ? "#16a34a" : "#475569",
+                          background: copiedRefCodeIndex === i ? "#dcfce7" : "#f1f5f9",
+                          border: `1px solid ${copiedRefCodeIndex === i ? "#86efac" : "#cbd5e1"}`,
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {copiedRefCodeIndex === i ? (
+                          <Check style={{ width: "10px", height: "10px" }} />
+                        ) : (
+                          <Copy style={{ width: "10px", height: "10px" }} />
+                        )}
+                        {copiedRefCodeIndex === i ? "Copied!" : "Copy"}
+                      </button>
                     </div>
                   ))}
                 </div>

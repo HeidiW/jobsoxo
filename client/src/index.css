@@ -411,3 +411,9 @@
     inset: -1px;
   }
 }
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
