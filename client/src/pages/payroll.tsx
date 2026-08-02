@@ -1571,6 +1571,15 @@ export default function Payroll() {
   const { data: timeEntries, isLoading: timeLoading } = useQuery<TimeEntryWithRelations[]>({ queryKey: ["/api/time-entries"] });
   const { data: payrollRecords, isLoading: payrollLoading } = useQuery<PayrollRecordWithEmployee[]>({ queryKey: ["/api/payroll-records"] });
   const { data: appSettings } = useQuery<{ companyName?: string }>({ queryKey: ["/api/settings"] });
+  const { data: empBankAccountsList } = useQuery<{ entityId: string }[]>({
+    queryKey: ["/api/plaid/employee-bank-accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/plaid/employee-bank-accounts", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+  const connectedBankIds = useMemo(() => new Set((empBankAccountsList ?? []).map((a: { entityId: string }) => a.entityId)), [empBankAccountsList]);
   const companyName = appSettings?.companyName || "JobsOxo";
   const { data: smsAttempts = [], isLoading: smsLoading } = useQuery<SmsAttempt[]>({ queryKey: ["/api/sms/attempts"] });
 
@@ -2180,6 +2189,7 @@ export default function Payroll() {
                 <span style={{ width: "88px", flexShrink: 0, textAlign: "right" }}>Hrs (month)</span>
                 <span style={{ width: "100px", flexShrink: 0, textAlign: "right" }}>Month pay</span>
                 <span style={{ width: "80px", flexShrink: 0, textAlign: "center" }}>Deductions</span>
+                <span style={{ width: "92px", flexShrink: 0, textAlign: "center" }}>Bank</span>
                 <span style={{ width: "88px", flexShrink: 0, textAlign: "center" }}>Status</span>
                 <span style={{ width: "28px", flexShrink: 0 }}></span>
               </div>
@@ -2239,6 +2249,44 @@ export default function Payroll() {
                           data-testid={`badge-deductions-${emp.id}`}>
                           {(emp as EmployeeWithStats).deductionsCount} deduction{((emp as EmployeeWithStats).deductionsCount ?? 0) !== 1 ? "s" : ""}
                         </span>
+                      ) : (
+                        <span style={{ fontSize: "11px", color: "var(--faint)" }}>—</span>
+                      )}
+                    </span>
+                    {/* Bank status */}
+                    <span style={{ width: "92px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
+                      {empBankAccountsList !== undefined ? (
+                        connectedBankIds.has(emp.id) ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => { setEditingEmployee(emp); setIsEmployeeDialogOpen(true); }}
+                                style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "5px", background: "#f0fdf4", color: "#16a34a", border: "none", cursor: "pointer", whiteSpace: "nowrap" }}
+                                data-testid={`badge-bank-connected-${emp.id}`}
+                              >
+                                <Landmark style={{ width: "10px", height: "10px" }} />
+                                Connected
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>Direct deposit connected — click to view</TooltipContent>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={() => { setEditingEmployee(emp); setIsEmployeeDialogOpen(true); }}
+                                style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "5px", background: "#fff7ed", color: "#c2410c", border: "none", cursor: "pointer", whiteSpace: "nowrap" }}
+                                data-testid={`badge-bank-missing-${emp.id}`}
+                              >
+                                <Landmark style={{ width: "10px", height: "10px" }} />
+                                Not set up
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent>No direct deposit — click to set up</TooltipContent>
+                          </Tooltip>
+                        )
                       ) : (
                         <span style={{ fontSize: "11px", color: "var(--faint)" }}>—</span>
                       )}
