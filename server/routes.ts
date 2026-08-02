@@ -2773,6 +2773,24 @@ export async function registerRoutes(
       if (!employee) return res.status(404).json({ error: "Employee not found" });
       if (!employee.email) return res.status(400).json({ error: "Employee has no email address on file" });
 
+      // If there is already a pending (non-expired) token and the caller has not
+      // explicitly acknowledged that it will be invalidated, return a warning so
+      // the UI can show a confirmation dialog before proceeding.
+      const existingToken = (employee as any).directDepositToken;
+      const existingExpiry = (employee as any).directDepositTokenExpiry;
+      const hasPendingToken =
+        existingToken &&
+        existingExpiry &&
+        new Date(existingExpiry) > new Date();
+
+      if (hasPendingToken && !req.body?.force) {
+        return res.status(409).json({
+          hasPendingToken: true,
+          email: employee.email,
+          error: "A setup link has already been sent to this employee.",
+        });
+      }
+
       const token = crypto.randomUUID();
       const expiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
       const userId = req.session.userId!;

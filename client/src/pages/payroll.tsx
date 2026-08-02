@@ -777,6 +777,7 @@ function DirectDepositSection({ employeeId, employeeEmail, employeeName }: { emp
   const [localAccount, setLocalAccount] = useState<PlaidAccountMeta | null | undefined>(undefined);
   const [sendingLink, setSendingLink] = useState(false);
   const [linkSent, setLinkSent] = useState(false);
+  const [confirmOverwrite, setConfirmOverwrite] = useState(false);
 
   const { data: accountData, isLoading } = useQuery<PlaidAccountMeta | null>({
     queryKey: ["/api/plaid/bank-account", "employee", employeeId],
@@ -811,11 +812,22 @@ function DirectDepositSection({ employeeId, employeeEmail, employeeName }: { emp
     },
   });
 
-  async function sendSetupLink() {
+  async function sendSetupLink(force = false) {
     setSendingLink(true);
     try {
-      const res = await apiRequest("POST", `/api/employees/${employeeId}/send-deposit-link`, {});
+      // Use raw fetch so we can inspect a 409 response before deciding to throw
+      const res = await fetch(`/api/employees/${employeeId}/send-deposit-link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ force }),
+      });
       const body = await res.json();
+      if (res.status === 409 && body.hasPendingToken) {
+        // Existing pending token — ask manager to confirm before overwriting
+        setConfirmOverwrite(true);
+        return;
+      }
       if (!res.ok) throw new Error(body.error || "Failed to send link");
       setLinkSent(true);
       toast({ title: "Setup link sent", description: `Email sent to ${employeeEmail}` });
@@ -827,6 +839,26 @@ function DirectDepositSection({ employeeId, employeeEmail, employeeName }: { emp
   }
 
   return (
+    <>
+    <AlertDialog open={confirmOverwrite} onOpenChange={setConfirmOverwrite}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Replace existing setup link?</AlertDialogTitle>
+          <AlertDialogDescription>
+            A setup link has already been sent to <strong>{employeeEmail}</strong>. Sending a new one will invalidate the old link — the employee won't be able to use it anymore. Continue?
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => { setConfirmOverwrite(false); sendSetupLink(true); }}
+            data-testid={`button-confirm-resend-deposit-link-${employeeId}`}
+          >
+            Send new link
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <div style={{ marginTop: "16px", borderTop: "1px solid var(--panel-bd)", paddingTop: "16px" }}>
       <div style={{ fontSize: "11.5px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "10px" }}>Direct Deposit</div>
       {isLoading ? (
@@ -876,7 +908,7 @@ function DirectDepositSection({ employeeId, employeeEmail, employeeName }: { emp
             {employeeEmail && (
               <button
                 type="button"
-                onClick={sendSetupLink}
+                onClick={() => sendSetupLink()}
                 disabled={sendingLink || linkSent}
                 style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid #bfdbfe", borderRadius: "8px", padding: "8px 14px", background: linkSent ? "#eff6ff" : "var(--panel)", fontSize: "12.5px", fontWeight: 600, cursor: (sendingLink || linkSent) ? "default" : "pointer", fontFamily: "inherit", color: linkSent ? "#2563eb" : "#2563eb", opacity: (sendingLink || linkSent) ? 0.75 : 1 }}
                 data-testid={`button-send-deposit-link-${employeeId}`}
@@ -894,6 +926,7 @@ function DirectDepositSection({ employeeId, employeeEmail, employeeName }: { emp
         </div>
       )}
     </div>
+    </>
   );
 }
 

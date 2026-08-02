@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { clients, jobs, invoices, lineItems, payments, employees } from "@shared/schema";
 import { sql } from "drizzle-orm";
-import { log } from "./index";
+import { log } from "./logger";
 
 export async function seedDemoData() {
   const existing = await db.select({ id: clients.id }).from(clients).limit(1);

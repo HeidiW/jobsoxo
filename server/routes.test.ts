@@ -818,3 +818,51 @@ describe("PATCH /api/settings — inboxSyncHour validation", () => {
     expect(res.body.inboxSyncHour).toBe(9);
   });
 });
+
+describe("POST /api/employees/:id/send-deposit-link — pending token guard", () => {
+  it("returns 409 with hasPendingToken when a valid token already exists", async () => {
+    // Create an employee with an email address
+    const empRes = await request(app)
+      .post("/api/employees")
+      .send({ name: "Token Guard Test", dayRate: "200", status: "active", email: "tokentest@example.com" })
+      .expect(201);
+    const employeeId = empRes.body.id;
+
+    // Seed a non-expired token directly via storage
+    const expiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await storage.setEmployeeDirectDepositToken(employeeId, "existing-token-abc", expiry, "test-user");
+
+    // First send (no force) should return 409
+    const res = await request(app)
+      .post(`/api/employees/${employeeId}/send-deposit-link`)
+      .send({})
+      .expect(409);
+
+    expect(res.body.hasPendingToken).toBe(true);
+    expect(res.body.email).toBe("tokentest@example.com");
+  });
+
+  it("overwrites the old token and does not return 409 when force=true", async () => {
+    const empRes = await request(app)
+      .post("/api/employees")
+      .send({ name: "Force Send Test", dayRate: "200", status: "active", email: "forcesend@example.com" })
+      .expect(201);
+    const employeeId = empRes.body.id;
+
+    // Seed a non-expired token
+    const expiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await storage.setEmployeeDirectDepositToken(employeeId, "old-token-xyz", expiry, "test-user");
+
+    // force=true must not return 409; the server replaces the token before attempting email
+    const res = await request(app)
+      .post(`/api/employees/${employeeId}/send-deposit-link`)
+      .send({ force: true });
+
+    expect(res.status).not.toBe(409);
+
+    // Verify the token in the DB was actually replaced (not the old value)
+    const updated = await storage.getEmployee(employeeId);
+    expect((updated as any).directDepositToken).not.toBe("old-token-xyz");
+    expect((updated as any).directDepositToken).toBeTruthy();
+  });
+});
