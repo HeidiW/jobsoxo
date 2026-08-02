@@ -842,6 +842,19 @@ export default function SettingsPage() {
                           step={1}
                           placeholder="8"
                           {...field}
+                          onChange={(e) => {
+                            field.onChange(e);
+                            form.trigger("inboxSyncHour");
+                          }}
+                          onBlur={(e) => {
+                            const raw = Number(e.target.value);
+                            if (!Number.isNaN(raw) && e.target.value !== "") {
+                              const clamped = Math.min(23, Math.max(0, Math.round(raw)));
+                              field.onChange(clamped);
+                            }
+                            field.onBlur();
+                            form.trigger("inboxSyncHour");
+                          }}
                           data-testid="input-inbox-sync-hour"
                         />
                       </FormControl>
