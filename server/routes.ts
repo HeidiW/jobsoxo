@@ -199,9 +199,21 @@ export async function registerRoutes(
           user = { ...user, isAdmin: true };
         }
       }
-      res.json({ id: user.id, username: user.username, isAdmin: user.isAdmin });
+      res.json({ id: user.id, username: user.username, displayName: user.displayName, isAdmin: user.isAdmin });
     } catch (error) {
       res.status(500).json({ error: "Failed to get user" });
+    }
+  });
+
+  app.patch("/api/auth/profile", requireAuth, async (req, res) => {
+    try {
+      const { displayName } = req.body;
+      if (typeof displayName !== "string") return res.status(400).json({ error: "displayName must be a string" });
+      const user = await storage.updateUserDisplayName(req.session.userId as string, displayName.trim());
+      res.json({ id: user.id, username: user.username, displayName: user.displayName, isAdmin: user.isAdmin });
+    } catch (error) {
+      console.error("Update profile error:", error);
+      res.status(500).json({ error: "Failed to update profile" });
     }
   });
 
@@ -631,7 +643,7 @@ export async function registerRoutes(
 
       // Greeting
       const user = req.session?.userId ? await storage.getUser(req.session.userId as string) : null;
-      const firstName = user?.username ? user.username.split(/[\s_@.]/)[0] : "there";
+      const firstName = user?.displayName?.trim() || "there";
 
       // Date boundaries
       const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);

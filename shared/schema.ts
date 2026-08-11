@@ -36,6 +36,7 @@ export const users = pgTable("users", {
   email: text("email"),
   phone: text("phone"),
   address: text("address"),
+  displayName: text("display_name"),
   isAdmin: boolean("is_admin").default(false).notNull(),
   resetToken: text("reset_token"),
   resetTokenExpiry: timestamp("reset_token_expiry"),

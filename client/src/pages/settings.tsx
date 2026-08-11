@@ -531,6 +531,26 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
 
+  // ── Display name ──────────────────────────────────────────────────────────
+  const [displayName, setDisplayName] = useState((user as any)?.displayName || "");
+  const [displayNameSaved, setDisplayNameSaved] = useState(false);
+
+  const updateDisplayNameMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await apiRequest("PATCH", "/api/auth/profile", { displayName: name });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      setDisplayNameSaved(true);
+      setTimeout(() => setDisplayNameSaved(false), 2000);
+      toast({ title: "Name updated", description: "Your dashboard greeting has been updated." });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update name.", variant: "destructive" });
+    },
+  });
+
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 60000);
@@ -663,6 +683,40 @@ export default function SettingsPage() {
         <h1 className="text-3xl font-semibold">Settings</h1>
         <p className="text-muted-foreground mt-1">Manage your company information and preferences</p>
       </div>
+
+      {/* Profile card */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Your Profile
+          </CardTitle>
+          <CardDescription>How you'd like to be greeted on the dashboard</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-end gap-3 max-w-sm">
+            <div className="flex-1 space-y-1.5">
+              <label className="text-sm font-medium">Your name</label>
+              <Input
+                placeholder="e.g. Sarah"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); updateDisplayNameMutation.mutate(displayName); } }}
+              />
+              <p className="text-xs text-muted-foreground">Shown in "Good morning, …" on the dashboard</p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => updateDisplayNameMutation.mutate(displayName)}
+              disabled={updateDisplayNameMutation.isPending}
+              variant={displayNameSaved ? "outline" : "default"}
+              className="shrink-0"
+            >
+              {displayNameSaved ? <><Check className="h-4 w-4 mr-1" />Saved</> : <><Save className="h-4 w-4 mr-1" />Save</>}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
