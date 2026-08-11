@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import { createLinkToken, exchangePublicToken, getAccountInfo, getBalance, getTransactions, isPlaidConfigured } from "./plaid";
+import { seedDemoData } from "./seed";
 // Function declaration (not const) so it's hoisted and immune to TDZ in circular-dep scenarios.
 // import.meta.url is valid in ESM (dev/tsx) but undefined in CJS bundles (production build).
 // Falls back to process.cwd() path so createRequire can still resolve node_modules.
@@ -2908,6 +2909,17 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Update settings error:", error);
       res.status(500).json({ error: "Failed to update settings" });
+    }
+  });
+
+  // POST /api/admin/seed — admin-only: wipe and reseed demo data
+  app.post("/api/admin/seed", requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      await seedDemoData({ force: true });
+      res.json({ ok: true, message: "Demo data seeded successfully" });
+    } catch (error) {
+      console.error("Seed error:", error);
+      res.status(500).json({ error: "Failed to seed demo data" });
     }
   });
 

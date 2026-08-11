@@ -3,11 +3,23 @@ import { clients, jobs, invoices, lineItems, payments, employees, timeEntries, e
 import { sql } from "drizzle-orm";
 import { log } from "./logger";
 
-export async function seedDemoData() {
+export async function seedDemoData({ force = false }: { force?: boolean } = {}) {
   const existing = await db.select({ id: clients.id }).from(clients).limit(1);
-  if (existing.length > 0) return;
+  if (existing.length > 0 && !force) return;
 
-  log("Empty database detected — seeding demo data…", "seed");
+  if (force) {
+    log("Force-reseeding demo data — clearing existing records…", "seed");
+    await db.execute(sql`
+      TRUNCATE TABLE
+        sms_attempts, onboarding_items, employee_deductions, employee_assignments,
+        time_entries, payroll_records, reminder_logs, change_orders,
+        payments, line_items, invoices, jobs, bank_accounts,
+        clients, employees, settings
+      RESTART IDENTITY CASCADE
+    `);
+  }
+
+  log("Seeding demo data…", "seed");
 
   // ── Clients ───────────────────────────────────────────────────────────────
   await db.execute(sql`
