@@ -4,7 +4,18 @@ import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { differenceInDays, formatDistanceToNow } from "date-fns";
-import type { Invoice, ChangeOrder, Job, Client } from "@shared/schema";
+import type { Invoice, ChangeOrder, Job, Client, InboxTask } from "@shared/schema";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ChevronDown, ChevronRight, Clock, X, Trash2 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type TaskType = "invoice" | "change" | "schedule" | "client";
@@ -62,11 +73,71 @@ function saveDismissed(ids: Set<string>) {
   try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...ids])); } catch {}
 }
 
+// ── HiddenTaskRow ─────────────────────────────────────────────────────────────
+function HiddenTaskRow({
+  task,
+  onRestore,
+  onDelete,
+  isSelected,
+  onToggleSelect,
+}: {
+  task: InboxTask;
+  onRestore: (emailId: string) => void;
+  onDelete: (emailId: string) => void;
+  isSelected?: boolean;
+  onToggleSelect?: (emailId: string) => void;
+}) {
+  const ago = formatDistanceToNow(new Date(task.receivedAt), { addSuffix: true });
+  return (
+    <div
+      className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-muted/40 transition-colors"
+      data-testid={`hidden-row-${task.emailId}`}
+    >
+      {onToggleSelect && (
+        <Checkbox
+          checked={isSelected ?? false}
+          onCheckedChange={() => onToggleSelect(task.emailId)}
+          className="h-3.5 w-3.5 shrink-0"
+          data-testid={`checkbox-hidden-${task.emailId}`}
+        />
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium truncate text-muted-foreground line-through"
+          data-testid={`hidden-subject-${task.emailId}`}>
+          {task.subject}
+        </p>
+        <p className="text-xs text-muted-foreground/70 truncate">
+          {task.sender} · {ago}
+        </p>
+      </div>
+      <button
+        onClick={() => onRestore(task.emailId)}
+        className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-md border border-border bg-background hover:bg-muted transition-colors"
+        data-testid={`button-restore-${task.emailId}`}
+      >
+        Restore
+      </button>
+      <button
+        onClick={() => onDelete(task.emailId)}
+        className="shrink-0 p-1 rounded text-muted-foreground/50 hover:text-destructive transition-colors"
+        title="Delete permanently"
+        data-testid={`button-delete-${task.emailId}`}
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function InboxTasks() {
   const { toast } = useToast();
   const [filter, setFilter] = useState<TaskType | "all">("all");
   const [dismissed, setDismissed] = useState<Set<string>>(loadDismissed);
+  const [showHidden, setShowHidden] = useState(false);
+  const [selectedDismissedIds, setSelectedDismissedIds] = useState<Set<string>>(new Set());
+  const [showDeleteSelectedDialog, setShowDeleteSelectedDialog] = useState(false);
+  const [showClearDismissedDialog, setShowClearDismissedDialog] = useState(false);
 
   // Persist dismissed IDs to localStorage
   useEffect(() => { saveDismissed(dismissed); }, [dismissed]);
@@ -82,6 +153,19 @@ export default function InboxTasks() {
     = useQuery<Client[]>({ queryKey: ["/api/clients"] });
 
   const isLoading = invLoading || coLoading || jobsLoading || clientsLoading;
+
+  // Gmail connection status
+  const { data: gmailStatus } = useQuery<{ connected: boolean; email: string | null }>({
+    queryKey: ["/api/inbox/status"],
+  });
+  const connected = gmailStatus?.connected ?? false;
+
+  // Hidden inbox tasks (dismissed + snoozed Gmail emails)
+  const { data: hiddenTasks = [], isLoading: hiddenLoading } = useQuery<InboxTask[]>({
+    queryKey: ["/api/inbox/tasks/hidden"],
+    enabled: connected,
+    refetchInterval: 60_000,
+  });
 
   // ── Send-reminder mutation ─────────────────────────────────────────────────
   const sendReminderMutation = useMutation({
@@ -270,6 +354,62 @@ export default function InboxTasks() {
       // Navigation-based — dismiss the task and toast
       dismissTask(task.id);
     }
+  }
+
+  // ── Hidden email handlers ─────────────────────────────────────────────────
+  function handleRestore(emailId: string) {
+    queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
+      old.filter(t => t.emailId !== emailId)
+    );
+    queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
+    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/restore`).catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+      toast({ title: "Couldn't restore email", variant: "destructive" });
+    });
+  }
+
+  function handleDelete(emailId: string) {
+    queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
+      old.filter(t => t.emailId !== emailId)
+    );
+    apiRequest("DELETE", `/api/inbox/tasks/${emailId}`).catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+      toast({ title: "Couldn't delete email", variant: "destructive" });
+    });
+  }
+
+  function handleToggleSelectDismissed(emailId: string) {
+    setSelectedDismissedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(emailId)) next.delete(emailId); else next.add(emailId);
+      return next;
+    });
+  }
+
+  function handleDeleteSelected() {
+    const ids = [...selectedDismissedIds];
+    queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
+      old.filter(t => !selectedDismissedIds.has(t.emailId))
+    );
+    setSelectedDismissedIds(new Set());
+    setShowDeleteSelectedDialog(false);
+    Promise.all(ids.map(id => apiRequest("DELETE", `/api/inbox/tasks/${id}`))).catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+      toast({ title: "Some emails couldn't be deleted", variant: "destructive" });
+    });
+  }
+
+  function handleClearAllDismissed() {
+    const ids = hiddenTasks.filter(t => t.dismissed).map(t => t.emailId);
+    queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
+      old.filter(t => !t.dismissed)
+    );
+    setSelectedDismissedIds(new Set());
+    setShowClearDismissedDialog(false);
+    Promise.all(ids.map(id => apiRequest("DELETE", `/api/inbox/tasks/${id}`))).catch(() => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+      toast({ title: "Some emails couldn't be cleared", variant: "destructive" });
+    });
   }
 
   return (
@@ -629,12 +769,47 @@ export default function InboxTasks() {
       )}
 
       {/* Footer hint */}
-      {tasks.length > 0 && (
+      {allTasks.length > 0 && (
         <p className="text-xs text-muted-foreground text-center mt-4">
           <Clock className="h-3 w-3 inline mr-1" />
           Click a row or checkbox to mark done · Hover a row for dismiss/snooze options
         </p>
       )}
+
+      {/* ── Confirmation dialogs ── */}
+      <AlertDialog open={showDeleteSelectedDialog} onOpenChange={setShowDeleteSelectedDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedDismissedIds.size} email{selectedDismissedIds.size !== 1 ? "s" : ""}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the selected emails from your hidden panel. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteSelected} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showClearDismissedDialog} onOpenChange={setShowClearDismissedDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear all dismissed emails?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes all {hiddenTasks.filter(t => t.dismissed).length} dismissed emails. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleClearAllDismissed} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Clear all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   </div>
   );
