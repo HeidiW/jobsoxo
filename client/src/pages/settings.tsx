@@ -43,6 +43,9 @@ import {
   Landmark,
   Unlink,
   AlertCircle,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Link2,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useState, useEffect } from "react";
@@ -81,6 +84,16 @@ function SettingsSkeleton() {
   );
 }
 
+type PlaidTxRow = {
+  id: string;
+  plaidTransactionId: string;
+  date: string;
+  amount: string;
+  name: string;
+  merchantName?: string | null;
+  matchedPaymentId?: string | null;
+};
+
 function BusinessBankAccountCard() {
   const { toast } = useToast();
   const [localAccount, setLocalAccount] = useState<PlaidAccountMeta | null | undefined>(undefined);
@@ -105,6 +118,18 @@ function BusinessBankAccountCard() {
   }, [accountData]);
 
   const account = localAccount !== undefined ? localAccount : accountData;
+  const isConnected = !!account;
+
+  const { data: balanceData } = useQuery<{ current?: number; available?: number; connected: boolean }>({
+    queryKey: ["/api/plaid/balance"],
+    enabled: isConnected,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: txData, refetch: refetchTx } = useQuery<{ transactions: PlaidTxRow[]; lastSynced: string | null }>({
+    queryKey: ["/api/plaid/transactions"],
+    enabled: isConnected,
+  });
 
   const disconnectMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -113,11 +138,29 @@ function BusinessBankAccountCard() {
     onSuccess: () => {
       setLocalAccount(null);
       queryClient.invalidateQueries({ queryKey: ["/api/plaid/bank-account", "business"] });
+      queryClient.removeQueries({ queryKey: ["/api/plaid/balance"] });
+      queryClient.removeQueries({ queryKey: ["/api/plaid/transactions"] });
       toast({ title: "Bank account disconnected" });
     },
     onError: (err: Error) => {
       toast({ title: "Failed to disconnect", description: err.message, variant: "destructive" });
     },
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/plaid/sync-transactions", {});
+      return res.json();
+    },
+    onSuccess: (data) => {
+      refetchTx();
+      if (!data.ready) {
+        toast({ title: "Transactions not ready yet", description: "Your bank is still preparing transaction data. Try again in a moment." });
+      } else {
+        toast({ title: `Synced ${data.synced} transaction${data.synced !== 1 ? "s" : ""}`, description: data.matched > 0 ? `${data.matched} automatically matched to invoice payments.` : undefined });
+      }
+    },
+    onError: () => toast({ title: "Sync failed", variant: "destructive" }),
   });
 
   const { open, isLoading: linkLoading } = usePlaidLink({
@@ -129,6 +172,12 @@ function BusinessBankAccountCard() {
     },
   });
 
+  const fmtAmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const lastSyncedLabel = txData?.lastSynced
+    ? `Last synced ${new Date(txData.lastSynced).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
+    : "Not yet synced";
+
   return (
     <Card>
       <CardHeader>
@@ -137,10 +186,10 @@ function BusinessBankAccountCard() {
           Business Bank Account
         </CardTitle>
         <CardDescription>
-          Connect your business bank account via Plaid to enable payroll balance checks and invoice reconciliation
+          Connect your business bank account via Plaid to enable balance checks and invoice reconciliation
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
         {!plaidStatus?.configured ? (
           <div className="flex items-start gap-3 rounded-md border border-dashed p-4 text-sm text-muted-foreground" data-testid="plaid-not-configured">
             <AlertCircle className="h-5 w-5 mt-0.5 shrink-0 text-amber-500" />
@@ -155,26 +204,109 @@ function BusinessBankAccountCard() {
             <div className="h-4 w-48 rounded bg-muted animate-pulse" />
           </div>
         ) : account ? (
-          <div className="flex items-center justify-between rounded-md border bg-muted/30 px-4 py-3" data-testid="connected-bank-account">
-            <div className="flex items-center gap-3">
-              <Landmark className="h-5 w-5 text-muted-foreground shrink-0" />
-              <div>
-                <p className="font-medium text-sm" data-testid="text-bank-institution">{account.institutionName}</p>
-                <p className="text-xs text-muted-foreground" data-testid="text-bank-account-mask">{account.accountName} ••••{account.accountMask}</p>
+          <>
+            {/* Account row */}
+            <div className="flex items-center justify-between rounded-md border bg-muted/30 px-4 py-3" data-testid="connected-bank-account">
+              <div className="flex items-center gap-3">
+                <Landmark className="h-5 w-5 text-muted-foreground shrink-0" />
+                <div>
+                  <p className="font-medium text-sm" data-testid="text-bank-institution">{account.institutionName}</p>
+                  <p className="text-xs text-muted-foreground" data-testid="text-bank-account-mask">{account.accountName} ••••{account.accountMask}</p>
+                </div>
               </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={() => disconnectMutation.mutate(account.id)}
+                disabled={disconnectMutation.isPending}
+                data-testid="button-disconnect-bank"
+              >
+                <Unlink className="h-4 w-4 mr-1.5" />
+                {disconnectMutation.isPending ? "Disconnecting…" : "Disconnect"}
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-destructive hover:text-destructive"
-              onClick={() => disconnectMutation.mutate(account.id)}
-              disabled={disconnectMutation.isPending}
-              data-testid="button-disconnect-bank"
-            >
-              <Unlink className="h-4 w-4 mr-1.5" />
-              {disconnectMutation.isPending ? "Disconnecting…" : "Disconnect"}
-            </Button>
-          </div>
+
+            {/* Balance strip */}
+            {balanceData?.connected && (
+              <div className="grid grid-cols-2 gap-3">
+                {balanceData.current != null && (
+                  <div className="rounded-md border bg-muted/20 px-4 py-3">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Current balance</p>
+                    <p className="text-lg font-bold font-mono mt-0.5">{fmtAmt(balanceData.current)}</p>
+                  </div>
+                )}
+                {balanceData.available != null && (
+                  <div className="rounded-md border bg-muted/20 px-4 py-3">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Available</p>
+                    <p className="text-lg font-bold font-mono mt-0.5">{fmtAmt(balanceData.available)}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Transactions reconciliation panel */}
+            <div className="rounded-md border">
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <div>
+                  <p className="text-sm font-semibold">Transaction reconciliation</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{lastSyncedLabel}</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => syncMutation.mutate()}
+                  disabled={syncMutation.isPending}
+                  data-testid="button-sync-transactions"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                  {syncMutation.isPending ? "Syncing…" : "Sync now"}
+                </Button>
+              </div>
+
+              {!txData || txData.transactions.length === 0 ? (
+                <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                  No transactions synced yet. Click <strong>Sync now</strong> to fetch the last 90 days.
+                </div>
+              ) : (
+                <div className="divide-y max-h-72 overflow-y-auto">
+                  {txData.transactions.slice(0, 20).map(tx => {
+                    const amt = Number(tx.amount);
+                    const isCredit = amt < 0; // money coming in
+                    return (
+                      <div key={tx.id} className="flex items-center gap-3 px-4 py-2.5">
+                        <div className={`flex-shrink-0 rounded-full p-1 ${isCredit ? "bg-green-50 text-green-600" : "bg-slate-100 text-slate-500"}`}>
+                          {isCredit
+                            ? <ArrowDownLeft className="h-3.5 w-3.5" />
+                            : <ArrowUpRight className="h-3.5 w-3.5" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{tx.merchantName || tx.name}</p>
+                          <p className="text-xs text-muted-foreground">{fmtDate(tx.date)}</p>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className={`text-sm font-mono font-semibold ${isCredit ? "text-green-700" : ""}`}>
+                            {isCredit ? "+" : ""}{fmtAmt(Math.abs(amt))}
+                          </p>
+                        </div>
+                        <div className="flex-shrink-0">
+                          {tx.matchedPaymentId ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                              <Link2 className="h-3 w-3" />Matched
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground px-2 py-0.5 rounded-full bg-muted">
+                              Unmatched
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
         ) : (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">No bank account connected. Connect one to enable balance checks and payment reconciliation.</p>

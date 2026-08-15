@@ -2222,6 +2222,19 @@ export async function registerRoutes(
     }
   });
 
+  // Bulk mark all pending records in a pay period as paid
+  app.post("/api/payroll-records/mark-all-paid", requireAuth, async (req, res) => {
+    try {
+      const { periodStart, periodEnd } = req.body;
+      if (!periodStart || !periodEnd) return res.status(400).json({ error: "periodStart and periodEnd required" });
+      const count = await storage.markAllPayrollPeriodPaid(new Date(periodStart), new Date(periodEnd));
+      res.json({ ok: true, count });
+    } catch (error) {
+      console.error("Mark all paid error:", error);
+      res.status(500).json({ error: "Failed to mark payroll as paid" });
+    }
+  });
+
   app.patch("/api/payroll-records/:id", async (req, res) => {
     try {
       const parsed = insertPayrollRecordSchema.partial().safeParse(req.body);
@@ -2866,28 +2879,82 @@ export async function registerRoutes(
     }
   });
 
-  // Get last 30 days of transactions for reconciliation
-  app.get("/api/plaid/transactions", async (req, res) => {
+  // Return persisted transactions for reconciliation (sync separately)
+  app.get("/api/plaid/transactions", requireAuth, async (req, res) => {
     try {
       if (!isPlaidConfigured()) {
-        return res.json({ connected: false, ready: false, transactions: [], reason: "not_configured" });
+        return res.json({ connected: false, transactions: [], lastSynced: null });
       }
       const userId = req.session.userId!;
       const account = await storage.getBusinessBankAccount(userId);
-      if (!account) return res.json({ connected: false, ready: false, transactions: [], reason: "no_account" });
+      if (!account) return res.json({ connected: false, transactions: [], lastSynced: null });
 
-      try {
-        const transactions = await getTransactions(account.plaidAccessToken, 30);
-        res.json({ connected: true, ready: true, transactions });
-      } catch (txError: any) {
-        if (txError?.code === "PRODUCT_NOT_READY") {
-          return res.json({ connected: true, ready: false, transactions: [], reason: "product_not_ready" });
-        }
-        throw txError;
-      }
+      const transactions = await storage.getPlaidTransactions(userId, 50);
+      const lastSynced = transactions.length > 0 ? transactions[0].syncedAt : null;
+      res.json({ connected: true, transactions, lastSynced });
     } catch (error: any) {
       console.error("Plaid transactions error:", error?.response?.data || error);
       res.status(500).json({ error: "Failed to fetch transactions" });
+    }
+  });
+
+  // Fetch fresh transactions from Plaid and persist + auto-match against invoice payments
+  app.post("/api/plaid/sync-transactions", requireAuth, async (req, res) => {
+    try {
+      if (!isPlaidConfigured()) return res.status(400).json({ error: "Plaid not configured" });
+      const userId = req.session.userId!;
+      const account = await storage.getBusinessBankAccount(userId);
+      if (!account) return res.status(400).json({ error: "No bank account connected" });
+
+      let rawTxns: Awaited<ReturnType<typeof getTransactions>>;
+      try {
+        rawTxns = await getTransactions(account.plaidAccessToken, 90);
+      } catch (txError: any) {
+        if (txError?.code === "PRODUCT_NOT_READY") {
+          return res.json({ ok: true, synced: 0, matched: 0, ready: false });
+        }
+        throw txError;
+      }
+
+      const toInsert = rawTxns.map(t => ({
+        userId,
+        plaidTransactionId: t.transactionId,
+        plaidAccountId: account.plaidAccountId,
+        date: new Date(t.date),
+        amount: String(t.amount),
+        name: t.name,
+        merchantName: t.merchantName ?? null,
+        pending: false,
+      }));
+
+      const stored = await storage.upsertPlaidTransactions(toInsert);
+
+      // Auto-match: find invoice payments close in amount and date
+      const allPayments = await db.select().from(payments);
+      let matched = 0;
+      for (const tx of stored) {
+        if (tx.matchedPaymentId) continue;
+        const txAmt = Math.abs(Number(tx.amount));
+        const txDate = new Date(tx.date);
+        const hit = allPayments.find(p => {
+          const pAmt = Number(p.amount);
+          // Check both raw and /100 (covers pence-stored amounts)
+          const closeRaw = Math.abs(pAmt - txAmt) <= 1.0;
+          const closePence = Math.abs(pAmt / 100 - txAmt) <= 1.0;
+          if (!closeRaw && !closePence) return false;
+          const dayDiff = Math.abs(new Date(p.paymentDate).getTime() - txDate.getTime()) / 864e5;
+          return dayDiff <= 5;
+        });
+        if (hit) {
+          await storage.matchPlaidTransaction(tx.plaidTransactionId, hit.id);
+          matched++;
+        }
+      }
+
+      res.json({ ok: true, synced: stored.length, matched, ready: true });
+    } catch (error: any) {
+      console.error("Plaid sync error:", error?.response?.data || error);
+      res.status(500).json({ error: "Failed to sync transactions" });
     }
   });
 

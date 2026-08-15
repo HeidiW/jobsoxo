@@ -42,6 +42,8 @@ import {
   type InsertReminderLog,
   type BankAccount,
   type InsertBankAccount,
+  type StoredPlaidTransaction,
+  type InsertPlaidTransaction,
   users,
   clients,
   jobs,
@@ -64,6 +66,7 @@ import {
   smsAttempts,
   reminderLogs,
   bankAccounts,
+  plaidTransactions,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, gte, lte, sql, isNull, or, inArray } from "drizzle-orm";
@@ -225,6 +228,12 @@ export interface IStorage {
   createBankAccount(account: InsertBankAccount): Promise<BankAccount>;
   deleteBankAccount(id: string): Promise<void>;
   getBusinessBankAccount(userId: string): Promise<BankAccount | undefined>;
+
+  // Plaid Transactions
+  upsertPlaidTransactions(transactions: InsertPlaidTransaction[]): Promise<StoredPlaidTransaction[]>;
+  getPlaidTransactions(userId: string, limit?: number): Promise<StoredPlaidTransaction[]>;
+  matchPlaidTransaction(plaidTxId: string, paymentId: string): Promise<void>;
+  markAllPayrollPeriodPaid(periodStart: Date, periodEnd: Date): Promise<number>;
 
   // Dashboard
   getDashboardStats(): Promise<{
@@ -1052,6 +1061,64 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(bankAccounts.entityType, entityType), eq(bankAccounts.entityId, entityId)))
       .limit(1);
     return row ? this.decryptBankAccount(row) : undefined;
+  }
+
+  // Plaid Transactions
+
+  async upsertPlaidTransactions(transactions: InsertPlaidTransaction[]): Promise<StoredPlaidTransaction[]> {
+    if (!transactions.length) return [];
+    const results: StoredPlaidTransaction[] = [];
+    for (const t of transactions) {
+      const [row] = await db.insert(plaidTransactions)
+        .values(t)
+        .onConflictDoUpdate({
+          target: plaidTransactions.plaidTransactionId,
+          set: {
+            amount: t.amount,
+            name: t.name,
+            merchantName: t.merchantName ?? null,
+            pending: t.pending ?? false,
+            syncedAt: new Date(),
+          },
+        })
+        .returning();
+      results.push(row);
+    }
+    return results;
+  }
+
+  async getPlaidTransactions(userId: string, limit = 50): Promise<StoredPlaidTransaction[]> {
+    return db.select().from(plaidTransactions)
+      .where(eq(plaidTransactions.userId, userId))
+      .orderBy(desc(plaidTransactions.date))
+      .limit(limit);
+  }
+
+  async matchPlaidTransaction(plaidTxId: string, paymentId: string): Promise<void> {
+    await db.update(plaidTransactions)
+      .set({ matchedPaymentId: paymentId })
+      .where(eq(plaidTransactions.plaidTransactionId, plaidTxId));
+  }
+
+  async markAllPayrollPeriodPaid(periodStart: Date, periodEnd: Date): Promise<number> {
+    // Match records whose period falls exactly on the given dates (±1 day tolerance for timezone skew)
+    const startLo = new Date(periodStart); startLo.setDate(startLo.getDate() - 1);
+    const startHi = new Date(periodStart); startHi.setDate(startHi.getDate() + 1);
+    const endLo   = new Date(periodEnd);   endLo.setDate(endLo.getDate() - 1);
+    const endHi   = new Date(periodEnd);   endHi.setDate(endHi.getDate() + 1);
+    const updated = await db.update(payrollRecords)
+      .set({ status: "paid", paidDate: new Date() })
+      .where(
+        and(
+          eq(payrollRecords.status, "pending"),
+          gte(payrollRecords.periodStart, startLo),
+          lte(payrollRecords.periodStart, startHi),
+          gte(payrollRecords.periodEnd,   endLo),
+          lte(payrollRecords.periodEnd,   endHi),
+        )
+      )
+      .returning();
+    return updated.length;
   }
 }
 

@@ -621,6 +621,25 @@ export const insertBankAccountSchema = createInsertSchema(bankAccounts).omit({ i
 export type InsertBankAccount = z.infer<typeof insertBankAccountSchema>;
 export type BankAccount = typeof bankAccounts.$inferSelect;
 
+// Plaid Transactions — persisted bank transactions for reconciliation
+export const plaidTransactions = pgTable("plaid_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  plaidTransactionId: text("plaid_transaction_id").notNull().unique(),
+  plaidAccountId: text("plaid_account_id").notNull(),
+  date: timestamp("date").notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  name: text("name").notNull(),
+  merchantName: text("merchant_name"),
+  pending: boolean("pending").default(false).notNull(),
+  matchedPaymentId: varchar("matched_payment_id").references(() => payments.id, { onDelete: "set null" }),
+  syncedAt: timestamp("synced_at").defaultNow().notNull(),
+});
+
+export const insertPlaidTransactionSchema = createInsertSchema(plaidTransactions).omit({ id: true, syncedAt: true });
+export type InsertPlaidTransaction = z.infer<typeof insertPlaidTransactionSchema>;
+export type StoredPlaidTransaction = typeof plaidTransactions.$inferSelect;
+
 // SMS Attempts — log every inbound SMS for manager review (success + rejections)
 export const smsAttempts = pgTable("sms_attempts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

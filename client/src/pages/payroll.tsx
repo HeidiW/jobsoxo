@@ -1653,6 +1653,18 @@ export default function Payroll() {
     onError: () => toast({ title: "Failed to update", variant: "destructive" }),
   });
 
+  const markAllPaidMutation = useMutation({
+    mutationFn: async ({ periodStart, periodEnd }: { periodStart: string; periodEnd: string }) => {
+      const res = await apiRequest("POST", "/api/payroll-records/mark-all-paid", { periodStart, periodEnd });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll-records"] });
+      toast({ title: `${data.count} record${data.count !== 1 ? "s" : ""} marked as paid` });
+    },
+    onError: () => toast({ title: "Failed to mark records as paid", variant: "destructive" }),
+  });
+
   const deleteTimeEntryMutation = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/time-entries/${id}`); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] }); queryClient.invalidateQueries({ queryKey: ["/api/employees"] }); setDeleteTimeEntryId(null); },
@@ -2195,6 +2207,24 @@ export default function Payroll() {
                   <span style={{ width: "88px", flexShrink: 0 }}></span>
                   <span style={{ width: "104px", flexShrink: 0 }}></span>
                   <span style={{ width: "28px", flexShrink: 0 }}></span>
+                </div>
+              )}
+
+              {/* Mark all paid action */}
+              {crewRows.length > 0 && currentRecords.some(r => r.status === "pending") && currentPeriod && (
+                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "10px", padding: "10px 18px", borderTop: "1px solid var(--panel-bd)", background: "var(--panel)" }}>
+                  <span style={{ fontSize: "12px", color: "var(--faint)" }}>
+                    {currentRecords.filter(r => r.status === "pending").length} record{currentRecords.filter(r => r.status === "pending").length !== 1 ? "s" : ""} pending payment
+                  </span>
+                  <button
+                    onClick={() => markAllPaidMutation.mutate({ periodStart: currentPeriod.start, periodEnd: currentPeriod.end })}
+                    disabled={markAllPaidMutation.isPending}
+                    data-testid="button-mark-all-paid"
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 14px", border: "none", borderRadius: "8px", background: "#15803d", color: "#fff", fontSize: "12.5px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", opacity: markAllPaidMutation.isPending ? 0.7 : 1 }}
+                  >
+                    <CheckCircle style={{ width: "13px", height: "13px" }} />
+                    {markAllPaidMutation.isPending ? "Marking paid…" : "Mark all paid"}
+                  </button>
                 </div>
               )}
             </div>
