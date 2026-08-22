@@ -15,6 +15,7 @@ declare module "express-session" {
   interface SessionData {
     userId: string;
     gmailOAuthState?: string;
+    gmailReturnPath?: string;
   }
 }
 

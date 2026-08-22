@@ -5,11 +5,22 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isToday, format, differenceInDays } from "date-fns";
 import type { InboxTask, Client } from "@shared/schema";
-import { PlugZap, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ArrowLeftRight, ChevronDown, ChevronUp, Mail, PlugZap, RefreshCw, Unplug } from "lucide-react";
 
 // ── Color palette for client chips (7 buckets) ───────────────────────────────
 const COLOR_KEYS = ["blue","green","amber","purple","pink","teal","gray"] as const;
 type ColorKey = typeof COLOR_KEYS[number];
+type AccountAction = "disconnect" | "switch";
 
 function hashColor(str: string): ColorKey {
   let h = 0;
@@ -121,7 +132,7 @@ function NotConnected({ onConnect, connecting }: { onConnect: () => void; connec
 }
 
 // ── Age label for dismissed emails ───────────────────────────────────────
-function dismissedAgeLabel(receivedAt: string): string {
+function dismissedAgeLabel(receivedAt: string | Date): string {
   const days = differenceInDays(new Date(), new Date(receivedAt));
   if (days <= 0) return "today";
   if (days === 1) return "1 day ago";
@@ -133,6 +144,7 @@ export default function GmailTodos() {
   const { toast } = useToast();
   const [filter, setFilter] = useState<string>("all");
   const [connecting, setConnecting] = useState(false);
+  const [accountAction, setAccountAction] = useState<AccountAction | null>(null);
   const [hiddenPanelOpen, setHiddenPanelOpen] = useState(false);
   const [selectedDismissedIds, setSelectedDismissedIds] = useState<Set<string>>(new Set());
 
@@ -206,6 +218,43 @@ export default function GmailTodos() {
     onError: () => toast({ title: "Refresh failed", variant: "destructive" }),
   });
 
+  // Disconnect the current account before either leaving Gmail disconnected or
+  // starting a new OAuth flow for a different account.
+  const disconnectMutation = useMutation({
+    mutationFn: async (action: AccountAction) => {
+      await apiRequest("DELETE", "/api/gmail/disconnect");
+      return action;
+    },
+    onSuccess: (action) => {
+      queryClient.setQueryData(["/api/inbox/status"], { connected: false, email: null });
+      queryClient.setQueryData(["/api/inbox/tasks"], []);
+      queryClient.setQueryData(["/api/inbox/tasks/hidden"], []);
+      queryClient.setQueryData(["/api/inbox/last-sync"], { lastSyncedAt: null });
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+      setAccountAction(null);
+
+      if (action === "switch") {
+        window.location.href = "/api/gmail/auth?returnTo=/gmail-todos";
+        return;
+      }
+
+      toast({
+        title: "Gmail disconnected",
+        description: "Your Gmail access was removed and cached Gmail Todos were cleared.",
+      });
+    },
+    onError: (error: Error) => {
+      setAccountAction(null);
+      toast({
+        title: "Could not disconnect Gmail",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Auto-fetch when connected but empty
   useEffect(() => {
     if (status?.connected && !tasksLoading && allTasks.length === 0 && !refreshMutation.isPending) {
@@ -214,7 +263,10 @@ export default function GmailTodos() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status?.connected, tasksLoading]);
 
-  const handleConnect = () => { setConnecting(true); window.location.href = "/api/gmail/auth"; };
+  const handleConnect = () => {
+    setConnecting(true);
+    window.location.href = "/api/gmail/auth?returnTo=/gmail-todos";
+  };
 
   // Toggle done — optimistic update
   const handleToggle = (emailId: string, isDone: boolean) => {
@@ -245,7 +297,7 @@ export default function GmailTodos() {
   useEffect(() => {
     const currentIds = new Set(dismissedGroup.map(t => t.emailId));
     setSelectedDismissedIds(prev => {
-      const next = new Set([...prev].filter(id => currentIds.has(id)));
+      const next = new Set(Array.from(prev).filter(id => currentIds.has(id)));
       if (next.size === prev.size) return prev;
       return next;
     });
@@ -391,6 +443,57 @@ export default function GmailTodos() {
           </div>
         ) : (
           <>
+            {/* ── Connected account controls ── */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "14px",
+                flexWrap: "wrap",
+                background: "var(--panel)",
+                border: "1px solid var(--panel-bd)",
+                borderRadius: "12px",
+                padding: "11px 13px",
+                marginBottom: "14px",
+              }}
+              data-testid="gmail-account-controls"
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "9px", minWidth: 0 }}>
+                <Mail size={16} style={{ color: "var(--jox-primary)", flexShrink: 0 }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: "11px", color: "var(--faint)", lineHeight: 1.2 }}>Connected Gmail</div>
+                  <div
+                    style={{ fontSize: "13px", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    title={status?.email ?? "Connected Google account"}
+                    data-testid="text-connected-gmail"
+                  >
+                    {status?.email ?? "Connected Google account"}
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}>
+                <button
+                  onClick={() => setAccountAction("switch")}
+                  disabled={disconnectMutation.isPending}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "transparent", color: "var(--jox-primary)", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "7px 10px", fontSize: "12px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", opacity: disconnectMutation.isPending ? 0.6 : 1 }}
+                  data-testid="button-switch-gmail"
+                >
+                  <ArrowLeftRight size={14} />
+                  Switch account
+                </button>
+                <button
+                  onClick={() => setAccountAction("disconnect")}
+                  disabled={disconnectMutation.isPending}
+                  style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "transparent", color: "var(--faint)", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "7px 10px", fontSize: "12px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", opacity: disconnectMutation.isPending ? 0.6 : 1 }}
+                  data-testid="button-disconnect-gmail"
+                >
+                  <Unplug size={14} />
+                  Disconnect
+                </button>
+              </div>
+            </div>
+
             {/* ── Gemini-style banner ── */}
             <div style={{ display: "flex", alignItems: "center", gap: "13px", background: "var(--gem-bg)", border: "1px solid var(--gem-bd)", borderRadius: "14px", padding: "14px 16px", marginBottom: "18px" }}>
               <div style={{ flexShrink: 0, animation: "sparklePulse 3s ease-in-out infinite" }}>
@@ -626,6 +729,48 @@ export default function GmailTodos() {
           </>
         )}
       </div>
+
+      <AlertDialog
+        open={accountAction !== null}
+        onOpenChange={(open) => {
+          if (!open && !disconnectMutation.isPending) setAccountAction(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {accountAction === "switch" ? "Switch Gmail account?" : "Disconnect Gmail?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {accountAction === "switch" ? (
+                <>
+                  This will disconnect <strong>{status?.email ?? "your current Gmail account"}</strong>, clear cached Gmail Todos, and open Google’s account chooser. Your Gmail messages will remain in Gmail.
+                </>
+              ) : (
+                <>
+                  This will remove access for <strong>{status?.email ?? "your Gmail account"}</strong> and clear cached Gmail Todos from JobsOxo. Your Gmail messages will remain in Gmail.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={disconnectMutation.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className={accountAction === "disconnect" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : undefined}
+              disabled={disconnectMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                if (accountAction) disconnectMutation.mutate(accountAction);
+              }}
+              data-testid="button-confirm-gmail-account-action"
+            >
+              {disconnectMutation.isPending
+                ? accountAction === "switch" ? "Switching…" : "Disconnecting…"
+                : accountAction === "switch" ? "Switch account" : "Disconnect Gmail"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

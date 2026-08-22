@@ -16,7 +16,7 @@ The redirect URI `{APP_URL}/api/gmail/callback` MUST be registered in Google Clo
 **How to apply:** Debug OAuth failures here first.
 
 ## Token lifecycle decisions
-- `prompt=consent` is forced to always get a refresh token (Google only returns refresh tokens on first consent without this)
+- `prompt=select_account consent` is forced to always show an account chooser while retaining the refresh-token consent flow, so reconnecting can replace an existing Gmail account.
 - Refresh uses a 60-second buffer before expiry to avoid mid-request token failures
 - Disconnect calls `https://oauth2.googleapis.com/revoke` (best-effort) before deleting local token row
 - CSRF protection: random `state` stored in `req.session.gmailOAuthState`, verified on callback

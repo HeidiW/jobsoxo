@@ -2382,6 +2382,7 @@ export async function registerRoutes(
     const crypto = require("crypto") as typeof import("crypto");
     const state = crypto.randomBytes(16).toString("hex");
     req.session.gmailOAuthState = state;
+    req.session.gmailReturnPath = req.query.returnTo === "/gmail-todos" ? "/gmail-todos" : "/inbox-tasks";
     try {
       const authUrl = buildGmailAuthUrl(state);
       res.redirect(authUrl);
@@ -2394,9 +2395,10 @@ export async function registerRoutes(
   app.get("/api/gmail/callback", async (req, res) => {
     const { code, state, error } = req.query as Record<string, string>;
     const baseUrl = (process.env.APP_URL || "http://localhost:5000").replace(/\/$/, "");
+    const returnPath = req.session.gmailReturnPath === "/gmail-todos" ? "/gmail-todos" : "/inbox-tasks";
 
     if (error) {
-      return res.redirect(`${baseUrl}/inbox-tasks?gmail_error=${encodeURIComponent(error)}`);
+      return res.redirect(`${baseUrl}${returnPath}?gmail_error=${encodeURIComponent(error)}`);
     }
 
     // CSRF check — state must match what we stored in session
@@ -2404,9 +2406,10 @@ export async function registerRoutes(
       return res.redirect(`${baseUrl}/login?error=session_expired`);
     }
     if (!state || state !== req.session.gmailOAuthState) {
-      return res.redirect(`${baseUrl}/inbox-tasks?gmail_error=invalid_state`);
+      return res.redirect(`${baseUrl}${returnPath}?gmail_error=invalid_state`);
     }
     delete req.session.gmailOAuthState;
+    delete req.session.gmailReturnPath;
 
     try {
       const tokens = await exchangeGmailCode(code);
@@ -2416,10 +2419,10 @@ export async function registerRoutes(
         expiresAt: tokens.expiresAt,
         gmailEmail: tokens.email,
       });
-      res.redirect(`${baseUrl}/inbox-tasks?gmail_connected=1`);
+      res.redirect(`${baseUrl}${returnPath}?gmail_connected=1`);
     } catch (err: any) {
       console.error("Gmail OAuth callback error:", err);
-      res.redirect(`${baseUrl}/inbox-tasks?gmail_error=${encodeURIComponent(err.message)}`);
+      res.redirect(`${baseUrl}${returnPath}?gmail_error=${encodeURIComponent(err.message)}`);
     }
   });
 
