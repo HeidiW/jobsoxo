@@ -20,7 +20,7 @@ import {
   clients, jobs, invoices, lineItems, payments, employees, timeEntries, users, changeOrders,
   insertClientSchema, insertJobSchema, insertLineItemSchema, insertInvoiceSchema,
   insertPaymentSchema, insertEmployeeSchema, insertTimeEntrySchema, insertSettingsSchema,
-  insertPayrollRecordSchema, insertChangeOrderSchema
+  insertPayrollRecordSchema, insertChangeOrderSchema, insertJobMaterialSchema
 } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -957,6 +957,67 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Delete job error:", error);
       res.status(500).json({ error: "Failed to delete job" });
+    }
+  });
+
+  // Job Materials
+  app.get("/api/materials", async (req, res) => {
+    try {
+      const jobId = typeof req.query.jobId === "string" ? req.query.jobId : undefined;
+      const materials = await storage.getJobMaterials(jobId);
+      const jobsById = new Map((await storage.getJobs()).map((job) => [job.id, job]));
+      res.json(materials.map((material) => ({
+        ...material,
+        job: material.jobId ? jobsById.get(material.jobId) ?? null : null,
+      })));
+    } catch (error) {
+      console.error("Get materials error:", error);
+      res.status(500).json({ error: "Failed to get materials" });
+    }
+  });
+
+  app.post("/api/materials", async (req, res) => {
+    try {
+      const parsed = insertJobMaterialSchema.safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      if (parsed.data.jobId && !(await storage.getJob(parsed.data.jobId))) {
+        return res.status(400).json({ error: "Job not found" });
+      }
+      const material = await storage.createJobMaterial(parsed.data);
+      res.status(201).json(material);
+    } catch (error) {
+      console.error("Create material error:", error);
+      res.status(500).json({ error: "Failed to create material" });
+    }
+  });
+
+  app.patch("/api/materials/:id", async (req, res) => {
+    try {
+      const existing = await storage.getJobMaterial(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Material not found" });
+      const parsed = insertJobMaterialSchema.partial().safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      if (parsed.data.jobId && !(await storage.getJob(parsed.data.jobId))) {
+        return res.status(400).json({ error: "Job not found" });
+      }
+      const material = await storage.updateJobMaterial(req.params.id, parsed.data);
+      if (!material) return res.status(404).json({ error: "Material not found" });
+      res.json(material);
+    } catch (error) {
+      console.error("Update material error:", error);
+      res.status(500).json({ error: "Failed to update material" });
+    }
+  });
+
+  app.delete("/api/materials/:id", async (req, res) => {
+    try {
+      const existing = await storage.getJobMaterial(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Material not found" });
+      await storage.deleteJobMaterial(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Delete material error:", error);
+      res.status(500).json({ error: "Failed to delete material" });
     }
   });
 

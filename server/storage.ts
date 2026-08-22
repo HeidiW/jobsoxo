@@ -6,6 +6,8 @@ import {
   type InsertClient,
   type Job,
   type InsertJob,
+  type JobMaterial,
+  type InsertJobMaterial,
   type LineItem,
   type InsertLineItem,
   type Invoice,
@@ -47,6 +49,7 @@ import {
   users,
   clients,
   jobs,
+  jobMaterials,
   lineItems,
   invoices,
   payments,
@@ -99,6 +102,13 @@ export interface IStorage {
   createJob(job: InsertJob): Promise<Job>;
   updateJob(id: string, job: Partial<InsertJob>): Promise<Job | undefined>;
   deleteJob(id: string): Promise<void>;
+
+  // Job Materials
+  getJobMaterials(jobId?: string): Promise<JobMaterial[]>;
+  getJobMaterial(id: string): Promise<JobMaterial | undefined>;
+  createJobMaterial(material: InsertJobMaterial): Promise<JobMaterial>;
+  updateJobMaterial(id: string, material: Partial<InsertJobMaterial>): Promise<JobMaterial | undefined>;
+  deleteJobMaterial(id: string): Promise<void>;
 
   // Line Items
   getLineItems(jobId: string): Promise<LineItem[]>;
@@ -362,6 +372,34 @@ export class DatabaseStorage implements IStorage {
 
   async deleteJob(id: string): Promise<void> {
     await db.delete(jobs).where(eq(jobs.id, id));
+  }
+
+  // Job Materials
+  async getJobMaterials(jobId?: string): Promise<JobMaterial[]> {
+    const query = db.select().from(jobMaterials);
+    if (jobId) {
+      return query.where(eq(jobMaterials.jobId, jobId)).orderBy(desc(jobMaterials.purchaseDate));
+    }
+    return query.orderBy(desc(jobMaterials.purchaseDate));
+  }
+
+  async getJobMaterial(id: string): Promise<JobMaterial | undefined> {
+    const [material] = await db.select().from(jobMaterials).where(eq(jobMaterials.id, id));
+    return material || undefined;
+  }
+
+  async createJobMaterial(material: InsertJobMaterial): Promise<JobMaterial> {
+    const [created] = await db.insert(jobMaterials).values(material).returning();
+    return created;
+  }
+
+  async updateJobMaterial(id: string, material: Partial<InsertJobMaterial>): Promise<JobMaterial | undefined> {
+    const [updated] = await db.update(jobMaterials).set(material).where(eq(jobMaterials.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async deleteJobMaterial(id: string): Promise<void> {
+    await db.delete(jobMaterials).where(eq(jobMaterials.id, id));
   }
 
   // Line Items

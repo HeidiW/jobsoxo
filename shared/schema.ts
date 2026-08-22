@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, date, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -118,6 +118,7 @@ export const jobsRelations = relations(jobs, ({ one, many }) => ({
     references: [clients.id],
   }),
   lineItems: many(lineItems),
+  materials: many(jobMaterials),
   invoices: many(invoices),
   employeeAssignments: many(employeeAssignments),
 }));
@@ -133,6 +134,38 @@ export const insertJobSchema = createInsertSchema(jobs)
   });
 export type InsertJob = z.infer<typeof insertJobSchema>;
 export type Job = typeof jobs.$inferSelect;
+
+// Materials purchased for a job
+export const jobMaterials = pgTable("job_materials", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobId: varchar("job_id").references(() => jobs.id, { onDelete: "set null" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  purchaseDate: date("purchase_date").notNull(),
+  vendor: text("vendor"),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull(),
+  unit: text("unit").notNull(),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const jobMaterialsRelations = relations(jobMaterials, ({ one }) => ({
+  job: one(jobs, {
+    fields: [jobMaterials.jobId],
+    references: [jobs.id],
+  }),
+}));
+
+export const insertJobMaterialSchema = createInsertSchema(jobMaterials)
+  .omit({ id: true, createdAt: true })
+  .extend({
+    name: z.string().trim().min(1, "Material name is required"),
+    purchaseDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, "Purchase date is required"),
+    quantity: positiveNumericString("Quantity"),
+    price: nonNegativeNumericString("Price"),
+  });
+export type InsertJobMaterial = z.infer<typeof insertJobMaterialSchema>;
+export type JobMaterial = typeof jobMaterials.$inferSelect;
 
 // Line Items table (for job pricing breakdown)
 export const lineItems = pgTable("line_items", {

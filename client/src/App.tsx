@@ -13,6 +13,7 @@ import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Clients from "@/pages/clients";
 import Jobs from "@/pages/jobs";
+import Materials from "@/pages/materials";
 import JobDetail from "@/pages/job-detail";
 import ChangeOrders from "@/pages/change-orders";
 import JobLineItems from "@/pages/job-line-items";
@@ -38,6 +39,7 @@ function Router() {
       <Route path="/" component={Dashboard} />
       <Route path="/clients" component={Clients} />
       <Route path="/jobs" component={Jobs} />
+      <Route path="/materials" component={Materials} />
       <Route path="/jobs/:id/line-items" component={JobLineItems} />
       <Route path="/jobs/:id" component={JobDetail} />
       <Route path="/change-orders" component={ChangeOrders} />
@@ -59,6 +61,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "/": "Dashboard",
   "/clients": "Clients",
   "/jobs": "Jobs",
+  "/materials": "Materials",
   "/invoices": "Invoices",
   "/invoices/new": "New Invoice",
   "/change-orders": "Change Orders",
