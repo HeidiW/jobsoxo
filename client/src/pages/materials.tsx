@@ -137,6 +137,7 @@ function MaterialFormDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       toast({ title: material ? "Material updated" : "Material added" });
       onOpenChange(false);
     },
@@ -303,6 +304,7 @@ export default function Materials() {
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/materials/${id}`); },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       toast({ title: "Material deleted" });
       setDeletingMaterial(null);
     },
@@ -321,6 +323,13 @@ export default function Materials() {
       return matchesJob && matchesSearch;
     });
   }, [materials, jobFilter, search]);
+
+  const filteredTotal = useMemo(
+    () => filteredMaterials.reduce((sum, material) => sum + Number(material.price), 0),
+    [filteredMaterials],
+  );
+  const selectedJob = jobFilter === "all" ? null : jobs.find((job) => job.id === jobFilter);
+  const totalLabel = selectedJob ? "Job spending" : search ? "Filtered spending" : "Total spending";
 
   function openNew() {
     setEditingMaterial(null);
@@ -374,11 +383,19 @@ export default function Materials() {
             <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {filteredMaterials.length} material{filteredMaterials.length === 1 ? "" : "s"}
             </span>
-            {(jobFilter !== "all" || search) && (
-              <button className="text-xs font-medium text-primary hover:underline" onClick={() => { setJobFilter("all"); setSearch(""); }}>
-                Clear filters
-              </button>
-            )}
+            <div className="flex items-center gap-4">
+              <div className="text-right">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{totalLabel}</div>
+                <div className="font-mono text-sm font-semibold text-foreground" data-testid="text-material-total">
+                  {formatMoney(filteredTotal)}
+                </div>
+              </div>
+              {(jobFilter !== "all" || search) && (
+                <button className="text-xs font-medium text-primary hover:underline" onClick={() => { setJobFilter("all"); setSearch(""); }}>
+                  Clear filters
+                </button>
+              )}
+            </div>
           </div>
 
           {isLoading ? (

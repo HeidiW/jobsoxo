@@ -909,6 +909,7 @@ export async function registerRoutes(
         (sum, inv) => sum + Number(inv.balance ?? 0),
         0
       );
+      const totalMaterialCost = await storage.getJobMaterialTotal(job.id);
 
       res.json({
         ...job,
@@ -916,6 +917,7 @@ export async function registerRoutes(
         invoices: invoicesWithItems,
         employees: assignedEmployees.filter(Boolean),
         outstandingBalance: String(outstandingBalance),
+        totalMaterialCost,
       });
     } catch (error) {
       console.error("Get job error:", error);

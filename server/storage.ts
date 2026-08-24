@@ -105,6 +105,7 @@ export interface IStorage {
 
   // Job Materials
   getJobMaterials(jobId?: string): Promise<JobMaterial[]>;
+  getJobMaterialTotal(jobId: string): Promise<string>;
   getJobMaterial(id: string): Promise<JobMaterial | undefined>;
   createJobMaterial(material: InsertJobMaterial): Promise<JobMaterial>;
   updateJobMaterial(id: string, material: Partial<InsertJobMaterial>): Promise<JobMaterial | undefined>;
@@ -381,6 +382,14 @@ export class DatabaseStorage implements IStorage {
       return query.where(eq(jobMaterials.jobId, jobId)).orderBy(desc(jobMaterials.purchaseDate));
     }
     return query.orderBy(desc(jobMaterials.purchaseDate));
+  }
+
+  async getJobMaterialTotal(jobId: string): Promise<string> {
+    const [result] = await db
+      .select({ total: sql<string>`COALESCE(SUM(${jobMaterials.price}), 0)` })
+      .from(jobMaterials)
+      .where(eq(jobMaterials.jobId, jobId));
+    return result?.total ?? "0";
   }
 
   async getJobMaterial(id: string): Promise<JobMaterial | undefined> {

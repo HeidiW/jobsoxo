@@ -48,6 +48,7 @@ import {
   Paperclip,
   Copy,
   Check,
+  Package,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -65,6 +66,7 @@ interface JobDetail extends Job {
   invoices: InvoiceWithItems[];
   employees: Employee[];
   outstandingBalance: string;
+  totalMaterialCost: string;
 }
 
 
@@ -78,8 +80,8 @@ function SkeletonPage() {
           <Skeleton className="h-4 w-32" />
         </div>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[1,2,3,4].map(i => <Skeleton key={i} className="h-24 rounded-lg" />)}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {[1,2,3,4,5].map(i => <Skeleton key={i} className="h-24 rounded-lg" />)}
       </div>
       <Skeleton className="h-48 rounded-lg" />
       <Skeleton className="h-48 rounded-lg" />
@@ -263,7 +265,7 @@ export default function JobDetail() {
         </div>
 
         {/* Stat cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <Card>
             <CardContent className="pt-5">
               <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Estimate</p>
@@ -287,6 +289,17 @@ export default function JobDetail() {
               <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Outstanding</p>
               <p className={`text-xl font-bold font-mono ${outstanding > 0 ? "text-destructive" : "text-green-600 dark:text-green-400"}`}>
                 {fmt(outstanding)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-5">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1.5">
+                <Package className="h-3.5 w-3.5" />
+                Materials
+              </p>
+              <p className="text-xl font-bold font-mono" data-testid="text-job-material-total">
+                {fmt(job.totalMaterialCost)}
               </p>
             </CardContent>
           </Card>
