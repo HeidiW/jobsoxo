@@ -2396,10 +2396,14 @@ export async function registerRoutes(
     const { code, state, error } = req.query as Record<string, string>;
     const baseUrl = (process.env.APP_URL || "http://localhost:5000").replace(/\/$/, "");
     const returnPath = req.session.gmailReturnPath === "/gmail-todos" ? "/gmail-todos" : "/inbox-tasks";
-
-    if (error) {
-      return res.redirect(`${baseUrl}${returnPath}?gmail_error=${encodeURIComponent(error)}`);
-    }
+    const clearCachedTasksAfterOAuthFailure = async () => {
+      if (!req.session.userId) return;
+      try {
+        await storage.deleteUserInboxTasks(req.session.userId);
+      } catch (clearError) {
+        console.error("Failed to clear cached Gmail tasks after OAuth failure:", clearError);
+      }
+    };
 
     // CSRF check — state must match what we stored in session
     if (!req.session.userId) {
@@ -2410,6 +2414,11 @@ export async function registerRoutes(
     }
     delete req.session.gmailOAuthState;
     delete req.session.gmailReturnPath;
+
+    if (error) {
+      await clearCachedTasksAfterOAuthFailure();
+      return res.redirect(`${baseUrl}${returnPath}?gmail_error=${encodeURIComponent(error)}`);
+    }
 
     try {
       const tokens = await exchangeGmailCode(code);
@@ -2422,6 +2431,7 @@ export async function registerRoutes(
       res.redirect(`${baseUrl}${returnPath}?gmail_connected=1`);
     } catch (err: any) {
       console.error("Gmail OAuth callback error:", err);
+      await clearCachedTasksAfterOAuthFailure();
       res.redirect(`${baseUrl}${returnPath}?gmail_error=${encodeURIComponent(err.message)}`);
     }
   });
