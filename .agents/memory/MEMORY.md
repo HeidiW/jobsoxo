@@ -1,3 +1,4 @@
 - [JobForm extraction](job-form-extraction.md) — JobForm lives in client/src/components/job-form.tsx; jobs.tsx imports from there, not local.
 - [Per-user Gmail OAuth](per-user-gmail-oauth.md) — Each user connects their own Gmail; tokens in google_tokens table; callback URI must be registered in Google Console.
 - [Change order definition](change-order-definition.md) — Any modification to a saved invoice (scope/line items) is a change order, not an edit; use the CO flow for post-save changes.
+- [Post-merge schema safety](post-merge-schema-safety.md) — Schema pushes must reject destructive truncation prompts rather than auto-approving data loss.
