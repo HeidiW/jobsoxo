@@ -29,8 +29,11 @@ import {
 import {
   ArrowLeft, Mail, Download, DollarSign, CheckCircle, FileText, Printer,
   Plus, X, Trash2, Pencil, Check, Ban, AlertTriangle, Save,
-  Bell, BellOff, PauseCircle, PlayCircle, Copy,
+  Bell, BellOff, PauseCircle, PlayCircle, Copy, Landmark,
 } from "lucide-react";
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
 import { format } from "date-fns";
 import type {
   Invoice, Client, LineItem, Payment, Job, Settings, ChangeOrder,
@@ -39,11 +42,23 @@ import { InvoiceStatusBadge } from "@/components/status-badge";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+interface PlaidTransactionSummary {
+  plaidTransactionId: string;
+  date: string;
+  name: string;
+  merchantName: string | null;
+  amount: string;
+}
+
+interface PaymentWithPlaid extends Payment {
+  plaidTransaction?: PlaidTransactionSummary;
+}
+
 interface InvoiceDetail extends Invoice {
   client: Client;
   job: Job | null;
   lineItems: LineItem[];
-  payments: Payment[];
+  payments: PaymentWithPlaid[];
   changeOrders: ChangeOrder[];
 }
 
@@ -1596,6 +1611,7 @@ export default function InvoiceDetail() {
                       <TableHead>Method</TableHead>
                       <TableHead>Reference</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="w-[130px]"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1606,6 +1622,49 @@ export default function InvoiceDetail() {
                         <TableCell className="font-mono text-sm">{payment.referenceNumber || "—"}</TableCell>
                         <TableCell className="text-right font-mono font-medium text-green-600 dark:text-green-400">
                           {fmt(payment.amount)}
+                        </TableCell>
+                        <TableCell>
+                          {payment.plaidTransaction ? (
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <button
+                                  className="inline-flex items-center gap-1.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 px-2.5 py-0.5 text-xs font-semibold hover:bg-green-200 dark:hover:bg-green-900/60 transition-colors cursor-pointer"
+                                  data-testid={`badge-bank-confirmed-${payment.id}`}
+                                >
+                                  <Landmark className="h-3 w-3" />
+                                  Bank confirmed
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-64 p-3" align="end">
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-1.5 text-xs font-semibold text-green-700 dark:text-green-400 mb-2">
+                                    <Landmark className="h-3.5 w-3.5" />
+                                    Bank Transaction
+                                  </div>
+                                  <div className="space-y-1.5 text-sm">
+                                    <div className="flex justify-between gap-2">
+                                      <span className="text-muted-foreground text-xs">Date</span>
+                                      <span className="text-xs font-medium">
+                                        {format(new Date(payment.plaidTransaction.date), "MMM d, yyyy")}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between gap-2">
+                                      <span className="text-muted-foreground text-xs">Name</span>
+                                      <span className="text-xs font-medium text-right max-w-[140px] truncate">
+                                        {payment.plaidTransaction.merchantName || payment.plaidTransaction.name}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between gap-2">
+                                      <span className="text-muted-foreground text-xs">Amount</span>
+                                      <span className="text-xs font-mono font-semibold text-green-600 dark:text-green-400">
+                                        {fmt(Math.abs(Number(payment.plaidTransaction.amount)))}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          ) : null}
                         </TableCell>
                       </TableRow>
                     ))}

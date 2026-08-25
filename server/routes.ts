@@ -17,7 +17,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { db } from "./db";
 import { 
-  clients, jobs, invoices, lineItems, payments, employees, timeEntries, users, changeOrders,
+  clients, jobs, invoices, lineItems, payments, employees, timeEntries, users, changeOrders, plaidTransactions,
   insertClientSchema, insertJobSchema, insertLineItemSchema, insertInvoiceSchema,
   insertPaymentSchema, insertEmployeeSchema, insertTimeEntrySchema, insertSettingsSchema,
   insertPayrollRecordSchema, insertChangeOrderSchema, insertJobMaterialSchema
@@ -1263,7 +1263,24 @@ export async function registerRoutes(
         .select()
         .from(lineItems)
         .where(eq(lineItems.invoiceId, invoice.id));
-      const invoicePayments = await storage.getPaymentsByInvoice(invoice.id);
+      // Fetch payments joined with plaid_transactions to flag bank-confirmed ones
+      const rawPayments = await storage.getPaymentsByInvoice(invoice.id);
+      const invoicePayments = await Promise.all(
+        rawPayments.map(async (payment) => {
+          const [plaidTx] = await db
+            .select({
+              plaidTransactionId: plaidTransactions.plaidTransactionId,
+              date: plaidTransactions.date,
+              name: plaidTransactions.name,
+              merchantName: plaidTransactions.merchantName,
+              amount: plaidTransactions.amount,
+            })
+            .from(plaidTransactions)
+            .where(eq(plaidTransactions.matchedPaymentId, payment.id))
+            .limit(1);
+          return plaidTx ? { ...payment, plaidTransaction: plaidTx } : payment;
+        })
+      );
       const invoiceChangeOrders = await storage.getChangeOrdersByInvoice(invoice.id);
       
       res.json({
