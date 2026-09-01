@@ -34,6 +34,7 @@ import {
   fetchGmailLabelsForUser,
 } from "./gmail";
 import { getLastInboxSyncTime, getNextInboxSyncTime, syncInboxForConnectedUsers } from "./scheduler";
+import { syncPlaidTransactionsForUser } from "./plaid-sync";
 import { handleInboundSms, twimlReply } from "./sms";
 import { sendChangeOrderEmail } from "./email";
 import twilio from "twilio";
@@ -3133,55 +3134,11 @@ export async function registerRoutes(
     try {
       if (!isPlaidConfigured()) return res.status(400).json({ error: "Plaid not configured" });
       const userId = req.session.userId!;
-      const account = await storage.getBusinessBankAccount(userId);
-      if (!account) return res.status(400).json({ error: "No bank account connected" });
-
-      let rawTxns: Awaited<ReturnType<typeof getTransactions>>;
-      try {
-        rawTxns = await getTransactions(account.plaidAccessToken, 90);
-      } catch (txError: any) {
-        if (txError?.code === "PRODUCT_NOT_READY") {
-          return res.json({ ok: true, synced: 0, matched: 0, ready: false });
-        }
-        throw txError;
+      const result = await syncPlaidTransactionsForUser(userId);
+      if (!result.ok && result.error === "No bank account connected") {
+        return res.status(400).json({ error: result.error });
       }
-
-      const toInsert = rawTxns.map(t => ({
-        userId,
-        plaidTransactionId: t.transactionId,
-        plaidAccountId: account.plaidAccountId,
-        date: new Date(t.date),
-        amount: String(t.amount),
-        name: t.name,
-        merchantName: t.merchantName ?? null,
-        pending: false,
-      }));
-
-      const stored = await storage.upsertPlaidTransactions(toInsert);
-
-      // Auto-match: find invoice payments close in amount and date
-      const allPayments = await db.select().from(payments);
-      let matched = 0;
-      for (const tx of stored) {
-        if (tx.matchedPaymentId) continue;
-        const txAmt = Math.abs(Number(tx.amount));
-        const txDate = new Date(tx.date);
-        const hit = allPayments.find(p => {
-          const pAmt = Number(p.amount);
-          // Check both raw and /100 (covers pence-stored amounts)
-          const closeRaw = Math.abs(pAmt - txAmt) <= 1.0;
-          const closePence = Math.abs(pAmt / 100 - txAmt) <= 1.0;
-          if (!closeRaw && !closePence) return false;
-          const dayDiff = Math.abs(new Date(p.paymentDate).getTime() - txDate.getTime()) / 864e5;
-          return dayDiff <= 5;
-        });
-        if (hit) {
-          await storage.matchPlaidTransaction(tx.plaidTransactionId, hit.id);
-          matched++;
-        }
-      }
-
-      res.json({ ok: true, synced: stored.length, matched, ready: true });
+      res.json(result);
     } catch (error: any) {
       console.error("Plaid sync error:", error?.response?.data || error);
       res.status(500).json({ error: "Failed to sync transactions" });

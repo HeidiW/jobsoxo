@@ -4,7 +4,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { processOverdueReminders } from "./email";
-import { startInboxScheduler } from "./scheduler";
+import { startInboxScheduler, startPlaidScheduler } from "./scheduler";
 import { seedDemoData } from "./seed";
 import { validateEncryptionKey } from "./encryption";
 import { migrateEncryptBankAccounts } from "./migrate-encrypt-bank-accounts";
@@ -148,4 +148,7 @@ app.use((req, res, next) => {
 
   // Daily Gmail inbox auto-sync (default 08:00, configurable via INBOX_SYNC_HOUR)
   startInboxScheduler();
+
+  // Daily Plaid transaction auto-sync (default 03:00, configurable via PLAID_SYNC_HOUR)
+  startPlaidScheduler();
 })();

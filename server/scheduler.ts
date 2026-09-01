@@ -11,9 +11,11 @@
 
 import { storage } from "./storage";
 import { fetchUserGmailInbox } from "./gmail";
+import { syncPlaidTransactionsForAllUsers } from "./plaid-sync";
 import { log } from "./logger";
 
 let schedulerTimer: ReturnType<typeof setTimeout> | null = null;
+let plaidSchedulerTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Read the persisted last-sync timestamp from the database. */
 export async function getLastInboxSyncTime(): Promise<Date | null> {
@@ -152,5 +154,48 @@ export function stopInboxScheduler(): void {
   if (schedulerTimer) {
     clearTimeout(schedulerTimer);
     schedulerTimer = null;
+  }
+}
+
+// ── Plaid daily sync ──────────────────────────────────────────────────────────
+
+/**
+ * The Plaid sync runs at 3 AM by default (a quiet hour that avoids overlap
+ * with the 8 AM inbox sync). The hour is not currently user-configurable but
+ * can easily be wired to a settings field if needed.
+ */
+const PLAID_SYNC_HOUR = parseInt(process.env.PLAID_SYNC_HOUR ?? "3", 10) || 3;
+
+/**
+ * Start the daily Plaid transaction auto-sync scheduler.
+ * Call once at server startup, alongside startInboxScheduler().
+ */
+export function startPlaidScheduler(): void {
+  const scheduleNext = async () => {
+    const delay = msUntilNextHour(PLAID_SYNC_HOUR);
+    const nextRun = new Date(Date.now() + delay);
+    log(
+      `Plaid auto-sync scheduled for ${nextRun.toLocaleTimeString()} (in ${Math.round(delay / 60_000)} min)`,
+      "scheduler"
+    );
+
+    plaidSchedulerTimer = setTimeout(async () => {
+      log("Plaid auto-sync starting…", "scheduler");
+      try {
+        await syncPlaidTransactionsForAllUsers();
+      } catch (err) {
+        log(`Plaid auto-sync failed: ${err}`, "scheduler");
+      }
+      scheduleNext();
+    }, delay);
+  };
+
+  scheduleNext();
+}
+
+export function stopPlaidScheduler(): void {
+  if (plaidSchedulerTimer) {
+    clearTimeout(plaidSchedulerTimer);
+    plaidSchedulerTimer = null;
   }
 }

@@ -246,6 +246,7 @@ export interface IStorage {
   createBankAccount(account: InsertBankAccount): Promise<BankAccount>;
   deleteBankAccount(id: string): Promise<void>;
   getBusinessBankAccount(userId: string): Promise<BankAccount | undefined>;
+  getUsersWithBusinessBankAccounts(): Promise<{ userId: string }[]>;
 
   // Plaid Transactions
   upsertPlaidTransactions(transactions: InsertPlaidTransaction[]): Promise<StoredPlaidTransaction[]>;
@@ -1140,6 +1141,19 @@ export class DatabaseStorage implements IStorage {
 
   async getBusinessBankAccount(userId: string): Promise<BankAccount | undefined> {
     return this.getBankAccountByEntity(userId, "business");
+  }
+
+  async getUsersWithBusinessBankAccounts(): Promise<{ userId: string }[]> {
+    const rows = await db
+      .selectDistinct({ userId: bankAccounts.userId })
+      .from(bankAccounts)
+      .where(
+        and(
+          eq(bankAccounts.entityType, "business"),
+          sql`${bankAccounts.entityId} IS NULL`
+        )
+      );
+    return rows;
   }
 
   async getEmployeeBankAccounts(userId: string): Promise<BankAccount[]> {
