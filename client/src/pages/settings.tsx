@@ -786,7 +786,7 @@ export default function SettingsPage() {
   const watchedSyncHour = form.watch("inboxSyncHour");
 
   const liveNextSync = (() => {
-    if (watchedSyncHour === "" || watchedSyncHour === null || watchedSyncHour === undefined) return null;
+    if (watchedSyncHour === null || watchedSyncHour === undefined || String(watchedSyncHour) === "") return null;
     const parsed = Number(watchedSyncHour);
     const hour = Number.isInteger(parsed) && parsed >= 0 && parsed <= 23 ? parsed : null;
     if (hour === null) return null;

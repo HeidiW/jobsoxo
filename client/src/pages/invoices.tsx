@@ -72,6 +72,7 @@ const PAYMENT_METHODS = [
 interface InvoiceWithRelations extends Invoice {
   client: Client;
   job?: Job;
+  paymentDate?: Date;
 }
 
 const TABS = [
@@ -90,7 +91,7 @@ function fmtMoney(n: number, decimals = 0) {
   return "$" + n.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
-function fmtDate(d: string | null | undefined) {
+function fmtDate(d: string | Date | null | undefined) {
   if (!d) return "—";
   try { return format(new Date(d), "MMM d"); } catch { return "—"; }
 }

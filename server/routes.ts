@@ -463,7 +463,7 @@ export async function registerRoutes(
       const settingsResult = await db.execute(
         sql`SELECT company_name, company_email, company_phone FROM settings LIMIT 1`
       );
-      const settingsRow = (settingsResult as any).rows?.[0] ?? settingsResult[0] ?? null;
+      const settingsRow = (settingsResult as any).rows?.[0] ?? null;
 
       res.json({
         invoiceNumber: invoice.invoiceNumber,
@@ -508,7 +508,7 @@ export async function registerRoutes(
       const settingsResult = await db.execute(
         sql`SELECT company_name FROM settings LIMIT 1`
       );
-      const settingsRow = (settingsResult as any).rows?.[0] ?? settingsResult[0] ?? null;
+      const settingsRow = (settingsResult as any).rows?.[0] ?? null;
       const companyName: string = settingsRow?.company_name ?? "Your Company";
 
       const baseUrl = process.env.APP_URL?.replace(/\/$/, "") ?? `${req.protocol}://${req.get("host")}`;
@@ -1034,7 +1034,7 @@ export async function registerRoutes(
   });
 
   // Job Documents
-  const multerDocLib = _require("multer") as typeof import("multer").default;
+  const multerDocLib = _require("multer") as typeof import("multer");
   const docUpload = multerDocLib({ storage: multerDocLib.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
   app.get("/api/jobs/:id/documents", async (req, res) => {
@@ -1048,12 +1048,13 @@ export async function registerRoutes(
   });
 
   app.post("/api/jobs/:id/documents", (req, res) => {
-    docUpload.single("file")(req, res, async (err) => {
+    docUpload.single("file")(req, res, async (err: unknown) => {
       if (err) {
-        if (err.code === "LIMIT_FILE_SIZE") {
+        const uploadError = err as Error & { code?: string };
+        if (uploadError.code === "LIMIT_FILE_SIZE") {
           return res.status(413).json({ error: "File too large. Maximum size is 10 MB." });
         }
-        console.error("Upload middleware error:", err);
+        console.error("Upload middleware error:", uploadError);
         return res.status(500).json({ error: "Failed to upload document" });
       }
       try {
@@ -1131,7 +1132,7 @@ export async function registerRoutes(
     try {
       const existing = await storage.getLineItem(req.params.id);
       if (!existing) return res.status(404).json({ error: "Line item not found" });
-      const parsed = insertLineItemSchema.partial().safeParse(req.body);
+      const parsed = updateLineItemSchema.safeParse(req.body);
       if (!parsed.success) return badRequest(res, parsed.error);
       const item = await storage.updateLineItem(req.params.id, parsed.data);
       if (!item) return res.status(404).json({ error: "Line item not found" });
@@ -1343,7 +1344,7 @@ export async function registerRoutes(
 
   // Lazy-load multer to avoid Vite SSR hoisting issues in tests
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const multerLib = _require("multer") as typeof import("multer").default;
+  const multerLib = _require("multer") as typeof import("multer");
   const upload = multerLib({
     storage: multerLib.memoryStorage(),
     limits: { fileSize: 20 * 1024 * 1024 },
@@ -3059,7 +3060,7 @@ export async function registerRoutes(
       const setupLink = `${appBase}/employee-bank-setup?token=${token}`;
 
       const settingsResult = await db.execute(sql`SELECT company_name FROM settings LIMIT 1`);
-      const settingsRow = (settingsResult as any).rows?.[0] ?? settingsResult[0] ?? null;
+      const settingsRow = (settingsResult as any).rows?.[0] ?? null;
       const companyName: string = settingsRow?.company_name ?? "Your Company";
 
       await sendDirectDepositEmail(employee.email, employee.name, setupLink, companyName, {

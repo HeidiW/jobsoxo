@@ -263,7 +263,7 @@ export default function InboxTasks() {
       const created = new Date(co.createdAt);
       const ageDays = differenceInDays(today, created);
       const jobName = co.job?.title ?? co.invoice?.client?.name ?? "Job";
-      const coNum = co.changeOrderNumber ?? co.id.slice(0, 8).toUpperCase();
+      const coNum = co.id.slice(0, 8).toUpperCase();
       const sign = Number(co.amount) >= 0 ? "+" : "";
       tasks.push({
         id: `change-${co.id}`,

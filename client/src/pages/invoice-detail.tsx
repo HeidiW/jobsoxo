@@ -883,7 +883,7 @@ type ReminderLog = {
   errorMessage: string | null;
 };
 
-function CollectionsPanel({ invoice }: { invoice: Invoice & { remindersPaused?: boolean; reminderCount?: number; lastReminderSent?: string | null } }) {
+function CollectionsPanel({ invoice }: { invoice: InvoiceDetail }) {
   const { toast } = useToast();
   const { data: logs = [], isLoading } = useQuery<ReminderLog[]>({
     queryKey: ["/api/invoices", invoice.id, "reminder-logs"],
@@ -1063,8 +1063,8 @@ export default function InvoiceDetail() {
       editForm.reset({
         clientId: invoice.clientId || "",
         jobId: invoice.jobId || "",
-        issueDate: invoice.issueDate ? invoice.issueDate.substring(0, 10) : "",
-        dueDate: invoice.dueDate ? invoice.dueDate.substring(0, 10) : "",
+        issueDate: invoice.issueDate ? format(invoice.issueDate, "yyyy-MM-dd") : "",
+        dueDate: invoice.dueDate ? format(invoice.dueDate, "yyyy-MM-dd") : "",
         taxRate: String(invoice.taxRate || "0"),
         notes: invoice.notes || "",
         termsAndConditions: invoice.termsAndConditions || "",

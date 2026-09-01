@@ -195,28 +195,16 @@ export const lineItemsRelations = relations(lineItems, ({ one }) => ({
   }),
 }));
 
-export const insertLineItemSchema = createInsertSchema(lineItems)
+const lineItemSchema = createInsertSchema(lineItems)
   .omit({ id: true })
   .extend({
     quantity: positiveNumericString("Quantity"),
     rate: positiveNumericString("Rate"),
     amount: positiveNumericString("Amount"),
-  })
-  .superRefine((data, ctx) => {
-    const qty = parseFloat(data.quantity);
-    const rate = parseFloat(data.rate);
-    const amount = parseFloat(data.amount);
-    if (!isNaN(qty) && !isNaN(rate) && !isNaN(amount)) {
-      const expected = qty * rate;
-      if (Math.abs(amount - expected) > 0.001) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Amount must equal quantity × rate (expected ${expected.toFixed(2)}, got ${amount.toFixed(2)})`,
-          path: ["amount"],
-        });
-      }
-    }
   });
+export const insertLineItemSchema = lineItemSchema.superRefine(validateLineItemAmount);
+
+export const updateLineItemSchema = lineItemSchema.partial().superRefine(validateLineItemAmount);
 export type InsertLineItem = z.infer<typeof insertLineItemSchema>;
 export type LineItem = typeof lineItems.$inferSelect;
 
@@ -704,3 +692,24 @@ export const smsAttempts = pgTable("sms_attempts", {
 export const insertSmsAttemptSchema = createInsertSchema(smsAttempts).omit({ id: true, createdAt: true });
 export type InsertSmsAttempt = z.infer<typeof insertSmsAttemptSchema>;
 export type SmsAttempt = typeof smsAttempts.$inferSelect;
+
+function validateLineItemAmount(
+  data: { quantity?: string; rate?: string; amount?: string },
+  ctx: z.RefinementCtx,
+) {
+  if (data.quantity !== undefined && data.rate !== undefined && data.amount !== undefined) {
+    const qty = parseFloat(data.quantity);
+    const rate = parseFloat(data.rate);
+    const amount = parseFloat(data.amount);
+    if (!isNaN(qty) && !isNaN(rate) && !isNaN(amount)) {
+      const expected = qty * rate;
+      if (Math.abs(amount - expected) > 0.001) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Amount must equal quantity × rate (expected ${expected.toFixed(2)}, got ${amount.toFixed(2)})`,
+          path: ["amount"],
+        });
+      }
+    }
+  }
+}

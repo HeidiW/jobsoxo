@@ -633,12 +633,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateSettings(settingsData: Partial<InsertSettings>): Promise<Settings> {
+    const databaseSettings = settingsData as typeof settings.$inferInsert;
     const existing = await this.getSettings();
     if (existing) {
-      const [updated] = await db.update(settings).set(settingsData).where(eq(settings.id, existing.id)).returning();
+      const [updated] = await db.update(settings).set(databaseSettings).where(eq(settings.id, existing.id)).returning();
       return updated;
     } else {
-      const [newSettings] = await db.insert(settings).values(settingsData as InsertSettings).returning();
+      const [newSettings] = await db.insert(settings).values(databaseSettings).returning();
       return newSettings;
     }
   }
