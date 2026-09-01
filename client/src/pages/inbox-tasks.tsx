@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { trackEvent } from "@/lib/analytics";
 import { differenceInDays, formatDistanceToNow } from "date-fns";
 import type { Invoice, ChangeOrder, Job, Client, InboxTask } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
@@ -138,6 +139,16 @@ export default function InboxTasks() {
   const [selectedDismissedIds, setSelectedDismissedIds] = useState<Set<string>>(new Set());
   const [showDeleteSelectedDialog, setShowDeleteSelectedDialog] = useState(false);
   const [showClearDismissedDialog, setShowClearDismissedDialog] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("gmail_connected") === "1") {
+      trackEvent("gmail_connected", { location: "inbox_tasks" });
+      params.delete("gmail_connected");
+      const query = params.toString();
+      window.history.replaceState({}, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+    }
+  }, []);
 
   // Persist dismissed IDs to localStorage
   useEffect(() => { saveDismissed(dismissed); }, [dismissed]);

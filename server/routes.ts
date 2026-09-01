@@ -18,7 +18,7 @@ import { storage } from "./storage";
 import { db } from "./db";
 import { 
   clients, jobs, invoices, lineItems, payments, employees, timeEntries, users, changeOrders, plaidTransactions,
-  insertClientSchema, insertJobSchema, insertLineItemSchema, insertInvoiceSchema,
+  insertClientSchema, insertJobSchema, insertLineItemSchema, updateLineItemSchema, insertInvoiceSchema,
   insertPaymentSchema, insertEmployeeSchema, insertTimeEntrySchema, insertSettingsSchema,
   insertPayrollRecordSchema, insertChangeOrderSchema, insertJobMaterialSchema
 } from "@shared/schema";

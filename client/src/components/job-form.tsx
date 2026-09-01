@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
+import { trackEvent } from "@/lib/analytics";
 import { Users, Plus, Trash2, Tag } from "lucide-react";
 import { format } from "date-fns";
 import type { Job, Client, Employee, EmployeeAssignment } from "@shared/schema";
@@ -116,9 +117,13 @@ export default function JobForm({
       });
       return savedJob;
     },
-    onSuccess: () => {
+    onSuccess: (savedJob: Job) => {
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      trackEvent("job_saved", {
+        action: isEdit ? "updated" : "created",
+        status: savedJob.status,
+      });
       toast({
         title: isEdit ? "Job updated" : "Job created",
         description: `${form.getValues("title")} has been ${isEdit ? "updated" : "added"} successfully.`,

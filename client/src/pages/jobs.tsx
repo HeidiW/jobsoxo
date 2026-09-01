@@ -27,6 +27,7 @@ import {
 import { Plus, Eye, Edit, Ruler, FileText, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { trackEvent } from "@/lib/analytics";
 import JobForm from "@/components/job-form";
 import type { Job, Client } from "@shared/schema";
 
@@ -98,6 +99,7 @@ export default function Jobs() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      trackEvent("job_deleted");
       toast({ title: "Job deleted", description: `"${deletingJob?.title}" has been deleted.` });
       setDeletingJob(null);
     },

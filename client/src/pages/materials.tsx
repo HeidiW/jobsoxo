@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { Edit, Package, Plus, Search, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { trackEvent } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -138,6 +139,7 @@ function MaterialFormDialog({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      trackEvent("material_saved", { action: material ? "updated" : "created" });
       toast({ title: material ? "Material updated" : "Material added" });
       onOpenChange(false);
     },
@@ -305,6 +307,7 @@ export default function Materials() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      trackEvent("material_deleted");
       toast({ title: "Material deleted" });
       setDeletingMaterial(null);
     },

@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { trackEvent } from "@/lib/analytics";
 import { isToday, format, differenceInDays } from "date-fns";
 import type { InboxTask, Client } from "@shared/schema";
 import {
@@ -154,6 +155,7 @@ export default function GmailTodos() {
     const gmailConnected = params.get("gmail_connected");
     const gmailError = params.get("gmail_error");
     if (gmailConnected === "1") {
+      trackEvent("gmail_connected", { location: "gmail_todos" });
       toast({ title: "Gmail connected!", description: "Your inbox is syncing now." });
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/status"] });
     } else if (gmailError) {
@@ -226,6 +228,10 @@ export default function GmailTodos() {
       return action;
     },
     onSuccess: (action) => {
+      trackEvent("gmail_disconnected", {
+        action,
+        location: "gmail_todos",
+      });
       queryClient.setQueryData(["/api/inbox/status"], { connected: false, email: null });
       queryClient.setQueryData(["/api/inbox/tasks"], []);
       queryClient.setQueryData(["/api/inbox/tasks/hidden"], []);

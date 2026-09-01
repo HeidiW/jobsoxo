@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { trackEvent } from "@/lib/analytics";
 import {
   Plus,
   Download,
@@ -146,6 +147,10 @@ function ReconcileDialog({ open, onClose, invoices }: { open: boolean; onClose: 
     onSuccess: (_data, vars) => {
       setConfirming(null);
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      trackEvent("payment_recorded", {
+        method: "bank_transfer",
+        source: "reconciliation",
+      });
       toast({ title: "Payment confirmed", description: "Invoice marked as paid from bank transaction." });
       refetch();
     },
@@ -583,10 +588,14 @@ export default function Invoices() {
       });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
       setQuickPayInvoice(null);
+      trackEvent("payment_recorded", {
+        method: vars.paymentMethod,
+        source: "invoice_list",
+      });
       toast({ title: "Payment recorded", description: "Invoice marked as paid and payment logged." });
     },
     onError: (error: Error) => {

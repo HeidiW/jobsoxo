@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -32,6 +33,7 @@ import Privacy from "@/pages/privacy";
 import Terms from "@/pages/terms";
 import InvoicePay from "@/pages/invoice-pay";
 import EmployeeBankSetup from "@/pages/employee-bank-setup";
+import { initializeAnalytics } from "@/lib/analytics";
 
 function Router() {
   return (
@@ -156,6 +158,10 @@ function AppContent() {
 }
 
 function App() {
+  useEffect(() => {
+    initializeAnalytics();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="light" storageKey="jobsoxo-theme">

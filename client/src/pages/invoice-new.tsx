@@ -17,6 +17,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
+import { trackEvent } from "@/lib/analytics";
 import { formatPhone } from "@/lib/formatPhone";
 import { positiveNumericField } from "@/lib/positive-numeric-field";
 import { Plus, FileText, Save, Send, Search } from "lucide-react";
@@ -492,6 +493,7 @@ export default function InvoiceNew() {
   const [lineItems, setLineItems] = useState<NewLineItem[]>([]);
   const [sectionsOpen, setSectionsOpen] = useState<Record<string, boolean>>({});
   const [parsedDoc, setParsedDoc] = useState<ParsedDocument | null>(null);
+  const [importSource, setImportSource] = useState<"manual" | "pdf" | "google_doc">("manual");
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [selectedParsedItems, setSelectedParsedItems] = useState<Set<number>>(new Set());
   const [showGoogleDocsDialog, setShowGoogleDocsDialog] = useState(false);
@@ -546,6 +548,7 @@ export default function InvoiceNew() {
 
     if (connected) {
       queryClient.invalidateQueries({ queryKey: ["/api/google-docs/status"] });
+      trackEvent("google_docs_connected", { location: "invoice_builder" });
       setShowGoogleDocsDialog(true);
       toast({ title: "Google Docs connected", description: "Choose a document to import." });
     } else if (error && error !== "access_denied") {
@@ -587,9 +590,14 @@ export default function InvoiceNew() {
       const res = await apiRequest("POST", "/api/invoices", payload);
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      trackEvent("invoice_created", {
+        delivery: vars.send ? "sent" : "draft",
+        import_source: importSource,
+        item_count: lineItems.length,
+      });
       toast({ title: "Invoice created", description: `Invoice ${data.invoiceNumber} has been created.` });
       setLocation(`/invoices/${data.id}`);
     },
@@ -618,6 +626,7 @@ export default function InvoiceNew() {
         toast({ title: "No line items found", description: data.message ?? "Try a different file.", variant: "destructive" });
         return;
       }
+      setImportSource("pdf");
       setParsedDoc(data);
       setSelectedParsedItems(new Set(data.lineItems.map((_, i) => i)));
       setShowImportDialog(true);
@@ -639,6 +648,7 @@ export default function InvoiceNew() {
         });
         return;
       }
+      setImportSource("google_doc");
       setParsedDoc(data);
       setSelectedParsedItems(new Set(data.lineItems.map((_, i) => i)));
       setShowGoogleDocsDialog(false);
@@ -679,6 +689,10 @@ export default function InvoiceNew() {
     if (parsedDoc.dueDate) form.setValue("dueDate", parsedDoc.dueDate);
     if (parsedDoc.taxRate !== undefined) form.setValue("taxRate", String(parsedDoc.taxRate));
     if (parsedDoc.notes) form.setValue("notes", parsedDoc.notes);
+    trackEvent("invoice_import_applied", {
+      source: importSource,
+      item_count: toAdd.length,
+    });
     setShowImportDialog(false);
     setParsedDoc(null);
     toast({ title: `Imported ${toAdd.length} item${toAdd.length !== 1 ? "s" : ""}` });
