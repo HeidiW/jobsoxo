@@ -75,6 +75,9 @@ describe("Google Docs OAuth routes", () => {
     const authUrl = new URL(authResponse.headers.location);
     const state = authUrl.searchParams.get("state");
     expect(state).toBeTruthy();
+    expect(authUrl.searchParams.get("redirect_uri")).toBe(
+      "http://test-app/api/google-docs/callback",
+    );
     expect(authUrl.searchParams.get("scope")).toContain("documents.readonly");
     expect(authUrl.searchParams.get("scope")).not.toContain("gmail.");
 

@@ -12,6 +12,7 @@ const GOOGLE_DOCS_SCOPES = [
   "https://www.googleapis.com/auth/drive.metadata.readonly",
   "https://www.googleapis.com/auth/userinfo.email",
 ].join(" ");
+const GOOGLE_DOCS_CALLBACK_PATH = "/api/google-docs/callback";
 
 export interface GoogleDocSummary {
   id: string;
@@ -42,9 +43,49 @@ interface GoogleDocStructuralElement {
   };
 }
 
+/**
+ * Return the configured public application URL in the canonical form used by
+ * Google OAuth. APP_URL is intentionally required here: a localhost fallback
+ * can make the authorization request and deployed callback use different
+ * redirect URIs, which Google rejects.
+ */
+export function getGoogleDocsPublicBaseUrl(): string {
+  const configuredUrl = process.env.APP_URL?.trim();
+  if (!configuredUrl) {
+    throw new Error(
+      "APP_URL is not configured. Set APP_URL to the public application URL used by this environment before connecting Google Docs.",
+    );
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(configuredUrl);
+  } catch {
+    throw new Error(
+      "APP_URL is invalid. Set APP_URL to a full public http(s) URL before connecting Google Docs.",
+    );
+  }
+
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    throw new Error(
+      "APP_URL is invalid. Set APP_URL to a full public http(s) URL before connecting Google Docs.",
+    );
+  }
+  if (parsedUrl.search || parsedUrl.hash) {
+    throw new Error(
+      "APP_URL is invalid. Remove its query string and hash so it can be used as the Google Docs OAuth base URL.",
+    );
+  }
+
+  // URL normalizes the host but retains a path, which is useful when the app
+  // is deployed beneath a path. Remove every trailing slash so the callback
+  // URI is stable for APP_URL values such as https://app.example.com///.
+  parsedUrl.pathname = parsedUrl.pathname.replace(/\/+$/, "");
+  return parsedUrl.toString().replace(/\/+$/, "");
+}
+
 export function getGoogleDocsCallbackUrl(): string {
-  const base = (process.env.APP_URL || "http://localhost:5000").replace(/\/$/, "");
-  return `${base}/api/google-docs/callback`;
+  return `${getGoogleDocsPublicBaseUrl()}${GOOGLE_DOCS_CALLBACK_PATH}`;
 }
 
 export function buildGoogleDocsAuthUrl(state: string): string {

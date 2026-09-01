@@ -41,6 +41,7 @@ import { parseDocumentText } from "./document-parser";
 import {
   buildGoogleDocsAuthUrl,
   exchangeGoogleDocsCode,
+  getGoogleDocsPublicBaseUrl,
   getGoogleDocForInvoice,
   getUserGoogleDocsEmail,
   isUserGoogleDocsConnected,
@@ -2452,7 +2453,16 @@ export async function registerRoutes(
 
   app.get("/api/google-docs/callback", async (req, res) => {
     const { code, state, error } = req.query as Record<string, string>;
-    const baseUrl = (process.env.APP_URL || "http://localhost:5000").replace(/\/$/, "");
+    let baseUrl: string;
+    try {
+      baseUrl = getGoogleDocsPublicBaseUrl();
+    } catch (configurationError) {
+      const message = configurationError instanceof Error
+        ? configurationError.message
+        : "Google Docs OAuth is not configured";
+      console.error("Google Docs OAuth configuration error:", configurationError);
+      return res.status(500).json({ error: message });
+    }
     const returnPath = req.session.googleDocsReturnPath === "/invoices/new"
       ? "/invoices/new"
       : "/invoices/new";

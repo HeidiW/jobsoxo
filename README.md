@@ -327,6 +327,37 @@ npm test
 
 ---
 
+### Google Docs OAuth configuration
+
+Google Docs uses the same Google OAuth client as Gmail. The application
+constructs one canonical redirect URI from `APP_URL`:
+
+```text
+<APP_URL>/api/google-docs/callback
+```
+
+Before connecting a document, complete this checklist for every environment:
+
+1. Set `APP_URL` to that environment's public application URL, including the
+   `https://` scheme. Do not use a localhost URL or a Replit preview URL for a
+   published deployment.
+2. In Google Cloud Console, open **APIs & Services → Credentials**, select the
+   OAuth 2.0 Client ID used by `GOOGLE_CLIENT_ID`, and add the exact URI
+   `<APP_URL>/api/google-docs/callback` under **Authorized redirect URIs**.
+3. Register the development and published values separately when they have
+   different public hosts. For example:
+   `https://your-dev-host.replit.dev/api/google-docs/callback` and
+   `https://yourapp.replit.app/api/google-docs/callback`.
+4. Keep `APP_URL` and the registered host in sync after changing domains.
+   Trailing slashes on `APP_URL` are normalized by the application, but the
+   callback path and host must still match exactly.
+
+If `APP_URL` is missing, malformed, or includes a query string/hash, Google
+Docs connection stops with a configuration message instead of sending an
+invalid OAuth request.
+
+---
+
 ## Key Design Decisions
 
 - **Shared schema** — `shared/schema.ts` is imported by both the frontend (for TypeScript types) and the backend (for Drizzle queries). A single source of truth for all data shapes.
