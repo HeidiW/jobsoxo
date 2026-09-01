@@ -866,3 +866,72 @@ describe("POST /api/employees/:id/send-deposit-link — pending token guard", ()
     expect((updated as any).directDepositToken).toBeTruthy();
   });
 });
+
+describe("GET /api/plaid/searchable-payments — access control", () => {
+  it("returns 403 for non-admin users", async () => {
+    const res = await request(app)
+      .get("/api/plaid/searchable-payments")
+      .expect(403);
+
+    expect(res.body.error).toBe("Admin access required");
+  });
+
+  it("returns 200 for admin users", async () => {
+    const adminApp = await buildAdminTestApp();
+    const res = await request(adminApp)
+      .get("/api/plaid/searchable-payments")
+      .expect(200);
+
+    expect(Array.isArray(res.body)).toBe(true);
+  });
+});
+
+describe("PATCH /api/plaid/transactions/:txId/match — access control", () => {
+  it("returns 403 for non-admin users", async () => {
+    const res = await request(app)
+      .patch("/api/plaid/transactions/some-tx-id/match")
+      .send({ paymentId: "some-payment-id" })
+      .expect(403);
+
+    expect(res.body.error).toBe("Admin access required");
+  });
+
+  it("returns 400 when paymentId is missing", async () => {
+    const adminApp = await buildAdminTestApp();
+    const res = await request(adminApp)
+      .patch("/api/plaid/transactions/some-tx-id/match")
+      .send({})
+      .expect(400);
+
+    expect(res.body.error).toMatch(/paymentId/i);
+  });
+
+  it("returns 404 when payment does not exist", async () => {
+    const adminApp = await buildAdminTestApp();
+    const res = await request(adminApp)
+      .patch("/api/plaid/transactions/some-tx-id/match")
+      .send({ paymentId: "00000000-0000-0000-0000-000000000000" })
+      .expect(404);
+
+    expect(res.body.error).toMatch(/payment not found/i);
+  });
+});
+
+describe("DELETE /api/plaid/transactions/:txId/match — access control", () => {
+  it("returns 403 for non-admin users", async () => {
+    const res = await request(app)
+      .delete("/api/plaid/transactions/some-tx-id/match")
+      .expect(403);
+
+    expect(res.body.error).toBe("Admin access required");
+  });
+
+  it("returns 404 when transaction does not exist", async () => {
+    const adminApp = await buildAdminTestApp();
+    const res = await request(adminApp)
+      .delete("/api/plaid/transactions/00000000-0000-0000-0000-000000000000/match")
+      .expect(404);
+
+    expect(res.body.error).toMatch(/transaction not found/i);
+  });
+});

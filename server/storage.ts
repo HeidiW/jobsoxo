@@ -252,6 +252,8 @@ export interface IStorage {
   upsertPlaidTransactions(transactions: InsertPlaidTransaction[]): Promise<StoredPlaidTransaction[]>;
   getPlaidTransactions(userId: string, limit?: number): Promise<StoredPlaidTransaction[]>;
   matchPlaidTransaction(plaidTxId: string, paymentId: string): Promise<void>;
+  matchPlaidTransactionById(txId: string, paymentId: string): Promise<void>;
+  clearPlaidTransactionMatch(txId: string): Promise<void>;
   markAllPayrollPeriodPaid(periodStart: Date, periodEnd: Date): Promise<number>;
 
   // Dashboard
@@ -1205,6 +1207,18 @@ export class DatabaseStorage implements IStorage {
     await db.update(plaidTransactions)
       .set({ matchedPaymentId: paymentId })
       .where(eq(plaidTransactions.plaidTransactionId, plaidTxId));
+  }
+
+  async matchPlaidTransactionById(txId: string, paymentId: string): Promise<void> {
+    await db.update(plaidTransactions)
+      .set({ matchedPaymentId: paymentId })
+      .where(eq(plaidTransactions.id, txId));
+  }
+
+  async clearPlaidTransactionMatch(txId: string): Promise<void> {
+    await db.update(plaidTransactions)
+      .set({ matchedPaymentId: null })
+      .where(eq(plaidTransactions.id, txId));
   }
 
   async markAllPayrollPeriodPaid(periodStart: Date, periodEnd: Date): Promise<number> {

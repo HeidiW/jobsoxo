@@ -22,7 +22,6 @@ import {
   insertPaymentSchema, insertEmployeeSchema, insertTimeEntrySchema, insertSettingsSchema,
   insertPayrollRecordSchema, insertChangeOrderSchema, insertJobMaterialSchema
 } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { sendInvoiceEmail, processOverdueReminders, sendPasswordResetEmail, sendDirectDepositEmail } from "./email";
 import bcrypt from "bcryptjs";
@@ -48,6 +47,7 @@ import {
   listGoogleDocs,
   parseGoogleDocText,
 } from "./google-docs";
+import { eq, sql, desc } from "drizzle-orm";
 
 function parseNumeric(value: unknown): number {
   if (typeof value === "number") return value;
@@ -3121,9 +3121,30 @@ export async function registerRoutes(
       const account = await storage.getBusinessBankAccount(userId);
       if (!account) return res.json({ connected: false, transactions: [], lastSynced: null });
 
-      const transactions = await storage.getPlaidTransactions(userId, 50);
-      const lastSynced = transactions.length > 0 ? transactions[0].syncedAt : null;
-      res.json({ connected: true, transactions, lastSynced });
+      const rows = await db
+        .select({
+          id: plaidTransactions.id,
+          plaidTransactionId: plaidTransactions.plaidTransactionId,
+          date: plaidTransactions.date,
+          amount: plaidTransactions.amount,
+          name: plaidTransactions.name,
+          merchantName: plaidTransactions.merchantName,
+          pending: plaidTransactions.pending,
+          matchedPaymentId: plaidTransactions.matchedPaymentId,
+          syncedAt: plaidTransactions.syncedAt,
+          matchedInvoiceNumber: invoices.invoiceNumber,
+          matchedClientName: clients.name,
+        })
+        .from(plaidTransactions)
+        .leftJoin(payments, eq(payments.id, plaidTransactions.matchedPaymentId))
+        .leftJoin(invoices, eq(invoices.id, payments.invoiceId))
+        .leftJoin(clients, eq(clients.id, invoices.clientId))
+        .where(eq(plaidTransactions.userId, userId))
+        .orderBy(desc(plaidTransactions.date))
+        .limit(50);
+
+      const lastSynced = rows.length > 0 ? rows[0].syncedAt : null;
+      res.json({ connected: true, transactions: rows, lastSynced });
     } catch (error: any) {
       console.error("Plaid transactions error:", error?.response?.data || error);
       res.status(500).json({ error: "Failed to fetch transactions" });
@@ -3143,6 +3164,72 @@ export async function registerRoutes(
     } catch (error: any) {
       console.error("Plaid sync error:", error?.response?.data || error);
       res.status(500).json({ error: "Failed to sync transactions" });
+    }
+  });
+
+  // Return all invoice payments enriched with invoice number + client name (for manual match dialog)
+  app.get("/api/plaid/searchable-payments", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const rows = await db
+        .select({
+          id: payments.id,
+          amount: payments.amount,
+          paymentDate: payments.paymentDate,
+          paymentMethod: payments.paymentMethod,
+          referenceNumber: payments.referenceNumber,
+          invoiceId: payments.invoiceId,
+          invoiceNumber: invoices.invoiceNumber,
+          clientName: clients.name,
+        })
+        .from(payments)
+        .leftJoin(invoices, eq(invoices.id, payments.invoiceId))
+        .leftJoin(clients, eq(clients.id, invoices.clientId))
+        .orderBy(desc(payments.paymentDate))
+        .limit(200);
+      res.json(rows);
+    } catch (error) {
+      console.error("Searchable payments error:", error);
+      res.status(500).json({ error: "Failed to fetch payments" });
+    }
+  });
+
+  // Manually link a bank transaction to an invoice payment
+  app.patch("/api/plaid/transactions/:txId/match", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { txId } = req.params;
+      const { paymentId } = req.body;
+      if (!paymentId || typeof paymentId !== "string") {
+        return res.status(400).json({ error: "paymentId is required" });
+      }
+      // Verify the payment exists
+      const [payment] = await db.select().from(payments).where(eq(payments.id, paymentId)).limit(1);
+      if (!payment) return res.status(404).json({ error: "Payment not found" });
+      // Verify the transaction belongs to this user
+      const userId = req.session.userId!;
+      const [tx] = await db.select().from(plaidTransactions).where(eq(plaidTransactions.id, txId)).limit(1);
+      if (!tx || tx.userId !== userId) return res.status(404).json({ error: "Transaction not found" });
+
+      await storage.matchPlaidTransactionById(txId, paymentId);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Manual match error:", error);
+      res.status(500).json({ error: "Failed to match transaction" });
+    }
+  });
+
+  // Unlink a manually or auto-matched bank transaction
+  app.delete("/api/plaid/transactions/:txId/match", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { txId } = req.params;
+      const userId = req.session.userId!;
+      const [tx] = await db.select().from(plaidTransactions).where(eq(plaidTransactions.id, txId)).limit(1);
+      if (!tx || tx.userId !== userId) return res.status(404).json({ error: "Transaction not found" });
+
+      await storage.clearPlaidTransactionMatch(txId);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Unlink match error:", error);
+      res.status(500).json({ error: "Failed to unlink match" });
     }
   });
 

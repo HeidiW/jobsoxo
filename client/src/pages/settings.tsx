@@ -46,12 +46,22 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Link2,
+  Search,
+  X,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import type { Settings, Invite } from "@shared/schema";
 import { usePlaidLink, type PlaidAccountMeta } from "@/hooks/use-plaid-link";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const settingsFormSchema = z.object({
   companyName: z.string().optional(),
@@ -92,11 +102,26 @@ type PlaidTxRow = {
   name: string;
   merchantName?: string | null;
   matchedPaymentId?: string | null;
+  matchedInvoiceNumber?: string | null;
+  matchedClientName?: string | null;
+};
+
+type PaymentOption = {
+  id: string;
+  amount: string;
+  paymentDate: string;
+  paymentMethod: string;
+  referenceNumber?: string | null;
+  invoiceId?: string | null;
+  invoiceNumber?: string | null;
+  clientName?: string | null;
 };
 
 function BusinessBankAccountCard() {
   const { toast } = useToast();
   const [localAccount, setLocalAccount] = useState<PlaidAccountMeta | null | undefined>(undefined);
+  const [linkDialogTx, setLinkDialogTx] = useState<PlaidTxRow | null>(null);
+  const [paymentSearch, setPaymentSearch] = useState("");
 
   const { data: plaidStatus } = useQuery<{ configured: boolean }>({
     queryKey: ["/api/plaid/status"],
@@ -163,6 +188,35 @@ function BusinessBankAccountCard() {
     onError: () => toast({ title: "Sync failed", variant: "destructive" }),
   });
 
+  const { data: searchablePayments = [] } = useQuery<PaymentOption[]>({
+    queryKey: ["/api/plaid/searchable-payments"],
+    enabled: !!linkDialogTx,
+  });
+
+  const linkMutation = useMutation({
+    mutationFn: async ({ txId, paymentId }: { txId: string; paymentId: string }) => {
+      await apiRequest("PATCH", `/api/plaid/transactions/${txId}/match`, { paymentId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/plaid/transactions"] });
+      setLinkDialogTx(null);
+      setPaymentSearch("");
+      toast({ title: "Transaction linked to payment" });
+    },
+    onError: () => toast({ title: "Failed to link transaction", variant: "destructive" }),
+  });
+
+  const unlinkMutation = useMutation({
+    mutationFn: async (txId: string) => {
+      await apiRequest("DELETE", `/api/plaid/transactions/${txId}/match`, undefined);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/plaid/transactions"] });
+      toast({ title: "Match removed" });
+    },
+    onError: () => toast({ title: "Failed to unlink transaction", variant: "destructive" }),
+  });
+
   const { open, isLoading: linkLoading } = usePlaidLink({
     entityType: "business",
     onSuccess: (acct) => {
@@ -171,6 +225,16 @@ function BusinessBankAccountCard() {
       toast({ title: "Bank account connected", description: `${acct.institutionName} ••••${acct.accountMask}` });
     },
   });
+
+  const filteredPayments = useMemo(() => {
+    const q = paymentSearch.toLowerCase();
+    if (!q) return searchablePayments;
+    return searchablePayments.filter(p =>
+      (p.invoiceNumber ?? "").toLowerCase().includes(q) ||
+      (p.clientName ?? "").toLowerCase().includes(q) ||
+      (p.referenceNumber ?? "").toLowerCase().includes(q)
+    );
+  }, [searchablePayments, paymentSearch]);
 
   const fmtAmt = (n: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
   const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -273,6 +337,7 @@ function BusinessBankAccountCard() {
                   {txData.transactions.slice(0, 20).map(tx => {
                     const amt = Number(tx.amount);
                     const isCredit = amt < 0; // money coming in
+                    const isUnlinking = unlinkMutation.isPending;
                     return (
                       <div key={tx.id} className="flex items-center gap-3 px-4 py-2.5">
                         <div className={`flex-shrink-0 rounded-full p-1 ${isCredit ? "bg-green-50 text-green-600" : "bg-slate-100 text-slate-500"}`}>
@@ -291,13 +356,31 @@ function BusinessBankAccountCard() {
                         </div>
                         <div className="flex-shrink-0">
                           {tx.matchedPaymentId ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                              <Link2 className="h-3 w-3" />Matched
-                            </span>
+                            <button
+                              type="button"
+                              title="Click to unlink this match"
+                              disabled={isUnlinking}
+                              onClick={() => unlinkMutation.mutate(tx.id)}
+                              className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 hover:bg-red-100 hover:text-red-700 transition-colors disabled:opacity-50"
+                              data-testid={`button-unlink-tx-${tx.id}`}
+                            >
+                              <Link2 className="h-3 w-3" />
+                              {tx.matchedInvoiceNumber
+                                ? <span>{tx.matchedInvoiceNumber}{tx.matchedClientName ? ` · ${tx.matchedClientName}` : ""}</span>
+                                : <span>Matched</span>}
+                            </button>
                           ) : (
-                            <span className="text-xs text-muted-foreground px-2 py-0.5 rounded-full bg-muted">
-                              Unmatched
-                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                              onClick={() => { setLinkDialogTx(tx); setPaymentSearch(""); }}
+                              data-testid={`button-link-tx-${tx.id}`}
+                            >
+                              <Link2 className="h-3 w-3 mr-1" />
+                              Link to payment
+                            </Button>
                           )}
                         </div>
                       </div>
@@ -306,6 +389,76 @@ function BusinessBankAccountCard() {
                 </div>
               )}
             </div>
+
+            {/* Link-to-payment dialog */}
+            <Dialog open={!!linkDialogTx} onOpenChange={(open) => { if (!open) { setLinkDialogTx(null); setPaymentSearch(""); } }}>
+              <DialogContent className="max-w-lg">
+                <DialogHeader>
+                  <DialogTitle>Link to invoice payment</DialogTitle>
+                  <DialogDescription>
+                    {linkDialogTx && (
+                      <span>
+                        Linking <strong>{fmtAmt(Math.abs(Number(linkDialogTx.amount)))}</strong> on {fmtDate(linkDialogTx.date)} — {linkDialogTx.merchantName || linkDialogTx.name}
+                      </span>
+                    )}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="mt-1 space-y-3">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by client, invoice #, or reference…"
+                      value={paymentSearch}
+                      onChange={e => setPaymentSearch(e.target.value)}
+                      className="pl-8"
+                      data-testid="input-payment-search"
+                    />
+                    {paymentSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setPaymentSearch("")}
+                        className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                  <ScrollArea className="h-64 rounded-md border">
+                    {filteredPayments.length === 0 ? (
+                      <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+                        {searchablePayments.length === 0 ? "No invoice payments recorded yet." : "No payments match your search."}
+                      </p>
+                    ) : (
+                      <div className="divide-y">
+                        {filteredPayments.map(p => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className="w-full text-left px-4 py-2.5 hover:bg-muted/50 transition-colors flex items-center justify-between gap-3"
+                            disabled={linkMutation.isPending}
+                            onClick={() => linkDialogTx && linkMutation.mutate({ txId: linkDialogTx.id, paymentId: p.id })}
+                            data-testid={`payment-option-${p.id}`}
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">
+                                {p.invoiceNumber ?? "—"}{p.clientName ? ` · ${p.clientName}` : ""}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(p.paymentDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                {p.referenceNumber ? ` · Ref: ${p.referenceNumber}` : ""}
+                              </p>
+                            </div>
+                            <span className="text-sm font-mono font-semibold shrink-0 text-green-700">
+                              +{fmtAmt(Math.abs(Number(p.amount)))}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </div>
+              </DialogContent>
+            </Dialog>
           </>
         ) : (
           <div className="space-y-3">
