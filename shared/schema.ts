@@ -532,6 +532,21 @@ export const googleTokens = pgTable("google_tokens", {
 export type GoogleToken = typeof googleTokens.$inferSelect;
 export type InsertGoogleToken = typeof googleTokens.$inferInsert;
 
+// Google Docs — separate per-user read-only OAuth tokens so document access
+// cannot replace or change the scopes of a user's Gmail connection.
+export const googleDocsTokens = pgTable("google_docs_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token"),
+  expiresAt: timestamp("expires_at"),
+  googleEmail: text("google_email"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type GoogleDocsToken = typeof googleDocsTokens.$inferSelect;
+export type InsertGoogleDocsToken = typeof googleDocsTokens.$inferInsert;
+
 // Inbox Tasks — Gmail-synced email items shown as a per-user daily to-do list.
 // Each user connects their own Gmail account; tasks are scoped to that user.
 export const inboxTasks = pgTable("inbox_tasks", {

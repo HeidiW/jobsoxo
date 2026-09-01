@@ -38,6 +38,15 @@ import { handleInboundSms, twimlReply } from "./sms";
 import { sendChangeOrderEmail } from "./email";
 import twilio from "twilio";
 import { parseDocumentText } from "./document-parser";
+import {
+  buildGoogleDocsAuthUrl,
+  exchangeGoogleDocsCode,
+  getGoogleDocForInvoice,
+  getUserGoogleDocsEmail,
+  isUserGoogleDocsConnected,
+  listGoogleDocs,
+  parseGoogleDocText,
+} from "./google-docs";
 
 function parseNumeric(value: unknown): number {
   if (typeof value === "number") return value;
@@ -1374,6 +1383,36 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/invoices/parse-google-doc", requireAuth, async (req, res) => {
+    const parsedInput = z.object({
+      documentId: z.string().trim().min(1).max(250),
+    }).safeParse(req.body);
+    if (!parsedInput.success) return badRequest(res, parsedInput.error);
+
+    try {
+      const document = await getGoogleDocForInvoice(
+        req.session.userId!,
+        parsedInput.data.documentId
+      );
+      const result = parseGoogleDocText(document.text);
+      res.json({
+        ...result,
+        sourceTitle: document.title,
+        ...(result.lineItems.length === 0
+          ? { message: "No recognizable invoice line items were found in this Google Doc." }
+          : {}),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to import Google Doc";
+      const status = /not connected|expired|reconnect/i.test(message) ? 401
+        : /unavailable|could not read/i.test(message) ? 403
+        : /empty|no readable/i.test(message) ? 422
+        : 500;
+      if (status === 500) console.error("Google Doc parse error:", error);
+      res.status(status).json({ error: message });
+    }
+  });
+
   app.post("/api/invoices", async (req, res) => {
     try {
       const inputParsed = createInvoiceInputSchema.safeParse(req.body);
@@ -2390,6 +2429,104 @@ export async function registerRoutes(
       next();
     }).catch(() => res.status(500).json({ error: "Auth check failed" }));
   }
+
+  // ── Per-user Google Docs OAuth and read-only document access ──────────────
+
+  app.get("/api/google-docs/auth", requireAuth, (req, res) => {
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+      return res.status(503).json({ error: "Google OAuth not configured" });
+    }
+    const crypto = require("crypto") as typeof import("crypto");
+    const state = crypto.randomBytes(16).toString("hex");
+    req.session.googleDocsOAuthState = state;
+    req.session.googleDocsReturnPath = "/invoices/new";
+    try {
+      res.redirect(buildGoogleDocsAuthUrl(state));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not connect Google Docs";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get("/api/google-docs/callback", async (req, res) => {
+    const { code, state, error } = req.query as Record<string, string>;
+    const baseUrl = (process.env.APP_URL || "http://localhost:5000").replace(/\/$/, "");
+    const returnPath = req.session.googleDocsReturnPath === "/invoices/new"
+      ? "/invoices/new"
+      : "/invoices/new";
+
+    if (!req.session.userId) {
+      return res.redirect(`${baseUrl}/login?error=session_expired`);
+    }
+    if (!state || state !== req.session.googleDocsOAuthState) {
+      return res.redirect(`${baseUrl}${returnPath}?google_docs_error=invalid_state`);
+    }
+    delete req.session.googleDocsOAuthState;
+    delete req.session.googleDocsReturnPath;
+
+    if (error) {
+      return res.redirect(`${baseUrl}${returnPath}?google_docs_error=${encodeURIComponent(error)}`);
+    }
+    if (!code) {
+      return res.redirect(`${baseUrl}${returnPath}?google_docs_error=missing_code`);
+    }
+
+    try {
+      const tokens = await exchangeGoogleDocsCode(code);
+      await storage.saveGoogleDocsToken(req.session.userId, {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt,
+        googleEmail: tokens.email,
+      });
+      res.redirect(`${baseUrl}${returnPath}?google_docs_connected=1`);
+    } catch (callbackError) {
+      console.error("Google Docs OAuth callback error:", callbackError);
+      const message = callbackError instanceof Error ? callbackError.message : "oauth_failed";
+      res.redirect(`${baseUrl}${returnPath}?google_docs_error=${encodeURIComponent(message)}`);
+    }
+  });
+
+  app.get("/api/google-docs/status", requireAuth, async (req, res) => {
+    try {
+      const connected = await isUserGoogleDocsConnected(req.session.userId!);
+      const email = connected ? await getUserGoogleDocsEmail(req.session.userId!) : null;
+      res.json({ connected, email });
+    } catch {
+      res.json({ connected: false, email: null });
+    }
+  });
+
+  app.get("/api/google-docs/documents", requireAuth, async (req, res) => {
+    const parsedQuery = z.object({
+      search: z.string().max(100).optional().default(""),
+    }).safeParse(req.query);
+    if (!parsedQuery.success) return badRequest(res, parsedQuery.error);
+
+    try {
+      const documents = await listGoogleDocs(req.session.userId!, parsedQuery.data.search);
+      res.json(documents);
+    } catch (documentsError) {
+      const message = documentsError instanceof Error
+        ? documentsError.message
+        : "Failed to list Google Docs";
+      const status = /not connected|expired|reconnect/i.test(message) ? 401
+        : /unavailable/i.test(message) ? 403
+        : 500;
+      if (status === 500) console.error("Google Docs list error:", documentsError);
+      res.status(status).json({ error: message });
+    }
+  });
+
+  app.delete("/api/google-docs/disconnect", requireAuth, async (req, res) => {
+    try {
+      await storage.deleteGoogleDocsToken(req.session.userId!);
+      res.json({ disconnected: true });
+    } catch (disconnectError) {
+      console.error("Google Docs disconnect error:", disconnectError);
+      res.status(500).json({ error: "Failed to disconnect Google Docs" });
+    }
+  });
 
   // ── Per-user Gmail OAuth ──────────────────────────────────────────────────
 

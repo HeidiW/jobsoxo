@@ -19,7 +19,7 @@ import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
 import { formatPhone } from "@/lib/formatPhone";
 import { positiveNumericField } from "@/lib/positive-numeric-field";
-import { Plus, FileText, Save, Send } from "lucide-react";
+import { Plus, FileText, Save, Send, Search } from "lucide-react";
 import { format, addDays } from "date-fns";
 import type { Client, Job, Settings } from "@shared/schema";
 import { Link } from "wouter";
@@ -44,6 +44,19 @@ interface ParsedDocument {
   notes?: string;
   confidence: "high" | "medium" | "low";
   message?: string;
+  sourceTitle?: string;
+}
+
+interface GoogleDocsStatus {
+  connected: boolean;
+  email: string | null;
+}
+
+interface GoogleDocSummary {
+  id: string;
+  name: string;
+  modifiedTime: string | null;
+  webViewLink: string | null;
 }
 
 export const lineItemSchema = z.object({
@@ -481,6 +494,8 @@ export default function InvoiceNew() {
   const [parsedDoc, setParsedDoc] = useState<ParsedDocument | null>(null);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [selectedParsedItems, setSelectedParsedItems] = useState<Set<number>>(new Set());
+  const [showGoogleDocsDialog, setShowGoogleDocsDialog] = useState(false);
+  const [googleDocsSearch, setGoogleDocsSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("split");
   const [activeTab, setActiveTab] = useState<TabSection>("details");
@@ -488,6 +503,13 @@ export default function InvoiceNew() {
   const { data: clients } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
   const { data: jobs } = useQuery<(Job & { client: Client })[]>({ queryKey: ["/api/jobs"] });
   const { data: settings } = useQuery<Settings>({ queryKey: ["/api/settings"] });
+  const googleDocsStatusQuery = useQuery<GoogleDocsStatus>({
+    queryKey: ["/api/google-docs/status"],
+  });
+  const googleDocsDocumentsQuery = useQuery<GoogleDocSummary[]>({
+    queryKey: ["/api/google-docs/documents"],
+    enabled: showGoogleDocsDialog && googleDocsStatusQuery.data?.connected === true,
+  });
 
   const form = useForm<InvoiceFormValues>({
     resolver: zodResolver(invoiceFormSchema),
@@ -516,6 +538,29 @@ export default function InvoiceNew() {
       if (job) form.setValue("clientId", job.clientId);
     }
   }, [preselectedJobId, jobs, form]);
+
+  useEffect(() => {
+    const connected = searchParams.get("google_docs_connected");
+    const error = searchParams.get("google_docs_error");
+    if (!connected && !error) return;
+
+    if (connected) {
+      queryClient.invalidateQueries({ queryKey: ["/api/google-docs/status"] });
+      setShowGoogleDocsDialog(true);
+      toast({ title: "Google Docs connected", description: "Choose a document to import." });
+    } else if (error && error !== "access_denied") {
+      toast({
+        title: "Could not connect Google Docs",
+        description: error === "invalid_state"
+          ? "The connection request expired. Please try again."
+          : decodeURIComponent(error),
+        variant: "destructive",
+      });
+    }
+    window.history.replaceState({}, "", "/invoices/new");
+  // Handle the OAuth return query only once on mount.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filteredJobs = jobs;
   const selectedClient = clients?.find((c) => c.id === selectedClientId);
@@ -580,6 +625,41 @@ export default function InvoiceNew() {
     onError: (err: Error) => { toast({ title: "Parse failed", description: err.message, variant: "destructive" }); },
   });
 
+  const parseGoogleDocMutation = useMutation({
+    mutationFn: async (documentId: string) => {
+      const res = await apiRequest("POST", "/api/invoices/parse-google-doc", { documentId });
+      return res.json() as Promise<ParsedDocument>;
+    },
+    onSuccess: (data) => {
+      if (data.lineItems.length === 0) {
+        toast({
+          title: "No line items found",
+          description: data.message ?? "Try a different Google Doc.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setParsedDoc(data);
+      setSelectedParsedItems(new Set(data.lineItems.map((_, i) => i)));
+      setShowGoogleDocsDialog(false);
+      setShowImportDialog(true);
+    },
+    onError: (error: Error) => {
+      if (/not connected|expired|reconnect/i.test(error.message)) {
+        queryClient.invalidateQueries({ queryKey: ["/api/google-docs/status"] });
+      }
+      toast({ title: "Google Doc import failed", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const openGoogleDocsImport = () => {
+    if (googleDocsStatusQuery.data?.connected) {
+      setShowGoogleDocsDialog(true);
+      return;
+    }
+    window.location.assign("/api/google-docs/auth?returnTo=/invoices/new");
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -603,6 +683,22 @@ export default function InvoiceNew() {
     setParsedDoc(null);
     toast({ title: `Imported ${toAdd.length} item${toAdd.length !== 1 ? "s" : ""}` });
   };
+
+  const updateParsedItem = (index: number, updates: Partial<ParsedLineItem>) => {
+    setParsedDoc((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        lineItems: current.lineItems.map((item, itemIndex) =>
+          itemIndex === index ? { ...item, ...updates } : item
+        ),
+      };
+    });
+  };
+
+  const filteredGoogleDocs = (googleDocsDocumentsQuery.data ?? []).filter((document) =>
+    document.name.toLowerCase().includes(googleDocsSearch.trim().toLowerCase())
+  );
 
   const updateItem = (id: string, updates: Partial<NewLineItem>) =>
     setLineItems(prev => prev.map(i => i.id === id ? { ...i, ...updates } : i));
@@ -706,10 +802,10 @@ export default function InvoiceNew() {
         </div>
       </header>
 
-      {/* ── PDF import strip ── */}
+      {/* ── Document import strip ── */}
       <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "9px 22px", background: "#eff6ff", borderBottom: "1px solid #dbeafe", flexShrink: 0 }}>
         <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "#2563eb", flexShrink: 0 }} />
-        <span style={{ fontSize: "12.5px", color: "#1e40af", fontWeight: 600 }}>Import a PDF quote or invoice to auto-fill parties, sections and line items.</span>
+        <span style={{ fontSize: "12.5px", color: "#1e40af", fontWeight: 600 }}>Import a quote or invoice to review and add its sections and line items.</span>
         <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" style={{ display: "none" }} onChange={handleFileChange} data-testid="input-document-upload" />
         <button
           onClick={() => fileInputRef.current?.click()}
@@ -719,6 +815,15 @@ export default function InvoiceNew() {
         >
           <FileText style={{ width: "13px", height: "13px" }} />
           {parseDocumentMutation.isPending ? "Parsing…" : "Choose PDF"}
+        </button>
+        <button
+          onClick={openGoogleDocsImport}
+          disabled={googleDocsStatusQuery.isLoading}
+          style={{ padding: "6px 13px", border: "1px solid #93c5fd", background: "#fff", borderRadius: "8px", fontSize: "12.5px", fontWeight: 700, color: "#1d4ed8", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "6px" }}
+          data-testid="button-import-google-doc"
+        >
+          <FileText style={{ width: "13px", height: "13px" }} />
+          Import from Google Doc
         </button>
       </div>
 
@@ -1189,11 +1294,86 @@ export default function InvoiceNew() {
         )}
       </div>
 
-      {/* ── PDF Import Dialog ── */}
+      {/* ── Google Docs chooser ── */}
+      <Dialog open={showGoogleDocsDialog} onOpenChange={setShowGoogleDocsDialog}>
+        <DialogContent className="max-w-xl !flex flex-col max-h-[85dvh] overflow-hidden">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>Choose a Google Doc</DialogTitle>
+          </DialogHeader>
+          <div className="relative shrink-0">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={googleDocsSearch}
+              onChange={(event) => setGoogleDocsSearch(event.target.value)}
+              placeholder="Search documents"
+              className="h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+              data-testid="input-google-doc-search"
+            />
+          </div>
+          {googleDocsStatusQuery.data?.email && (
+            <p className="shrink-0 text-xs text-muted-foreground">
+              Connected as {googleDocsStatusQuery.data.email}. Only document content you choose is read.
+            </p>
+          )}
+          <div className="flex-1 min-h-0 overflow-y-auto rounded-md border">
+            {googleDocsDocumentsQuery.isLoading ? (
+              <p className="p-6 text-center text-sm text-muted-foreground">Loading Google Docs…</p>
+            ) : googleDocsDocumentsQuery.isError ? (
+              <div className="p-6 text-center">
+                <p className="text-sm text-destructive">
+                  {googleDocsDocumentsQuery.error instanceof Error
+                    ? googleDocsDocumentsQuery.error.message
+                    : "Could not load Google Docs."}
+                </p>
+                <Button className="mt-3" variant="outline" onClick={() => window.location.assign("/api/google-docs/auth?returnTo=/invoices/new")}>
+                  Reconnect Google Docs
+                </Button>
+              </div>
+            ) : filteredGoogleDocs.length === 0 ? (
+              <p className="p-6 text-center text-sm text-muted-foreground">
+                {googleDocsSearch ? "No matching Google Docs found." : "No Google Docs found in this account."}
+              </p>
+            ) : (
+              <div className="divide-y">
+                {filteredGoogleDocs.map((document) => (
+                  <button
+                    type="button"
+                    key={document.id}
+                    onClick={() => parseGoogleDocMutation.mutate(document.id)}
+                    disabled={parseGoogleDocMutation.isPending}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-muted/60 disabled:opacity-60"
+                    data-testid={`button-google-doc-${document.id}`}
+                  >
+                    <FileText className="h-5 w-5 shrink-0 text-blue-600" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">{document.name}</span>
+                      {document.modifiedTime && (
+                        <span className="block text-xs text-muted-foreground">
+                          Updated {format(new Date(document.modifiedTime), "MMM d, yyyy")}
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-xs font-semibold text-blue-600">
+                      {parseGoogleDocMutation.isPending ? "Importing…" : "Choose"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="shrink-0">
+            <Button variant="outline" onClick={() => setShowGoogleDocsDialog(false)}>Cancel</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Imported document review ── */}
       <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
         <DialogContent className="max-w-xl !flex flex-col max-h-[90dvh] overflow-hidden">
           <DialogHeader className="shrink-0">
-            <DialogTitle>Import line items from document</DialogTitle>
+            <DialogTitle>
+              Review items{parsedDoc?.sourceTitle ? ` from ${parsedDoc.sourceTitle}` : " from document"}
+            </DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto min-h-0">
           {parsedDoc && (() => {
@@ -1263,10 +1443,32 @@ export default function InvoiceNew() {
                               className="mt-0.5 shrink-0"
                             />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm leading-snug">{item.description}</p>
-                              <p className="text-xs text-muted-foreground mt-0.5">{item.unit}</p>
+                              <input
+                                value={item.description}
+                                onChange={(event) => updateParsedItem(idx, { description: event.target.value })}
+                                className="h-8 w-full rounded border border-transparent bg-transparent px-1 text-sm leading-snug outline-none hover:border-input focus:border-input focus:bg-background"
+                                aria-label={`Description for imported item ${idx + 1}`}
+                              />
+                              <p className="px-1 text-xs text-muted-foreground">{item.unit}</p>
                             </div>
-                            <span className="text-sm font-semibold shrink-0 pt-0.5 text-right">{formatCurrency(item.amount)}</span>
+                            <label className="relative w-24 shrink-0">
+                              <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={item.amount}
+                                onChange={(event) => {
+                                  const amount = Math.max(0, Number(event.target.value) || 0);
+                                  updateParsedItem(idx, {
+                                    amount,
+                                    rate: item.quantity > 0 ? amount / item.quantity : amount,
+                                  });
+                                }}
+                                className="h-8 w-full rounded border border-input bg-background pl-5 pr-2 text-right text-sm font-semibold outline-none focus:ring-2 focus:ring-ring"
+                                aria-label={`Amount for imported item ${idx + 1}`}
+                              />
+                            </label>
                           </div>
                         ))}
                       </div>

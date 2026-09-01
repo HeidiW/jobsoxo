@@ -32,6 +32,7 @@ import {
   type InboxTask,
   type InsertInboxTask,
   type GoogleToken,
+  type GoogleDocsToken,
   type JobDocument,
   type InsertJobDocument,
   type ChangeOrder,
@@ -63,6 +64,7 @@ import {
   invites,
   inboxTasks,
   googleTokens,
+  googleDocsTokens,
   jobDocuments,
   changeOrders,
   onboardingItems,
@@ -188,6 +190,11 @@ export interface IStorage {
   getUsersWithGmailTokens(): Promise<User[]>;
   getSyncLabels(userId: string): Promise<string[]>;
   saveSyncLabels(userId: string, labels: string[]): Promise<void>;
+
+  // Google Docs — separate per-user read-only OAuth connection
+  getGoogleDocsToken(userId: string): Promise<GoogleDocsToken | undefined>;
+  saveGoogleDocsToken(userId: string, data: { accessToken: string; refreshToken?: string | null; expiresAt?: Date | null; googleEmail?: string | null }): Promise<GoogleDocsToken>;
+  deleteGoogleDocsToken(userId: string): Promise<void>;
 
   // Inbox Tasks — per-user (each user's own Gmail connection)
   getUsersWithInboxTasks(): Promise<User[]>;
@@ -866,6 +873,44 @@ export class DatabaseStorage implements IStorage {
 
   async deleteGoogleToken(userId: string): Promise<void> {
     await db.delete(googleTokens).where(eq(googleTokens.userId, userId));
+  }
+
+  // Google Docs — separate per-user read-only OAuth connection
+  async getGoogleDocsToken(userId: string): Promise<GoogleDocsToken | undefined> {
+    const [token] = await db.select().from(googleDocsTokens).where(eq(googleDocsTokens.userId, userId));
+    return token ?? undefined;
+  }
+
+  async saveGoogleDocsToken(userId: string, data: { accessToken: string; refreshToken?: string | null; expiresAt?: Date | null; googleEmail?: string | null }): Promise<GoogleDocsToken> {
+    const existing = await this.getGoogleDocsToken(userId);
+    if (existing) {
+      const [updated] = await db
+        .update(googleDocsTokens)
+        .set({
+          accessToken: data.accessToken,
+          ...(data.refreshToken !== undefined ? { refreshToken: data.refreshToken } : {}),
+          ...(data.expiresAt !== undefined ? { expiresAt: data.expiresAt } : {}),
+          ...(data.googleEmail !== undefined ? { googleEmail: data.googleEmail } : {}),
+        })
+        .where(eq(googleDocsTokens.userId, userId))
+        .returning();
+      return updated;
+    }
+    const [created] = await db
+      .insert(googleDocsTokens)
+      .values({
+        userId,
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken ?? null,
+        expiresAt: data.expiresAt ?? null,
+        googleEmail: data.googleEmail ?? null,
+      })
+      .returning();
+    return created;
+  }
+
+  async deleteGoogleDocsToken(userId: string): Promise<void> {
+    await db.delete(googleDocsTokens).where(eq(googleDocsTokens.userId, userId));
   }
 
   async getUsersWithGmailTokens(): Promise<User[]> {

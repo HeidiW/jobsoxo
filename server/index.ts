@@ -16,6 +16,8 @@ declare module "express-session" {
     userId: string;
     gmailOAuthState?: string;
     gmailReturnPath?: string;
+    googleDocsOAuthState?: string;
+    googleDocsReturnPath?: string;
   }
 }
 
