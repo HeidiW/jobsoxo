@@ -333,13 +333,27 @@ export default function GmailTodos() {
       next.delete(emailId);
       return next;
     });
-    // Optimistic: remove from hidden list and re-add to active tasks
+    // Capture the task before removing it so we can add it to the active list
+    const hiddenCache = queryClient.getQueryData<InboxTask[]>(["/api/inbox/tasks/hidden"]) ?? [];
+    const taskToRestore = hiddenCache.find(t => t.emailId === emailId);
+
+    // Optimistic: remove from hidden list
     queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
       old.filter(t => t.emailId !== emailId)
     );
-    queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
+    // Optimistic: add directly to the active task cache (avoids a refetch race
+    // where the GET completes before the PATCH has updated dismissed=false in the DB)
+    if (taskToRestore) {
+      queryClient.setQueryData(["/api/inbox/tasks"], (old: InboxTask[] = []) => [
+        { ...taskToRestore, dismissed: false },
+        ...old,
+      ]);
+    }
+
     apiRequest("PATCH", `/api/inbox/tasks/${emailId}/restore`).catch(() => {
+      // On failure, revert both caches to server truth
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
       toast({ title: "Couldn't restore email", variant: "destructive" });
     });
   }

@@ -818,7 +818,6 @@ describe("PATCH /api/settings — inboxSyncHour validation", () => {
     expect(res.body.inboxSyncHour).toBe(9);
   });
 });
-
 describe("POST /api/employees/:id/send-deposit-link — pending token guard", () => {
   it("returns 409 with hasPendingToken when a valid token already exists", async () => {
     // Create an employee with an email address
@@ -933,5 +932,126 @@ describe("DELETE /api/plaid/transactions/:txId/match — access control", () => 
       .expect(404);
 
     expect(res.body.error).toMatch(/transaction not found/i);
+  });
+});
+// ── Inbox restore flow ────────────────────────────────────────────────────────
+// Uses buildAdminTestApp so all requests are authenticated as a real DB user,
+// satisfying the inbox_tasks.user_id → users.id foreign key constraint.
+describe("PATCH /api/inbox/tasks/:emailId/restore — restore dismissed email", () => {
+  let adminApp: Express;
+  let adminUserId: string;
+  const emailId = `restore-test-${Date.now()}`;
+
+  beforeAll(async () => {
+    adminApp = await buildAdminTestApp();
+    // __test_admin__ is created (or reused) by buildAdminTestApp
+    const adminUser = await storage.getUserByUsername("__test_admin__");
+    adminUserId = adminUser!.id;
+
+    // Seed: create a task that is already dismissed
+    await storage.upsertInboxTask({
+      userId: adminUserId,
+      emailId,
+      subject: "Restore Integration Test",
+      sender: "Test Sender",
+      senderEmail: "sender@example.com",
+      snippet: "Integration test snippet",
+      receivedAt: new Date(),
+      isRead: true,
+      isDone: false,
+    });
+    await storage.dismissInboxTask(adminUserId, emailId);
+  });
+
+  it("removes the email from the hidden (dismissed) list after restore", async () => {
+    const hiddenBefore = await request(adminApp)
+      .get("/api/inbox/tasks/hidden")
+      .expect(200);
+
+    const dismissedBefore = (hiddenBefore.body as Array<{ emailId: string; dismissed: boolean }>)
+      .filter((t) => t.dismissed);
+    const countBefore = dismissedBefore.length;
+    expect(dismissedBefore.some((t) => t.emailId === emailId)).toBe(true);
+
+    await request(adminApp)
+      .patch(`/api/inbox/tasks/${emailId}/restore`)
+      .expect(200);
+
+    const hiddenAfter = await request(adminApp)
+      .get("/api/inbox/tasks/hidden")
+      .expect(200);
+
+    const dismissedAfter = (hiddenAfter.body as Array<{ emailId: string; dismissed: boolean }>)
+      .filter((t) => t.dismissed);
+
+    expect(dismissedAfter.some((t) => t.emailId === emailId)).toBe(false);
+    expect(dismissedAfter.length).toBe(countBefore - 1);
+  });
+
+  it("makes the restored email appear in the active task list", async () => {
+    const activeTasks = await request(adminApp)
+      .get("/api/inbox/tasks")
+      .expect(200);
+
+    const found = (activeTasks.body as Array<{ emailId: string; dismissed: boolean }>)
+      .find((t) => t.emailId === emailId);
+
+    expect(found).toBeDefined();
+    expect(found!.dismissed).toBe(false);
+  });
+
+  it("returns 404 when restoring a non-existent email", async () => {
+    await request(adminApp)
+      .patch("/api/inbox/tasks/nonexistent-email-id-xyz/restore")
+      .expect(404);
+  });
+});
+
+describe("PATCH /api/inbox/tasks/:emailId/restore — select-all count accuracy", () => {
+  let adminApp: Express;
+  let adminUserId: string;
+  const emailA = `restore-count-a-${Date.now()}`;
+  const emailB = `restore-count-b-${Date.now()}`;
+
+  beforeAll(async () => {
+    adminApp = await buildAdminTestApp();
+    const adminUser = await storage.getUserByUsername("__test_admin__");
+    adminUserId = adminUser!.id;
+
+    // Seed two dismissed tasks to verify count drops by exactly 1
+    for (const id of [emailA, emailB]) {
+      await storage.upsertInboxTask({
+        userId: adminUserId,
+        emailId: id,
+        subject: `Count Test ${id}`,
+        sender: "Count Sender",
+        senderEmail: "count@example.com",
+        snippet: "Count test snippet",
+        receivedAt: new Date(),
+        isRead: true,
+        isDone: false,
+      });
+      await storage.dismissInboxTask(adminUserId, id);
+    }
+  });
+
+  it("dismissed count drops by exactly 1 when one email is restored", async () => {
+    const before = await request(adminApp).get("/api/inbox/tasks/hidden").expect(200);
+    const dismissedBefore = (before.body as Array<{ emailId: string; dismissed: boolean }>)
+      .filter((t) => t.dismissed).length;
+
+    await request(adminApp)
+      .patch(`/api/inbox/tasks/${emailA}/restore`)
+      .expect(200);
+
+    const after = await request(adminApp).get("/api/inbox/tasks/hidden").expect(200);
+    const dismissedAfter = (after.body as Array<{ emailId: string; dismissed: boolean }>)
+      .filter((t) => t.dismissed).length;
+
+    expect(dismissedAfter).toBe(dismissedBefore - 1);
+    // emailB should still be in the dismissed list (select-all count remains accurate)
+    expect(
+      (after.body as Array<{ emailId: string }>).some((t) => t.emailId === emailB)
+    ).toBe(true);
   });
 });
