@@ -5,7 +5,6 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { processOverdueReminders } from "./email";
 import { startInboxScheduler, startPlaidScheduler } from "./scheduler";
-import { seedDemoData } from "./seed";
 import { validateEncryptionKey } from "./encryption";
 import { migrateEncryptBankAccounts } from "./migrate-encrypt-bank-accounts";
 export { log } from "./logger";
@@ -98,7 +97,6 @@ app.use((req, res, next) => {
   }
 
   await registerRoutes(httpServer, app);
-  await seedDemoData();
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
