@@ -5,10 +5,11 @@ export default {
   content: ["./client/index.html", "./client/src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
+      /* Ledger: 4px is the system radius. Corners are quiet. */
       borderRadius: {
-        lg: ".5625rem", /* 9px */
-        md: ".375rem", /* 6px */
-        sm: ".1875rem", /* 3px */
+        lg: ".4375rem", /* 7px */
+        md: ".25rem",   /* 4px */
+        sm: ".125rem",  /* 2px */
       },
       colors: {
         // Flat / base colors (regular buttons)
@@ -75,17 +76,19 @@ export default {
           foreground: "hsl(var(--sidebar-accent-foreground) / <alpha-value>)",
           border: "var(--sidebar-accent-border)"
         },
+        /* Presence dots pulled into the classical palette */
         status: {
-          online: "rgb(34 197 94)",
-          away: "rgb(245 158 11)",
-          busy: "rgb(239 68 68)",
-          offline: "rgb(156 163 175)",
+          online: "rgb(61 90 64)",
+          away: "rgb(139 103 64)",
+          busy: "rgb(142 43 42)",
+          offline: "rgb(174 184 176)",
         },
       },
       fontFamily: {
         sans: ["var(--font-sans)"],
         serif: ["var(--font-serif)"],
         mono: ["var(--font-mono)"],
+        display: ["var(--font-serif)"],
       },
       keyframes: {
         "accordion-down": {

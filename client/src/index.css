@@ -2,111 +2,126 @@
 @tailwind components;
 @tailwind utilities;
 
-/* LIGHT MODE */
+/* ============================================================
+   JobsOxo — "Ledger" theme
+   Classical/editorial direction carried over from the CFP site.
+   Cormorant Garamond headings over Lora body, oxblood accent
+   applied as stroke rather than fill, hairline rules, 4px radii,
+   whisper elevation, tabular figures in place of IBM Plex Mono.
+
+   Drop-in replacement for client/src/index.css. Only the token
+   blocks changed; the elevate system, utilities and print rules
+   below are untouched from the original.
+   ============================================================ */
+
+/* LIGHT MODE — Ledger */
 :root {
-  --button-outline: rgba(0,0,0, .10);
-  --badge-outline: rgba(0,0,0, .05);
+  --button-outline: rgba(19,42,19, .16);
+  --badge-outline: rgba(19,42,19, .10);
   --opaque-button-border-intensity: -8;
-  --elevate-1: rgba(0,0,0, .03);
-  --elevate-2: rgba(0,0,0, .08);
-  --background: 216 20% 98%;
-  --foreground: 222 47% 11%;
-  --border: 220 13% 91%;
-  --card: 0 0% 98%;
-  --card-foreground: 222 47% 11%;
-  --card-border: 220 13% 94%;
-  --sidebar: 220 14% 96%;
-  --sidebar-foreground: 222 47% 11%;
-  --sidebar-border: 220 13% 91%;
-  --sidebar-primary: 221 83% 53%;
-  --sidebar-primary-foreground: 210 40% 98%;
-  --sidebar-accent: 220 14% 92%;
-  --sidebar-accent-foreground: 222 47% 11%;
-  --sidebar-ring: 221 83% 53%;
-  --popover: 0 0% 96%;
-  --popover-foreground: 222 47% 11%;
-  --popover-border: 220 13% 92%;
-  --primary: 221 83% 53%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 220 14% 92%;
-  --secondary-foreground: 222 47% 11%;
-  --muted: 220 14% 94%;
-  --muted-foreground: 215 16% 47%;
-  --accent: 220 13% 93%;
-  --accent-foreground: 222 47% 11%;
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 0 0% 98%;
-  --input: 217 19% 35%;
-  --ring: 221 83% 53%;
-  --chart-1: 221 83% 53%;
-  --chart-2: 142 71% 45%;
-  --chart-3: 262 83% 58%;
-  --chart-4: 32 95% 44%;
-  --chart-5: 340 82% 52%;
-  --track: #eef0f3;
-  --row-hover: #f8fafc;
+  --elevate-1: rgba(19,42,19, .03);
+  --elevate-2: rgba(19,42,19, .07);
+
+  --background: 212 60% 95%;        /* #ebf2fa pale blue ground */
+  --foreground: 120 38% 12%;        /* #132a13 deep green-black ink */
+  --border: 133 10% 83%;            /* #cfd8d1 hairline */
+  --card: 210 60% 98%;              /* #f7fafd */
+  --card-foreground: 120 38% 12%;
+  --card-border: 133 10% 86%;
+  --sidebar: 206 46% 97%;           /* #f4f8fb */
+  --sidebar-foreground: 120 38% 12%;
+  --sidebar-border: 133 10% 83%;
+  --sidebar-primary: 355 77% 22%;   /* #640d14 oxblood */
+  --sidebar-primary-foreground: 210 60% 98%;
+  --sidebar-accent: 133 12% 90%;
+  --sidebar-accent-foreground: 120 38% 12%;
+  --sidebar-ring: 355 77% 22%;
+  --popover: 210 60% 98%;
+  --popover-foreground: 120 38% 12%;
+  --popover-border: 133 10% 86%;
+  --primary: 355 77% 22%;           /* oxblood — the single accent */
+  --primary-foreground: 210 60% 98%;
+  --secondary: 133 12% 90%;
+  --secondary-foreground: 120 38% 12%;
+  --muted: 150 12% 92%;
+  --muted-foreground: 140 8% 40%;
+  --accent: 133 12% 91%;
+  --accent-foreground: 120 38% 12%;
+  --destructive: 1 54% 36%;         /* #8e2b2a brick */
+  --destructive-foreground: 210 60% 98%;
+  --input: 140 10% 45%;
+  --ring: 355 77% 22%;
+
+  /* Charts — oxblood, gold, sage, slate, plum. No neon. */
+  --chart-1: 355 77% 22%;
+  --chart-2: 31 37% 40%;
+  --chart-3: 126 19% 30%;
+  --chart-4: 210 32% 33%;
+  --chart-5: 332 23% 29%;
+
+  --track: #e6ecec;
+  --row-hover: #f4f8fb;
 
   /* ── JobsOxo design tokens ── */
-  --jox-primary: #2563eb;
-  --panel: #ffffff;
-  --panel-bd: #e4e7ec;
-  --fg: #0f1729;
-  --faint: #8a93a3;
-  --soft: #eef2fe;
-  --rowhover: #f8fafc;
-  --navhover: #e7e9ee;
-  --topbar: rgba(255,255,255,.7);
-  --searchbg: #eef0f3;
-  --activeitem: #ffffff;
-  --activeshadow: rgba(15,23,41,.08);
-  --b-blue-bg: #eef2fe;
-  --b-blue-fg: #2563eb;
-  --b-red-bg: #fdeeec;
-  --b-red-fg: #d23b1f;
-  --b-amber-bg: #fef5e7;
-  --b-amber-fg: #b6731a;
-  --b-green-bg: #e7f7ee;
-  --b-green-fg: #15a35a;
-  --b-purple-bg: #f3eafe;
-  --b-purple-fg: #7c3aed;
-  --b-gray-bg: #eef0f3;
-  --b-gray-fg: #6b7686;
-  --b-pink-bg: #fde8ef;
-  --b-pink-fg: #be185d;
-  --b-teal-bg: #e0f2fe;
-  --b-teal-fg: #0e7faf;
+  --jox-primary: #640d14;
+  --panel: #f7fafd;
+  --panel-bd: #cfd8d1;
+  --fg: #132a13;
+  --faint: #6c766e;
+  --soft: #f6ecec;
+  --rowhover: #f4f8fb;
+  --navhover: #e6ecec;
+  --topbar: rgba(247,250,253,.72);
+  --searchbg: #eef3f7;
+  --activeitem: #f7fafd;
+  --activeshadow: rgba(19,42,19,.10);
 
-  /* ── Gmail Messages tokens (light) ── */
-  --gem-bg: linear-gradient(120deg,#eef3ff,#f5eefc,#fdeef0);
-  --gem-bd: #e3d4f3;
+  /* Status badges — hue kept for meaning, saturation pulled back
+     into the classical palette. Oxblood stays reserved for money. */
+  --b-blue-bg: #e9eff5;   --b-blue-fg: #3a5570;
+  --b-red-bg: #f9ebe9;    --b-red-fg: #8e2b2a;
+  --b-amber-bg: #f7f0e4;  --b-amber-fg: #6b4e30;
+  --b-green-bg: #eaf0ea;  --b-green-fg: #3d5a40;
+  --b-purple-bg: #f2ecef; --b-purple-fg: #5c3a4a;
+  --b-gray-bg: #eaeeea;   --b-gray-fg: #4f584f;
+  --b-pink-bg: #f8ebee;   --b-pink-fg: #7d3547;
+  --b-teal-bg: #e6eff0;   --b-teal-fg: #2f5a63;
+
+  /* ── Smart Inbox tokens (light) ──
+     The gradient is gone: classical draws with rules, not fills. */
+  --gem-bg: #f7fafd;
+  --gem-bd: #cfd8d1;
+  --gem-mark: #640d14;
 
   /* ── Scheduling block tokens (light) ── */
-  --colhead: #fafbfc;
-  --bl-bg: #eef2fe; --bl-fg: #2563eb; --bl-bd: #bcd0fb;
-  --gr-bg: #e7f7ee; --gr-fg: #15a35a; --gr-bd: #a7e3c1;
-  --pu-bg: #f3eafe; --pu-fg: #7c3aed; --pu-bd: #d6bbf7;
-  --am-bg: #fef5e7; --am-fg: #b6731a; --am-bd: #f7d994;
+  --colhead: #f4f8fb;
+  --bl-bg: #e9eff5; --bl-fg: #3a5570; --bl-bd: #b9c9d8;
+  --gr-bg: #eaf0ea; --gr-fg: #3d5a40; --gr-bd: #bacaba;
+  --pu-bg: #f2ecef; --pu-fg: #5c3a4a; --pu-bd: #d5c3cc;
+  --am-bg: #f7f0e4; --am-fg: #6b4e30; --am-bd: #ddc9a8;
 
   /* ── Avatar palette (light) ── */
-  --av1: #eef2fe; --av1f: #2563eb;
-  --av2: #e6f6fb; --av2f: #0e7faf;
-  --av3: #f3eafe; --av3f: #7c3aed;
-  --av4: #e7f7ee; --av4f: #15a35a;
-  --av5: #fdf4ff; --av5f: #9d174d;
-  --av6: #fefce8; --av6f: #b45309;
+  --av1: #f6ecec; --av1f: #640d14;
+  --av2: #e6eff0; --av2f: #2f5a63;
+  --av3: #f2ecef; --av3f: #5c3a4a;
+  --av4: #eaf0ea; --av4f: #3d5a40;
+  --av5: #f8ebee; --av5f: #7d3547;
+  --av6: #f7f0e4; --av6f: #6b4e30;
 
-  --font-sans: 'Inter', sans-serif;
-  --font-serif: Georgia, serif;
-  --font-mono: 'IBM Plex Mono', monospace;
-  --radius: .5rem;
-  --shadow-2xs: 0px 2px 0px 0px hsl(220 13% 20% / 0.00);
-  --shadow-xs: 0px 2px 0px 0px hsl(220 13% 20% / 0.00);
-  --shadow-sm: 0px 2px 0px 0px hsl(220 13% 20% / 0.00), 0px 1px 2px -1px hsl(220 13% 20% / 0.00);
-  --shadow: 0px 2px 0px 0px hsl(220 13% 20% / 0.00), 0px 1px 2px -1px hsl(220 13% 20% / 0.00);
-  --shadow-md: 0px 2px 0px 0px hsl(220 13% 20% / 0.00), 0px 2px 4px -1px hsl(220 13% 20% / 0.00);
-  --shadow-lg: 0px 2px 0px 0px hsl(220 13% 20% / 0.00), 0px 4px 6px -1px hsl(220 13% 20% / 0.00);
-  --shadow-xl: 0px 2px 0px 0px hsl(220 13% 20% / 0.00), 0px 8px 10px -1px hsl(220 13% 20% / 0.00);
-  --shadow-2xl: 0px 2px 0px 0px hsl(220 13% 20% / 0.00);
+  --font-sans: 'Lora', Georgia, serif;
+  --font-serif: 'Cormorant Garamond', Georgia, serif;
+  --font-mono: 'Lora', Georgia, serif;
+  --radius: .25rem;
+
+  /* Elevation is a whisper, ink-tinted to the ground */
+  --shadow-2xs: 0px 1px 1px hsl(120 38% 12% / 0.04);
+  --shadow-xs: 0px 1px 2px hsl(120 38% 12% / 0.06);
+  --shadow-sm: 0px 1px 2px hsl(120 38% 12% / 0.10);
+  --shadow: 0px 1px 2px hsl(120 38% 12% / 0.10);
+  --shadow-md: 0px 3px 10px hsl(120 38% 12% / 0.11);
+  --shadow-lg: 0px 6px 18px hsl(120 38% 12% / 0.13);
+  --shadow-xl: 0px 12px 32px hsl(120 38% 12% / 0.16);
+  --shadow-2xl: 0px 18px 44px hsl(120 38% 12% / 0.18);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
@@ -139,106 +154,106 @@
   --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
 }
 
+/* DARK MODE — "Colophon": the deep warm near-black the classical
+   system uses for section dividers, with gold as the accent
+   (oxblood does not hold up on a dark ground). */
 .dark {
-  --button-outline: rgba(255,255,255, .10);
-  --badge-outline: rgba(255,255,255, .05);
+  --button-outline: rgba(236,229,216, .12);
+  --badge-outline: rgba(236,229,216, .06);
   --opaque-button-border-intensity: 9;
-  --elevate-1: rgba(255,255,255, .04);
-  --elevate-2: rgba(255,255,255, .09);
-  --background: 222 47% 11%;
-  --foreground: 210 40% 98%;
-  --border: 217 33% 17%;
-  --card: 220 39% 13%;
-  --card-foreground: 210 40% 98%;
-  --card-border: 217 33% 16%;
-  --sidebar: 217 33% 15%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 215 28% 19%;
-  --sidebar-primary: 217 91% 60%;
-  --sidebar-primary-foreground: 222 47% 11%;
-  --sidebar-accent: 217 33% 18%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 217 91% 60%;
-  --popover: 217 33% 17%;
-  --popover-foreground: 210 40% 98%;
-  --popover-border: 215 28% 21%;
-  --primary: 217 91% 60%;
-  --primary-foreground: 222 47% 11%;
-  --secondary: 217 33% 20%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217 33% 19%;
-  --muted-foreground: 215 20% 65%;
-  --accent: 217 28% 18%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62% 30%;
-  --destructive-foreground: 210 40% 98%;
-  --input: 217 50% 65%;
-  --ring: 217 91% 60%;
-  --track: #1a2336;
-  --row-hover: #1b2740;
+  --elevate-1: rgba(236,229,216, .04);
+  --elevate-2: rgba(236,229,216, .09);
+
+  --background: 37 18% 9%;          /* #1a1712 warm near-black */
+  --foreground: 37 33% 89%;         /* #ece5d8 warm paper */
+  --border: 36 12% 22%;
+  --card: 35 15% 12%;
+  --card-foreground: 37 33% 89%;
+  --card-border: 36 12% 20%;
+  --sidebar: 35 16% 11%;
+  --sidebar-foreground: 37 33% 89%;
+  --sidebar-border: 36 12% 22%;
+  --sidebar-primary: 36 55% 46%;    /* #b68235 gold */
+  --sidebar-primary-foreground: 37 18% 9%;
+  --sidebar-accent: 36 12% 19%;
+  --sidebar-accent-foreground: 37 33% 89%;
+  --sidebar-ring: 36 55% 46%;
+  --popover: 35 15% 13%;
+  --popover-foreground: 37 33% 89%;
+  --popover-border: 36 12% 21%;
+  --primary: 36 55% 46%;
+  --primary-foreground: 37 18% 9%;
+  --secondary: 36 12% 20%;
+  --secondary-foreground: 37 33% 89%;
+  --muted: 36 10% 18%;
+  --muted-foreground: 37 15% 62%;
+  --accent: 36 12% 19%;
+  --accent-foreground: 37 33% 89%;
+  --destructive: 6 45% 45%;
+  --destructive-foreground: 37 33% 89%;
+  --input: 37 15% 55%;
+  --ring: 36 55% 46%;
+
+  --track: #241f18;
+  --row-hover: #221d17;
 
   /* ── JobsOxo design tokens (dark) ── */
-  --jox-primary: #3b82f6;
-  --panel: #141d30;
-  --panel-bd: #243049;
-  --fg: #f1f5f9;
-  --faint: #7c8aa3;
-  --soft: #1c2a44;
-  --rowhover: #1b2740;
-  --navhover: #222e4a;
-  --topbar: rgba(20,29,48,.72);
-  --searchbg: #1a2336;
-  --activeitem: #222e4a;
-  --activeshadow: rgba(0,0,0,.3);
-  --b-blue-bg: rgba(59,130,246,.18);
-  --b-blue-fg: #93b4fb;
-  --b-red-bg: rgba(220,59,31,.2);
-  --b-red-fg: #f1937f;
-  --b-amber-bg: rgba(224,160,32,.2);
-  --b-amber-fg: #e7be73;
-  --b-green-bg: rgba(21,163,90,.2);
-  --b-green-fg: #6cd49d;
-  --b-purple-bg: rgba(124,58,237,.22);
-  --b-purple-fg: #b794f4;
-  --b-gray-bg: rgba(148,163,184,.18);
-  --b-gray-fg: #aab4c6;
-  --b-pink-bg: rgba(214,101,112,.2);
-  --b-pink-fg: #e79aa3;
-  --b-teal-bg: rgba(14,127,175,.2);
-  --b-teal-fg: #6cc0e0;
+  --jox-primary: #b68235;
+  --panel: #1f1a14;
+  --panel-bd: #3a332a;
+  --fg: #ece5d8;
+  --faint: #9c9083;
+  --soft: #2a2118;
+  --rowhover: #221d17;
+  --navhover: #2a241c;
+  --topbar: rgba(31,26,20,.72);
+  --searchbg: #241f18;
+  --activeitem: #2a241c;
+  --activeshadow: rgba(0,0,0,.4);
 
-  /* ── Gmail Messages tokens (dark) ── */
-  --gem-bg: linear-gradient(120deg,rgba(66,133,244,.16),rgba(155,114,203,.16),rgba(217,101,112,.14));
-  --gem-bd: rgba(155,114,203,.4);
+  --b-blue-bg: rgba(120,160,196,.16);  --b-blue-fg: #a8c4dc;
+  --b-red-bg: rgba(190,90,80,.20);     --b-red-fg: #dda49b;
+  --b-amber-bg: rgba(182,130,53,.20);  --b-amber-fg: #d9b378;
+  --b-green-bg: rgba(120,164,124,.18); --b-green-fg: #a6c8a9;
+  --b-purple-bg: rgba(160,120,140,.20);--b-purple-fg: #c9a8ba;
+  --b-gray-bg: rgba(200,196,186,.14);  --b-gray-fg: #b6b0a5;
+  --b-pink-bg: rgba(190,110,132,.20);  --b-pink-fg: #dca8b8;
+  --b-teal-bg: rgba(100,150,158,.18);  --b-teal-fg: #a0c4c9;
+
+  /* ── Smart Inbox tokens (dark) ── */
+  --gem-bg: #1f1a14;
+  --gem-bd: #3a332a;
+  --gem-mark: #b68235;
 
   /* ── Scheduling block tokens (dark) ── */
-  --colhead: #10192b;
-  --bl-bg: rgba(59,130,246,.16); --bl-fg: #93b4fb; --bl-bd: rgba(59,130,246,.4);
-  --gr-bg: rgba(21,163,90,.16);  --gr-fg: #6cd49d; --gr-bd: rgba(21,163,90,.4);
-  --pu-bg: rgba(124,58,237,.18); --pu-fg: #b794f4; --pu-bd: rgba(124,58,237,.45);
-  --am-bg: rgba(224,160,32,.16); --am-fg: #e7be73; --am-bd: rgba(224,160,32,.4);
+  --colhead: #16120e;
+  --bl-bg: rgba(120,160,196,.16); --bl-fg: #a8c4dc; --bl-bd: rgba(120,160,196,.42);
+  --gr-bg: rgba(120,164,124,.16); --gr-fg: #a6c8a9; --gr-bd: rgba(120,164,124,.42);
+  --pu-bg: rgba(160,120,140,.18); --pu-fg: #c9a8ba; --pu-bd: rgba(160,120,140,.45);
+  --am-bg: rgba(182,130,53,.16);  --am-fg: #d9b378; --am-bd: rgba(182,130,53,.42);
 
   /* ── Avatar palette (dark) ── */
-  --av1: #1c2a44; --av1f: #93b4fb;
-  --av2: #13304a; --av2f: #6cc0e0;
-  --av3: #2a2347; --av3f: #b794f4;
-  --av4: #142e2a; --av4f: #6cd49d;
-  --av5: #332344; --av5f: #e0a0d0;
-  --av6: #3a2e1a; --av6f: #e7be73;
+  --av1: #2e2318; --av1f: #d9b378;
+  --av2: #1c2a2c; --av2f: #a0c4c9;
+  --av3: #2a2027; --av3f: #c9a8ba;
+  --av4: #1e2a20; --av4f: #a6c8a9;
+  --av5: #2c1f24; --av5f: #dca8b8;
+  --av6: #2e2718; --av6f: #d9b378;
 
-  --chart-1: 217 91% 70%;
-  --chart-2: 142 76% 65%;
-  --chart-3: 262 83% 75%;
-  --chart-4: 32 98% 65%;
-  --chart-5: 340 82% 68%;
-  --shadow-2xs: 0px 2px 0px 0px hsl(220 13% 80% / 0.00);
-  --shadow-xs: 0px 2px 0px 0px hsl(220 13% 80% / 0.00);
-  --shadow-sm: 0px 2px 0px 0px hsl(220 13% 80% / 0.00), 0px 1px 2px -1px hsl(220 13% 80% / 0.00);
-  --shadow: 0px 2px 0px 0px hsl(220 13% 80% / 0.00), 0px 1px 2px -1px hsl(220 13% 80% / 0.00);
-  --shadow-md: 0px 2px 0px 0px hsl(220 13% 80% / 0.00), 0px 2px 4px -1px hsl(220 13% 80% / 0.00);
-  --shadow-lg: 0px 2px 0px 0px hsl(220 13% 80% / 0.00), 0px 4px 6px -1px hsl(220 13% 80% / 0.00);
-  --shadow-xl: 0px 2px 0px 0px hsl(220 13% 80% / 0.00), 0px 8px 10px -1px hsl(220 13% 80% / 0.00);
-  --shadow-2xl: 0px 2px 0px 0px hsl(220 13% 80% / 0.00);
+  --chart-1: 36 55% 56%;
+  --chart-2: 31 37% 52%;
+  --chart-3: 126 19% 52%;
+  --chart-4: 210 32% 58%;
+  --chart-5: 332 23% 55%;
+
+  --shadow-2xs: 0px 1px 1px hsl(0 0% 0% / 0.20);
+  --shadow-xs: 0px 1px 2px hsl(0 0% 0% / 0.26);
+  --shadow-sm: 0px 1px 2px hsl(0 0% 0% / 0.34);
+  --shadow: 0px 1px 2px hsl(0 0% 0% / 0.34);
+  --shadow-md: 0px 3px 10px hsl(0 0% 0% / 0.40);
+  --shadow-lg: 0px 6px 18px hsl(0 0% 0% / 0.46);
+  --shadow-xl: 0px 12px 32px hsl(0 0% 0% / 0.52);
+  --shadow-2xl: 0px 18px 44px hsl(0 0% 0% / 0.58);
 
 /* Fallback for older browsers */
   --sidebar-primary-border: hsl(var(--sidebar-primary));
@@ -276,13 +291,55 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  /* Headings set in Cormorant Garamond. Bold is retired — semibold
+     is the ceiling, and the bigger the text the lighter it sets. */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    line-height: 1.12;
+    letter-spacing: -0.015em;
+  }
+  h1 { font-weight: 400; letter-spacing: -0.025em; }
+  h2 { font-weight: 400; letter-spacing: -0.02em; }
+
+  /* Figures set tabular wherever they stand as numbers or columns.
+     This replaces IBM Plex Mono — Lora keeps its own figure style
+     and gains equal widths, so money still aligns in a column. */
+  .font-mono,
+  table td, table th,
+  [data-tabular] {
+    font-feature-settings: 'tnum';
+  }
+
+  a {
+    color: hsl(var(--primary));
+    text-underline-offset: 3px;
+  }
+  a:hover {
+    color: hsl(var(--primary) / 0.78);
+  }
+
+  /* Keyboard focus is themed, never the default blue ring */
+  :focus { outline: none; }
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.16);
   }
 }
 
+/* Retained for components that reference it. Motion is minimal here:
+   the mark breathes rather than sparkles. */
 @keyframes sparklePulse {
-  0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); }
-  33%       { opacity: .85; transform: scale(1.08) rotate(6deg); }
-  66%       { opacity: .9; transform: scale(.95) rotate(-4deg); }
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .72; }
 }
 
 /**
@@ -312,12 +369,12 @@
     background: var(--rowhover) !important;
   }
 
-  /* Gmail Messages task row hover */
+  /* Smart Inbox task row hover */
   .taskrow:hover {
     background: var(--rowhover) !important;
   }
 
-  /* Gmail Messages checkbox hover */
+  /* Smart Inbox checkbox hover */
   .cbtn:hover {
     border-color: var(--jox-primary) !important;
   }
@@ -332,6 +389,29 @@
     content: attr(data-placeholder);
     color: hsl(var(--muted-foreground));
     pointer-events: none;
+  }
+
+  /* Display face for large figures and page titles that are not
+     semantic headings — use instead of reaching for a bold sans. */
+  .font-display {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    letter-spacing: -0.02em;
+  }
+
+  /* Letterspaced small caps kicker — the classical label treatment */
+  .kicker {
+    font-size: 10.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: hsl(var(--primary));
+  }
+
+  /* Hairline rule */
+  .hairline {
+    height: 1px;
+    border: 0;
+    background: hsl(var(--border));
   }
 
   /* .no-default-hover-elevate/no-default-active-elevate is an escape hatch so consumers of
