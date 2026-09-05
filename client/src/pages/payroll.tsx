@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { Link } from "wouter";
 import { formatPhone } from "@/lib/formatPhone";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -1984,6 +1985,9 @@ export default function Payroll() {
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <button onClick={() => setIsTimeEntryDialogOpen(true)} style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-log-hours">
                 Log hours</button>
+              <Link href="/payroll/worksheet" className="flex items-center gap-2 rounded-[9px] border border-primary px-3.5 py-2 text-[13px] font-semibold text-primary no-underline hover:bg-primary/5" data-testid="link-adp-worksheet">
+                <ClipboardList className="h-3.5 w-3.5" /> ADP worksheet
+              </Link>
               <button onClick={() => { setEditingEmployee(null); setIsEmployeeDialogOpen(true); }} style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-add-employee">
                 <Plus style={{ width: "14px", height: "14px" }} /> Add employee</button>
               {activeSection === "payroll" && periods.length > 1 && (
@@ -2281,7 +2285,13 @@ export default function Payroll() {
                       </div>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: "13.5px", fontWeight: 600, display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}>
-                          {emp.name}
+                          <Link
+                            href={`/payroll/worksheet?employeeId=${emp.id}`}
+                            className="text-foreground hover:text-primary hover:underline"
+                            data-testid={`link-run-payroll-${emp.id}`}
+                          >
+                            {emp.name}
+                          </Link>
                           {!emp.phone && active && (
                             <span title="No phone — can't log hours by SMS" style={{ display: "inline-flex", alignItems: "center", gap: "3px", background: "var(--b-amber-bg)", color: "var(--b-amber-fg)", fontSize: "10.5px", fontWeight: 600, padding: "1px 7px", borderRadius: "5px" }} data-testid={`badge-no-phone-${emp.id}`}>
                               <PhoneOff style={{ width: "10px", height: "10px" }} />No phone
@@ -2369,6 +2379,11 @@ export default function Payroll() {
                         <DropdownMenuContent align="end" sideOffset={4}>
                           <DropdownMenuItem onClick={() => { setEditingEmployee(emp); setIsEmployeeDialogOpen(true); }} data-testid={`button-edit-employee-${emp.id}`}>
                             <Edit className="h-4 w-4 mr-2" />Edit &amp; deductions
+                          </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link href={`/payroll/worksheet?employeeId=${emp.id}`} data-testid={`button-run-adp-payroll-${emp.id}`}>
+                              <ClipboardList className="h-4 w-4 mr-2" />Prepare ADP payroll
+                            </Link>
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>

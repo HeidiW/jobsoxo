@@ -13,6 +13,7 @@ import {
   LogOut,
   Inbox,
   Mail,
+  ClipboardPenLine,
 } from "lucide-react";
 import {
   Sidebar,
@@ -42,6 +43,7 @@ const navItems = [
   { title: "Change Orders", url: "/change-orders", icon: AlertTriangle },
   { title: "Scheduling", url: "/scheduling", icon: Calendar },
   { title: "Payroll", url: "/payroll", icon: DollarSign },
+  { title: "ADP Worksheet", url: "/payroll/worksheet", icon: ClipboardPenLine, adminOnly: true },
 ];
 
 const settingsItems = [
@@ -82,7 +84,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Main Menu</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => {
+              {navItems.filter((item) => !item.adminOnly || user?.isAdmin).map((item) => {
                 const isActive =
                   location === item.url ||
                   (item.url !== "/" && location.startsWith(item.url));

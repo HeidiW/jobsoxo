@@ -24,6 +24,7 @@ import InvoiceDetail from "@/pages/invoice-detail";
 import InvoicePayment from "@/pages/invoice-payment";
 import Scheduling from "@/pages/scheduling";
 import Payroll from "@/pages/payroll";
+import PayrollWorksheet from "@/pages/payroll-worksheet";
 import InboxTasks from "@/pages/inbox-tasks";
 import GmailTodos from "@/pages/gmail-todos";
 import Settings from "@/pages/settings";
@@ -51,6 +52,7 @@ function Router() {
       <Route path="/invoices/:id/payment" component={InvoicePayment} />
       <Route path="/scheduling" component={Scheduling} />
       <Route path="/payroll" component={Payroll} />
+      <Route path="/payroll/worksheet" component={PayrollWorksheet} />
       <Route path="/inbox-tasks" component={InboxTasks} />
       <Route path="/gmail-todos" component={GmailTodos} />
       <Route path="/settings" component={Settings} />
@@ -69,6 +71,7 @@ const ROUTE_LABELS: Record<string, string> = {
   "/change-orders": "Change Orders",
   "/scheduling": "Scheduling",
   "/payroll": "Payroll",
+  "/payroll/worksheet": "Payroll worksheet",
   "/inbox-tasks": "Inbox Tasks",
   "/gmail-todos": "Gmail Todos",
   "/settings": "Settings",

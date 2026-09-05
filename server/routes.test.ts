@@ -3,11 +3,31 @@ import request from "supertest";
 import type { Express } from "express";
 import { buildTestApp, buildAdminTestApp } from "./test-helpers";
 import { storage } from "./storage";
+import { calculatePayrollWorksheetTotals } from "./routes";
 
 let app: Express;
 
 beforeAll(async () => {
   app = await buildTestApp();
+});
+
+describe("calculatePayrollWorksheetTotals", () => {
+  it("computes gross, deductions, and net in cents", () => {
+    expect(calculatePayrollWorksheetTotals("2.5", "100.10", [
+      { label: "Federal tax", amount: 20.25 },
+      { label: "Health", amount: 10.1, category: "benefits" },
+    ])).toEqual({
+      grossPay: "250.25",
+      totalDeductions: "30.35",
+      netPay: "219.90",
+    });
+  });
+
+  it("clamps the displayed net pay at zero before route validation rejects excess deductions", () => {
+    expect(calculatePayrollWorksheetTotals("1", "50", [
+      { label: "Garnishment", amount: 75 },
+    ]).netPay).toBe("0.00");
+  });
 });
 
 describe("POST /api/clients — validation", () => {

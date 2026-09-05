@@ -20,7 +20,8 @@ import {
   clients, jobs, invoices, lineItems, payments, employees, timeEntries, users, changeOrders, plaidTransactions,
   insertClientSchema, insertJobSchema, insertLineItemSchema, updateLineItemSchema, insertInvoiceSchema,
   insertPaymentSchema, insertEmployeeSchema, insertTimeEntrySchema, insertSettingsSchema,
-  insertPayrollRecordSchema, insertChangeOrderSchema, insertJobMaterialSchema
+  insertPayrollRecordSchema, insertChangeOrderSchema, insertJobMaterialSchema,
+  insertPayrollWorksheetSchema, updatePayrollWorksheetSchema, confirmPayrollWorksheetSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { sendInvoiceEmail, processOverdueReminders, sendPasswordResetEmail, sendDirectDepositEmail } from "./email";
@@ -58,6 +59,32 @@ function parseNumeric(value: unknown): number {
 
 function badRequest(res: Response, err: z.ZodError) {
   return res.status(400).json({ error: "Invalid request data", details: err.flatten().fieldErrors });
+}
+
+type AdpDeduction = { label: string; amount: number; category?: string; adpCode?: string };
+
+/** Calculates monetary worksheet fields in cents so client-provided totals are never trusted. */
+export function calculatePayrollWorksheetTotals(
+  daysWorked: string | number,
+  dailyGross: string | number,
+  deductions: AdpDeduction[],
+) {
+  const grossCents = Math.round(Number(daysWorked) * Number(dailyGross) * 100);
+  const deductionsCents = deductions.reduce((total, deduction) =>
+    total + Math.round(Number(deduction.amount) * 100), 0);
+  return {
+    grossPay: (grossCents / 100).toFixed(2),
+    totalDeductions: (deductionsCents / 100).toFixed(2),
+    netPay: (Math.max(0, grossCents - deductionsCents) / 100).toFixed(2),
+  };
+}
+
+function worksheetDateOnly(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function validWorksheetPeriod(periodStart: Date, periodEnd: Date): boolean {
+  return periodStart.getTime() <= periodEnd.getTime();
 }
 
 async function recalcInvoiceTotals(invoiceId: string): Promise<void> {
@@ -2020,6 +2047,154 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Get payroll records error:", error);
       res.status(500).json({ error: "Failed to get payroll records" });
+    }
+  });
+
+  // Payroll Worksheets — manually prepared values to enter and confirm in ADP.
+  app.get("/api/payroll-worksheets", requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      res.json(await storage.getPayrollWorksheets());
+    } catch (error) {
+      console.error("Get payroll worksheets error:", error);
+      res.status(500).json({ error: "Failed to get payroll worksheets" });
+    }
+  });
+
+  app.get("/api/payroll-worksheets/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const worksheet = await storage.getPayrollWorksheet(req.params.id);
+      if (!worksheet) return res.status(404).json({ error: "Payroll worksheet not found" });
+      res.json(worksheet);
+    } catch (error) {
+      console.error("Get payroll worksheet error:", error);
+      res.status(500).json({ error: "Failed to get payroll worksheet" });
+    }
+  });
+
+  app.post("/api/payroll-worksheets", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const parsed = insertPayrollWorksheetSchema.safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      if (!validWorksheetPeriod(parsed.data.periodStart, parsed.data.periodEnd)) {
+        return res.status(400).json({ error: "periodEnd must be on or after periodStart" });
+      }
+      const employee = await storage.getEmployee(parsed.data.employeeId);
+      if (!employee) return res.status(400).json({ error: "Employee not found" });
+
+      const adpDeductionsBreakdown = parsed.data.adpDeductionsBreakdown as AdpDeduction[];
+      const totals = calculatePayrollWorksheetTotals(
+        parsed.data.daysWorked,
+        parsed.data.dailyGross,
+        adpDeductionsBreakdown,
+      );
+      if (Number(totals.totalDeductions) > Number(totals.grossPay)) {
+        return res.status(400).json({ error: "Deductions cannot exceed gross pay" });
+      }
+      const worksheet = await storage.createPayrollWorksheet({
+        employeeId: parsed.data.employeeId,
+        periodStart: worksheetDateOnly(parsed.data.periodStart),
+        periodEnd: worksheetDateOnly(parsed.data.periodEnd),
+        payDate: worksheetDateOnly(parsed.data.payDate),
+        daysWorked: parsed.data.daysWorked,
+        dailyGross: parsed.data.dailyGross,
+        adpDeductionsBreakdown,
+        ...totals,
+        status: "draft",
+        createdByUserId: req.session.userId!,
+      });
+      res.status(201).json(worksheet);
+    } catch (error) {
+      console.error("Create payroll worksheet error:", error);
+      res.status(500).json({ error: "Failed to create payroll worksheet" });
+    }
+  });
+
+  app.patch("/api/payroll-worksheets/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const parsed = updatePayrollWorksheetSchema.safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const existing = await storage.getPayrollWorksheet(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Payroll worksheet not found" });
+      if (existing.status === "confirmed") {
+        return res.status(409).json({ error: "Confirmed payroll worksheets cannot be edited" });
+      }
+
+      const employeeId = parsed.data.employeeId ?? existing.employeeId;
+      if (employeeId !== existing.employeeId && !(await storage.getEmployee(employeeId))) {
+        return res.status(400).json({ error: "Employee not found" });
+      }
+      const periodStart = parsed.data.periodStart ?? new Date(`${existing.periodStart}T00:00:00.000Z`);
+      const periodEnd = parsed.data.periodEnd ?? new Date(`${existing.periodEnd}T00:00:00.000Z`);
+      const payDate = parsed.data.payDate ?? new Date(`${existing.payDate}T00:00:00.000Z`);
+      if (!validWorksheetPeriod(periodStart, periodEnd)) {
+        return res.status(400).json({ error: "periodEnd must be on or after periodStart" });
+      }
+      const daysWorked = parsed.data.daysWorked ?? existing.daysWorked;
+      const dailyGross = parsed.data.dailyGross ?? existing.dailyGross;
+      const adpDeductionsBreakdown = (parsed.data.adpDeductionsBreakdown ??
+        existing.adpDeductionsBreakdown) as AdpDeduction[];
+      const totals = calculatePayrollWorksheetTotals(daysWorked, dailyGross, adpDeductionsBreakdown);
+      if (Number(totals.totalDeductions) > Number(totals.grossPay)) {
+        return res.status(400).json({ error: "Deductions cannot exceed gross pay" });
+      }
+      const worksheet = await storage.updateUnconfirmedPayrollWorksheet(req.params.id, {
+        employeeId,
+        periodStart: worksheetDateOnly(periodStart),
+        periodEnd: worksheetDateOnly(periodEnd),
+        payDate: worksheetDateOnly(payDate),
+        daysWorked,
+        dailyGross,
+        adpDeductionsBreakdown,
+        ...totals,
+      });
+      if (!worksheet) return res.status(409).json({ error: "Confirmed payroll worksheets cannot be edited" });
+      res.json(worksheet);
+    } catch (error) {
+      console.error("Update payroll worksheet error:", error);
+      res.status(500).json({ error: "Failed to update payroll worksheet" });
+    }
+  });
+
+  app.post("/api/payroll-worksheets/:id/export", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const existing = await storage.getPayrollWorksheet(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Payroll worksheet not found" });
+      if (existing.status === "confirmed") {
+        return res.status(409).json({ error: "Confirmed payroll worksheets cannot be changed" });
+      }
+      const worksheet = await storage.updateUnconfirmedPayrollWorksheet(existing.id, {
+        status: "exported",
+        exportedAt: new Date(),
+      });
+      if (!worksheet) return res.status(409).json({ error: "Confirmed payroll worksheets cannot be changed" });
+      res.json(worksheet);
+    } catch (error) {
+      console.error("Export payroll worksheet error:", error);
+      res.status(500).json({ error: "Failed to mark payroll worksheet exported" });
+    }
+  });
+
+  app.post("/api/payroll-worksheets/:id/confirm", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const parsed = confirmPayrollWorksheetSchema.safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const existing = await storage.getPayrollWorksheet(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Payroll worksheet not found" });
+      if (existing.status === "confirmed") {
+        return res.status(409).json({ error: "Payroll worksheet is already confirmed" });
+      }
+      const worksheet = await storage.updateUnconfirmedPayrollWorksheet(existing.id, {
+        status: "confirmed",
+        adpConfirmationReference: parsed.data.adpConfirmationReference,
+        adpConfirmedAt: parsed.data.adpConfirmedAt ?? new Date(),
+        adpConfirmationNotes: parsed.data.adpConfirmationNotes ?? null,
+        confirmedByUserId: req.session.userId!,
+      });
+      if (!worksheet) return res.status(409).json({ error: "Payroll worksheet is already confirmed" });
+      res.json(worksheet);
+    } catch (error) {
+      console.error("Confirm payroll worksheet error:", error);
+      res.status(500).json({ error: "Failed to confirm payroll worksheet" });
     }
   });
 
