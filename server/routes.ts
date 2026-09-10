@@ -38,6 +38,7 @@ import { syncPlaidTransactionsForUser } from "./plaid-sync";
 import { handleInboundSms, twimlReply } from "./sms";
 import { sendChangeOrderEmail } from "./email";
 import twilio from "twilio";
+import { getAddressDetails, searchAddresses } from "./address-autocomplete";
 import { parseDocumentText } from "./document-parser";
 import {
   buildGoogleDocsAuthUrl,
@@ -671,6 +672,34 @@ export async function registerRoutes(
 
   // All routes below require authentication
   app.use("/api", requireAuth);
+
+  app.get("/api/address-suggestions", async (req, res) => {
+    const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const sessionToken = typeof req.query.sessionToken === "string" ? req.query.sessionToken : undefined;
+    if (query.length < 3 || query.length > 200) {
+      return res.status(400).json({ error: "Enter at least 3 address characters" });
+    }
+    try {
+      res.json(await searchAddresses(query, sessionToken));
+    } catch (error) {
+      console.error("Address suggestion error:", error);
+      res.status(502).json({ error: "Address suggestions are temporarily unavailable" });
+    }
+  });
+
+  app.get("/api/address-details", async (req, res) => {
+    const placeId = typeof req.query.placeId === "string" ? req.query.placeId.trim() : "";
+    const sessionToken = typeof req.query.sessionToken === "string" ? req.query.sessionToken : undefined;
+    if (!placeId || placeId.length > 500) {
+      return res.status(400).json({ error: "A valid place ID is required" });
+    }
+    try {
+      res.json(await getAddressDetails(placeId, sessionToken));
+    } catch (error) {
+      console.error("Address details error:", error);
+      res.status(502).json({ error: "Address details are temporarily unavailable" });
+    }
+  });
 
   // Dashboard
   app.get("/api/dashboard", async (req, res) => {

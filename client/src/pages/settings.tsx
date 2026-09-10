@@ -16,6 +16,7 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -1070,10 +1071,16 @@ export default function SettingsPage() {
                   <FormItem>
                     <FormLabel>Address</FormLabel>
                     <FormControl>
-                      <div className="relative">
-                        <MapPin className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                        <Textarea placeholder="123 Main St, City, State 12345" className="pl-9 min-h-20" {...field} data-testid="input-company-address" />
-                      </div>
+                      <AddressAutocomplete
+                        value={field.value || ""}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        name={field.name}
+                        ref={field.ref}
+                        className="pl-9"
+                        placeholder="Start typing a street address"
+                        data-testid="input-company-address"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

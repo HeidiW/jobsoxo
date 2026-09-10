@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -186,7 +187,24 @@ function ClientForm({ client, onClose }: { client?: Client; onClose: () => void 
         <FormField control={form.control} name="address" render={({ field }) => (
           <FormItem>
             <label style={lbl}>Address</label>
-            <FormControl><input {...field} style={inp} placeholder="Street address" data-testid="input-client-address" /></FormControl>
+            <FormControl>
+              <AddressAutocomplete
+                value={field.value || ""}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                name={field.name}
+                ref={field.ref}
+                style={inp}
+                placeholder="Start typing a street address"
+                data-testid="input-client-address"
+                onAddressSelect={(result) => {
+                  form.setValue("address", result.streetAddress || result.formattedAddress, { shouldDirty: true });
+                  form.setValue("city", result.city, { shouldDirty: true });
+                  form.setValue("state", result.state, { shouldDirty: true });
+                  form.setValue("zipCode", result.postalCode, { shouldDirty: true });
+                }}
+              />
+            </FormControl>
             <FormMessage />
           </FormItem>
         )} />

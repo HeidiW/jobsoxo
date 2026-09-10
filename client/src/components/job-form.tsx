@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
@@ -204,7 +205,15 @@ export default function JobForm({
             <FormItem>
               <FormLabel>Job Address</FormLabel>
               <FormControl>
-                <Input placeholder="123 Main St, City, State" {...field} data-testid="input-job-address" />
+                <AddressAutocomplete
+                  value={field.value || ""}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  name={field.name}
+                  ref={field.ref}
+                  placeholder="Start typing a street address"
+                  data-testid="input-job-address"
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
