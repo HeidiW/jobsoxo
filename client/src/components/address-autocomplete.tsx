@@ -82,6 +82,8 @@ export const AddressAutocomplete = forwardRef<HTMLInputElement, AddressAutocompl
         const details = await response.json() as AddressDetails;
         onChange(details.formattedAddress || suggestion.label);
         onAddressSelect?.(details);
+      } catch {
+        // Keep the selected suggestion text when the optional detail lookup fails.
       } finally {
         sessionToken.current = crypto.randomUUID();
       }

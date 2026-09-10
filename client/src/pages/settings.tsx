@@ -1077,7 +1077,6 @@ export default function SettingsPage() {
                         onBlur={field.onBlur}
                         name={field.name}
                         ref={field.ref}
-                        className="pl-9"
                         placeholder="Start typing a street address"
                         data-testid="input-company-address"
                       />
