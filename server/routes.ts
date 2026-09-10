@@ -61,13 +61,13 @@ function badRequest(res: Response, err: z.ZodError) {
   return res.status(400).json({ error: "Invalid request data", details: err.flatten().fieldErrors });
 }
 
-type AdpDeduction = { label: string; amount: number; category?: string; adpCode?: string };
+type GustoDeduction = { label: string; amount: number; category?: string; gustoCode?: string };
 
 /** Calculates monetary worksheet fields in cents so client-provided totals are never trusted. */
 export function calculatePayrollWorksheetTotals(
   daysWorked: string | number,
   dailyGross: string | number,
-  deductions: AdpDeduction[],
+  deductions: GustoDeduction[],
 ) {
   const grossCents = Math.round(Number(daysWorked) * Number(dailyGross) * 100);
   const deductionsCents = deductions.reduce((total, deduction) =>
@@ -2050,7 +2050,7 @@ export async function registerRoutes(
     }
   });
 
-  // Payroll Worksheets — manually prepared values to enter and confirm in ADP.
+  // Payroll Worksheets — manually prepared values to enter and confirm in Gusto.
   app.get("/api/payroll-worksheets", requireAuth, requireAdmin, async (_req, res) => {
     try {
       res.json(await storage.getPayrollWorksheets());
@@ -2081,11 +2081,11 @@ export async function registerRoutes(
       const employee = await storage.getEmployee(parsed.data.employeeId);
       if (!employee) return res.status(400).json({ error: "Employee not found" });
 
-      const adpDeductionsBreakdown = parsed.data.adpDeductionsBreakdown as AdpDeduction[];
+      const gustoDeductionsBreakdown = parsed.data.gustoDeductionsBreakdown as GustoDeduction[];
       const totals = calculatePayrollWorksheetTotals(
         parsed.data.daysWorked,
         parsed.data.dailyGross,
-        adpDeductionsBreakdown,
+        gustoDeductionsBreakdown,
       );
       if (Number(totals.totalDeductions) > Number(totals.grossPay)) {
         return res.status(400).json({ error: "Deductions cannot exceed gross pay" });
@@ -2097,7 +2097,7 @@ export async function registerRoutes(
         payDate: worksheetDateOnly(parsed.data.payDate),
         daysWorked: parsed.data.daysWorked,
         dailyGross: parsed.data.dailyGross,
-        adpDeductionsBreakdown,
+        gustoDeductionsBreakdown,
         ...totals,
         status: "draft",
         createdByUserId: req.session.userId!,
@@ -2131,9 +2131,9 @@ export async function registerRoutes(
       }
       const daysWorked = parsed.data.daysWorked ?? existing.daysWorked;
       const dailyGross = parsed.data.dailyGross ?? existing.dailyGross;
-      const adpDeductionsBreakdown = (parsed.data.adpDeductionsBreakdown ??
-        existing.adpDeductionsBreakdown) as AdpDeduction[];
-      const totals = calculatePayrollWorksheetTotals(daysWorked, dailyGross, adpDeductionsBreakdown);
+      const gustoDeductionsBreakdown = (parsed.data.gustoDeductionsBreakdown ??
+        existing.gustoDeductionsBreakdown) as GustoDeduction[];
+      const totals = calculatePayrollWorksheetTotals(daysWorked, dailyGross, gustoDeductionsBreakdown);
       if (Number(totals.totalDeductions) > Number(totals.grossPay)) {
         return res.status(400).json({ error: "Deductions cannot exceed gross pay" });
       }
@@ -2144,7 +2144,7 @@ export async function registerRoutes(
         payDate: worksheetDateOnly(payDate),
         daysWorked,
         dailyGross,
-        adpDeductionsBreakdown,
+        gustoDeductionsBreakdown,
         ...totals,
       });
       if (!worksheet) return res.status(409).json({ error: "Confirmed payroll worksheets cannot be edited" });
@@ -2185,9 +2185,9 @@ export async function registerRoutes(
       }
       const worksheet = await storage.updateUnconfirmedPayrollWorksheet(existing.id, {
         status: "confirmed",
-        adpConfirmationReference: parsed.data.adpConfirmationReference,
-        adpConfirmedAt: parsed.data.adpConfirmedAt ?? new Date(),
-        adpConfirmationNotes: parsed.data.adpConfirmationNotes ?? null,
+        gustoConfirmationReference: parsed.data.gustoConfirmationReference,
+        gustoConfirmedAt: parsed.data.gustoConfirmedAt ?? new Date(),
+        gustoConfirmationNotes: parsed.data.gustoConfirmationNotes ?? null,
         confirmedByUserId: req.session.userId!,
       });
       if (!worksheet) return res.status(409).json({ error: "Payroll worksheet is already confirmed" });

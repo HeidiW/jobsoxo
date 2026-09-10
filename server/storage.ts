@@ -164,7 +164,7 @@ export interface IStorage {
   createPayrollRecord(record: InsertPayrollRecord): Promise<PayrollRecord>;
   updatePayrollRecord(id: string, updates: Partial<InsertPayrollRecord>): Promise<PayrollRecord | undefined>;
 
-  // Payroll Worksheets (ADP-assisted)
+  // Payroll Worksheets (Gusto-assisted)
   getPayrollWorksheets(): Promise<PayrollWorksheet[]>;
   getPayrollWorksheet(id: string): Promise<PayrollWorksheet | undefined>;
   createPayrollWorksheet(worksheet: InsertPayrollWorksheet): Promise<PayrollWorksheet>;
@@ -603,7 +603,7 @@ export class DatabaseStorage implements IStorage {
     return updated || undefined;
   }
 
-  // Payroll Worksheets (ADP-assisted)
+  // Payroll Worksheets (Gusto-assisted)
   async getPayrollWorksheets(): Promise<PayrollWorksheet[]> {
     return db.select().from(payrollWorksheets).orderBy(desc(payrollWorksheets.periodStart), desc(payrollWorksheets.createdAt));
   }

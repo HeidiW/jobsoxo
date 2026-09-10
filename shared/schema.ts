@@ -506,7 +506,7 @@ export const insertPayrollRecordSchema = createInsertSchema(payrollRecords)
 export type InsertPayrollRecord = z.infer<typeof insertPayrollRecordSchema>;
 export type PayrollRecord = typeof payrollRecords.$inferSelect;
 
-// Payroll Worksheets — ADP-assisted, reviewable payroll entries. These are
+// Payroll Worksheets — Gusto-assisted, reviewable payroll entries. These are
 // intentionally separate from payroll_records, which represent payroll runs.
 export const payrollWorksheets = pgTable("payroll_worksheets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -517,17 +517,17 @@ export const payrollWorksheets = pgTable("payroll_worksheets", {
   daysWorked: decimal("days_worked", { precision: 10, scale: 2 }).notNull(),
   dailyGross: decimal("daily_gross", { precision: 12, scale: 2 }).notNull(),
   grossPay: decimal("gross_pay", { precision: 12, scale: 2 }).notNull(),
-  adpDeductionsBreakdown: jsonb("adp_deductions_breakdown")
-    .$type<{ label: string; amount: number; category?: string; adpCode?: string }[]>()
+  gustoDeductionsBreakdown: jsonb("gusto_deductions_breakdown")
+    .$type<{ label: string; amount: number; category?: string; gustoCode?: string }[]>()
     .notNull()
     .default([]),
   totalDeductions: decimal("total_deductions", { precision: 12, scale: 2 }).notNull(),
   netPay: decimal("net_pay", { precision: 12, scale: 2 }).notNull(),
   status: text("status").notNull().default("draft"), // draft, exported, confirmed
   exportedAt: timestamp("exported_at"),
-  adpConfirmationReference: text("adp_confirmation_reference"),
-  adpConfirmedAt: timestamp("adp_confirmed_at"),
-  adpConfirmationNotes: text("adp_confirmation_notes"),
+  gustoConfirmationReference: text("gusto_confirmation_reference"),
+  gustoConfirmedAt: timestamp("gusto_confirmed_at"),
+  gustoConfirmationNotes: text("gusto_confirmation_notes"),
   createdByUserId: varchar("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
   confirmedByUserId: varchar("confirmed_by_user_id").references(() => users.id, { onDelete: "restrict" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -551,11 +551,11 @@ export const payrollWorksheetsRelations = relations(payrollWorksheets, ({ one })
   }),
 }));
 
-const adpDeductionBreakdownSchema = z.array(z.object({
+const gustoDeductionBreakdownSchema = z.array(z.object({
   label: z.string().trim().min(1, "Deduction label is required"),
   amount: z.coerce.number().finite().min(0, "Deduction amount must not be negative"),
   category: z.string().trim().optional(),
-  adpCode: z.string().trim().optional(),
+  gustoCode: z.string().trim().optional(),
 }));
 
 export const insertPayrollWorksheetSchema = createInsertSchema(payrollWorksheets)
@@ -566,9 +566,9 @@ export const insertPayrollWorksheetSchema = createInsertSchema(payrollWorksheets
     netPay: true,
     status: true,
     exportedAt: true,
-    adpConfirmationReference: true,
-    adpConfirmedAt: true,
-    adpConfirmationNotes: true,
+    gustoConfirmationReference: true,
+    gustoConfirmedAt: true,
+    gustoConfirmationNotes: true,
     createdByUserId: true,
     confirmedByUserId: true,
     createdAt: true,
@@ -581,13 +581,13 @@ export const insertPayrollWorksheetSchema = createInsertSchema(payrollWorksheets
     payDate: z.coerce.date(),
     daysWorked: nonNegativeNumericString("Days worked"),
     dailyGross: nonNegativeNumericString("Daily gross"),
-    adpDeductionsBreakdown: adpDeductionBreakdownSchema.optional().default([]),
+    gustoDeductionsBreakdown: gustoDeductionBreakdownSchema.optional().default([]),
   });
 export const updatePayrollWorksheetSchema = insertPayrollWorksheetSchema.partial();
 export const confirmPayrollWorksheetSchema = z.object({
-  adpConfirmationReference: z.string().trim().min(1, "ADP confirmation reference is required"),
-  adpConfirmedAt: z.coerce.date().optional(),
-  adpConfirmationNotes: z.string().trim().max(5000).optional().nullable(),
+  gustoConfirmationReference: z.string().trim().min(1, "Gusto confirmation reference is required"),
+  gustoConfirmedAt: z.coerce.date().optional(),
+  gustoConfirmationNotes: z.string().trim().max(5000).optional().nullable(),
 });
 export type InsertPayrollWorksheet = typeof payrollWorksheets.$inferInsert;
 export type PayrollWorksheet = typeof payrollWorksheets.$inferSelect;

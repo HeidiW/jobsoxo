@@ -14,10 +14,10 @@ type Deduction = { id: string; label: string; category: string; amount: string }
 type Worksheet = {
   id: string; employeeId: string; periodStart: string; periodEnd: string; payDate: string;
   daysWorked: string; dailyGross: string; grossPay: string;
-  adpDeductionsBreakdown: Array<{ label: string; category?: string; amount: number }>;
+  gustoDeductionsBreakdown: Array<{ label: string; category?: string; amount: number }>;
   totalDeductions: string; netPay: string; status: "draft" | "exported" | "confirmed";
-  adpConfirmationReference?: string | null; adpConfirmedAt?: string | null;
-  adpConfirmationNotes?: string | null;
+  gustoConfirmationReference?: string | null; gustoConfirmedAt?: string | null;
+  gustoConfirmationNotes?: string | null;
 };
 
 const categories = ["Federal withholding", "State withholding", "FICA", "Health insurance", "Retirement", "Garnishment", "Other"];
@@ -48,9 +48,9 @@ export default function PayrollWorksheet() {
   const [daysWorked, setDaysWorked] = useState("0");
   const [dailyGross, setDailyGross] = useState("");
   const [deductions, setDeductions] = useState<Deduction[]>([]);
-  const [adpRef, setAdpRef] = useState("");
-  const [adpDate, setAdpDate] = useState("");
-  const [adpNotes, setAdpNotes] = useState("");
+  const [gustoRef, setGustoRef] = useState("");
+  const [gustoDate, setGustoDate] = useState("");
+  const [gustoNotes, setGustoNotes] = useState("");
   const [savedId, setSavedId] = useState("");
   const [worksheetStatus, setWorksheetStatus] = useState<Worksheet["status"]>("draft");
 
@@ -62,15 +62,15 @@ export default function PayrollWorksheet() {
     setPayDate(worksheet.payDate);
     setDaysWorked(worksheet.daysWorked);
     setDailyGross(worksheet.dailyGross);
-    setDeductions(worksheet.adpDeductionsBreakdown.map((row) => ({
+    setDeductions(worksheet.gustoDeductionsBreakdown.map((row) => ({
       id: crypto.randomUUID(),
       label: row.label,
       category: row.category || "Other",
       amount: String(row.amount),
     })));
-    setAdpRef(worksheet.adpConfirmationReference || "");
-    setAdpDate(worksheet.adpConfirmedAt?.slice(0, 10) || "");
-    setAdpNotes(worksheet.adpConfirmationNotes || "");
+    setGustoRef(worksheet.gustoConfirmationReference || "");
+    setGustoDate(worksheet.gustoConfirmedAt?.slice(0, 10) || "");
+    setGustoNotes(worksheet.gustoConfirmationNotes || "");
     setWorksheetStatus(worksheet.status);
   };
 
@@ -102,7 +102,7 @@ export default function PayrollWorksheet() {
         payDate,
         daysWorked,
         dailyGross,
-        adpDeductionsBreakdown: deductions.map(({ label, category, amount }) => ({
+        gustoDeductionsBreakdown: deductions.map(({ label, category, amount }) => ({
           label,
           category,
           amount: Number(amount),
@@ -115,7 +115,7 @@ export default function PayrollWorksheet() {
       setSavedId(String(worksheet.id));
       setWorksheetStatus(worksheet.status);
       queryClient.invalidateQueries({ queryKey: ["/api/payroll-worksheets"] });
-      toast({ title: "Worksheet saved", description: "Your ADP review is still a draft." });
+      toast({ title: "Worksheet saved", description: "Your Gusto review is still a draft." });
     },
     onError: (error: Error) => toast({ title: "Worksheet could not be saved", description: error.message, variant: "destructive" }),
   });
@@ -123,16 +123,16 @@ export default function PayrollWorksheet() {
   const confirmMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", `/api/payroll-worksheets/${savedId}/confirm`, {
-        adpConfirmationReference: adpRef,
-        adpConfirmedAt: adpDate || undefined,
-        adpConfirmationNotes: adpNotes || undefined,
+        gustoConfirmationReference: gustoRef,
+        gustoConfirmedAt: gustoDate || undefined,
+        gustoConfirmationNotes: gustoNotes || undefined,
       });
       return response.json() as Promise<Worksheet>;
     },
     onSuccess: (worksheet) => {
       setWorksheetStatus(worksheet.status);
       queryClient.invalidateQueries({ queryKey: ["/api/payroll-worksheets"] });
-      toast({ title: "ADP confirmation recorded", description: "This ADP worksheet is now locked for audit history." });
+      toast({ title: "Gusto confirmation recorded", description: "This Gusto worksheet is now locked for audit history." });
     },
     onError: (error: Error) => toast({ title: "Confirmation could not be recorded", description: error.message, variant: "destructive" }),
   });
@@ -145,11 +145,11 @@ export default function PayrollWorksheet() {
     const worksheet = await response.json() as Worksheet;
     setWorksheetStatus(worksheet.status);
     const lines = [
-      ["ADP-assisted payroll worksheet", ""], ["Employee", selected?.name ?? ""], ["Employee ID", employeeId],
+      ["Gusto-assisted payroll worksheet", ""], ["Employee", selected?.name ?? ""], ["Employee ID", employeeId],
       ["Period start", periodStart], ["Period end", periodEnd], ["Pay date", payDate], ["Days worked", daysWorked],
       ["Daily gross", dailyGross], ["Gross pay", gross.toFixed(2)], ["Total deductions", totalDeductions.toFixed(2)], ["Net pay", net.toFixed(2)],
       [], ["Deduction", "Category", "Amount"], ...deductions.map((row) => [row.label, row.category, Number(row.amount || 0).toFixed(2)]),
-      [], ["ADP confirmation reference", adpRef], ["ADP confirmation date", adpDate], ["Notes", adpNotes],
+      [], ["Gusto confirmation reference", gustoRef], ["Gusto confirmation date", gustoDate], ["Notes", gustoNotes],
     ];
     const blob = new Blob([lines.map((line) => line.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
     const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `payroll-worksheet-${periodEnd || today}.csv`; link.click(); URL.revokeObjectURL(link.href);
@@ -168,9 +168,9 @@ export default function PayrollWorksheet() {
         <div className="flex flex-wrap items-start justify-between gap-5 border-b border-border pb-6">
           <div>
             <button onClick={() => setLocation("/payroll")} className="mb-4 flex items-center gap-2 text-xs text-muted-foreground hover:text-primary"><ArrowLeft className="h-3.5 w-3.5" /> Payroll</button>
-            <p className="kicker">ADP-assisted review</p>
+            <p className="kicker">Gusto-assisted review</p>
             <h1 className="mt-2 text-4xl">Payroll worksheet</h1>
-            <p className="mt-2 max-w-xl text-sm text-muted-foreground">Build one clear pay record, reconcile deductions, and keep the ADP confirmation beside it.</p>
+            <p className="mt-2 max-w-xl text-sm text-muted-foreground">Build one clear pay record, reconcile deductions, and keep the Gusto confirmation beside it.</p>
           </div>
           <div className="flex gap-2 pt-8">
             <Button variant="outline" onClick={exportCsv} disabled={!savedId || worksheetStatus === "confirmed"}><Download className="mr-2 h-4 w-4" /> Export CSV</Button>
@@ -230,9 +230,9 @@ export default function PayrollWorksheet() {
             </section>
 
             <section className="border border-card-border bg-card/50 p-6">
-              <div className="flex items-start justify-between gap-4"><div><p className="kicker">ADP deductions</p><h2 className="mt-2 text-2xl">Manual adjustments</h2></div><Button variant="outline" size="sm" onClick={addDeduction}><Plus className="mr-2 h-4 w-4" /> Add row</Button></div>
+              <div className="flex items-start justify-between gap-4"><div><p className="kicker">Gusto deductions</p><h2 className="mt-2 text-2xl">Manual adjustments</h2></div><Button variant="outline" size="sm" onClick={addDeduction}><Plus className="mr-2 h-4 w-4" /> Add row</Button></div>
               <div className="mt-5 space-y-3">
-                {deductions.length === 0 && <p className="border border-dashed border-border p-5 text-sm text-muted-foreground">No deductions added. Add the categories from the ADP preview to keep the net calculation explicit.</p>}
+                {deductions.length === 0 && <p className="border border-dashed border-border p-5 text-sm text-muted-foreground">No deductions added. Add the categories from the Gusto preview to keep the net calculation explicit.</p>}
                 {deductions.map((row) => <div key={row.id} className="grid gap-2 md:grid-cols-[1.4fr_1fr_130px_36px]">
                   <Input aria-label="Deduction label" placeholder="e.g. Health premium" value={row.label} onChange={(e) => updateDeduction(row.id, "label", e.target.value)} />
                   <select aria-label="Deduction category" value={row.category} onChange={(e) => updateDeduction(row.id, "category", e.target.value)} className="h-10 border border-input bg-transparent px-3 text-sm">{categories.map((category) => <option key={category}>{category}</option>)}</select>
@@ -243,19 +243,19 @@ export default function PayrollWorksheet() {
             </section>
 
             <section className="border border-card-border bg-card/50 p-6">
-              <p className="kicker">Close the loop</p><h2 className="mt-2 text-2xl">ADP confirmation</h2>
+              <p className="kicker">Close the loop</p><h2 className="mt-2 text-2xl">Gusto confirmation</h2>
               <div className="mt-5 grid gap-5 md:grid-cols-2">
-                <label className="space-y-2 text-sm"><span className="text-xs uppercase tracking-wider text-muted-foreground">Confirmation reference</span><Input value={adpRef} onChange={(e) => setAdpRef(e.target.value)} placeholder="ADP run or confirmation ID" /></label>
-                <label className="space-y-2 text-sm"><span className="text-xs uppercase tracking-wider text-muted-foreground">Confirmation date</span><Input type="date" value={adpDate} onChange={(e) => setAdpDate(e.target.value)} /></label>
-                <label className="space-y-2 text-sm md:col-span-2"><span className="text-xs uppercase tracking-wider text-muted-foreground">Notes</span><Textarea value={adpNotes} onChange={(e) => setAdpNotes(e.target.value)} placeholder="What did you verify in ADP?" /></label>
+                <label className="space-y-2 text-sm"><span className="text-xs uppercase tracking-wider text-muted-foreground">Confirmation reference</span><Input value={gustoRef} onChange={(e) => setGustoRef(e.target.value)} placeholder="Gusto payroll or confirmation ID" /></label>
+                <label className="space-y-2 text-sm"><span className="text-xs uppercase tracking-wider text-muted-foreground">Confirmation date</span><Input type="date" value={gustoDate} onChange={(e) => setGustoDate(e.target.value)} /></label>
+                <label className="space-y-2 text-sm md:col-span-2"><span className="text-xs uppercase tracking-wider text-muted-foreground">Notes</span><Textarea value={gustoNotes} onChange={(e) => setGustoNotes(e.target.value)} placeholder="What did you verify in Gusto?" /></label>
               </div>
               <div className="mt-5 flex justify-end">
                 <Button
                   onClick={() => confirmMutation.mutate()}
-                  disabled={!savedId || !deductionsValid || !adpRef.trim() || worksheetStatus === "confirmed" || confirmMutation.isPending}
+                  disabled={!savedId || !deductionsValid || !gustoRef.trim() || worksheetStatus === "confirmed" || confirmMutation.isPending}
                 >
                   <CheckCircle2 className="mr-2 h-4 w-4" />
-                  {worksheetStatus === "confirmed" ? "ADP confirmed" : confirmMutation.isPending ? "Recording…" : "Record ADP confirmation"}
+                  {worksheetStatus === "confirmed" ? "Gusto confirmed" : confirmMutation.isPending ? "Recording…" : "Record Gusto confirmation"}
                 </Button>
               </div>
             </section>

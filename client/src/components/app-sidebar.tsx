@@ -43,7 +43,7 @@ const navItems = [
   { title: "Change Orders", url: "/change-orders", icon: AlertTriangle },
   { title: "Scheduling", url: "/scheduling", icon: Calendar },
   { title: "Payroll", url: "/payroll", icon: DollarSign },
-  { title: "ADP Worksheet", url: "/payroll/worksheet", icon: ClipboardPenLine, adminOnly: true },
+  { title: "Gusto Worksheet", url: "/payroll/worksheet", icon: ClipboardPenLine, adminOnly: true },
 ];
 
 const settingsItems = [
