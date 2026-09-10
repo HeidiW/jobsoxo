@@ -99,6 +99,71 @@ describe("PATCH /api/jobs/:id — validation", () => {
   });
 });
 
+describe("job material totals", () => {
+  it("stays correct after add, edit, delete, and moving a material between jobs", async () => {
+    const suffix = `${Date.now()}-${Math.random()}`;
+    const client = await storage.createClient({ name: `Material totals ${suffix}` });
+    const jobA = await storage.createJob({ clientId: client.id, title: `Job A ${suffix}` });
+    const jobB = await storage.createJob({ clientId: client.id, title: `Job B ${suffix}` });
+
+    const getTotal = async (jobId: string) => {
+      const response = await request(app).get(`/api/jobs/${jobId}`).expect(200);
+      return response.body.totalMaterialCost;
+    };
+
+    expect(await storage.getJobMaterialTotal(jobA.id)).toBe("0");
+    expect(Number(await getTotal(jobA.id))).toBe(0);
+
+    const first = await request(app)
+      .post("/api/materials")
+      .send({
+        jobId: jobA.id,
+        name: "Paint",
+        purchaseDate: "2026-09-01",
+        quantity: "2",
+        unit: "gal",
+        price: "18.25",
+      })
+      .expect(201);
+    const second = await request(app)
+      .post("/api/materials")
+      .send({
+        jobId: jobA.id,
+        name: "Brushes",
+        purchaseDate: "2026-09-02",
+        quantity: "1",
+        unit: "set",
+        price: "6.75",
+      })
+      .expect(201);
+    await request(app)
+      .post("/api/materials")
+      .send({
+        jobId: null,
+        name: "Unassigned supplies",
+        purchaseDate: "2026-09-03",
+        quantity: "1",
+        unit: "each",
+        price: "99.00",
+      })
+      .expect(201);
+
+    expect(Number(await storage.getJobMaterialTotal(jobA.id))).toBe(25);
+    expect(Number(await getTotal(jobA.id))).toBe(25);
+
+    await request(app).patch(`/api/materials/${first.body.id}`).send({ price: "20.00" }).expect(200);
+    expect(Number(await getTotal(jobA.id))).toBe(26.75);
+
+    await request(app).patch(`/api/materials/${second.body.id}`).send({ jobId: jobB.id }).expect(200);
+    expect(Number(await getTotal(jobA.id))).toBe(20);
+    expect(Number(await getTotal(jobB.id))).toBe(6.75);
+
+    await request(app).delete(`/api/materials/${first.body.id}`).expect(204);
+    expect(Number(await storage.getJobMaterialTotal(jobA.id))).toBe(0);
+    expect(Number(await getTotal(jobA.id))).toBe(0);
+  });
+});
+
 describe("POST /api/invoices — validation", () => {
   it("returns 400 when clientId is missing", async () => {
     const res = await request(app)

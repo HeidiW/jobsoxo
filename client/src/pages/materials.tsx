@@ -33,8 +33,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { Job, JobMaterial } from "@shared/schema";
-
-type MaterialWithJob = JobMaterial & { job: Job | null };
+import {
+  filterMaterials,
+  invalidateMaterialTotals,
+  totalMaterialPrice,
+  type MaterialWithJob,
+} from "./materials-logic";
 
 type MaterialForm = {
   jobId: string;
@@ -137,8 +141,7 @@ function MaterialFormDialog({
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      invalidateMaterialTotals(queryClient);
       trackEvent("material_saved", { action: material ? "updated" : "created" });
       toast({ title: material ? "Material updated" : "Material added" });
       onOpenChange(false);
@@ -305,8 +308,7 @@ export default function Materials() {
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/materials/${id}`); },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      invalidateMaterialTotals(queryClient);
       trackEvent("material_deleted");
       toast({ title: "Material deleted" });
       setDeletingMaterial(null);
@@ -315,20 +317,11 @@ export default function Materials() {
   });
 
   const filteredMaterials = useMemo(() => {
-    const normalized = search.trim().toLowerCase();
-    return materials.filter((material) => {
-      const matchesJob = jobFilter === "all" || material.jobId === jobFilter;
-      const matchesSearch = !normalized
-        || material.name.toLowerCase().includes(normalized)
-        || material.description?.toLowerCase().includes(normalized)
-        || material.vendor?.toLowerCase().includes(normalized)
-        || material.job?.title.toLowerCase().includes(normalized);
-      return matchesJob && matchesSearch;
-    });
+    return filterMaterials(materials, jobFilter, search);
   }, [materials, jobFilter, search]);
 
   const filteredTotal = useMemo(
-    () => filteredMaterials.reduce((sum, material) => sum + Number(material.price), 0),
+    () => totalMaterialPrice(filteredMaterials),
     [filteredMaterials],
   );
   const selectedJob = jobFilter === "all" ? null : jobs.find((job) => job.id === jobFilter);
