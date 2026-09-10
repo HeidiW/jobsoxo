@@ -29,7 +29,7 @@ import bcrypt from "bcryptjs";
 import { passport, setupOAuthStrategies, getEnabledProviders, callbackUrl } from "./oauth";
 import {
   isGmailConnected, fetchGmailInbox, revokeGmailConnection, getGmailOAuthUrl,
-  buildGmailAuthUrl, exchangeGmailCode,
+  buildGmailAuthUrl, exchangeGmailCode, getGmailCallbackUrl,
   isUserGmailConnected, getUserGmailEmail, fetchUserGmailInbox, revokeUserGmailToken,
   fetchGmailLabelsForUser,
 } from "./gmail";
@@ -2724,10 +2724,12 @@ export async function registerRoutes(
     }
     const crypto = require("crypto") as typeof import("crypto");
     const state = crypto.randomBytes(16).toString("hex");
+    const callbackUrl = getGmailCallbackUrl(getPublicBase(req));
     req.session.gmailOAuthState = state;
     req.session.gmailReturnPath = req.query.returnTo === "/gmail-todos" ? "/gmail-todos" : "/inbox-tasks";
+    req.session.gmailOAuthCallbackUrl = callbackUrl;
     try {
-      const authUrl = buildGmailAuthUrl(state);
+      const authUrl = buildGmailAuthUrl(state, callbackUrl);
       res.redirect(authUrl);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2737,8 +2739,9 @@ export async function registerRoutes(
   // Google redirects here after user consents
   app.get("/api/gmail/callback", async (req, res) => {
     const { code, state, error } = req.query as Record<string, string>;
-    const baseUrl = (process.env.APP_URL || "http://localhost:5000").replace(/\/$/, "");
+    const baseUrl = getPublicBase(req);
     const returnPath = req.session.gmailReturnPath === "/gmail-todos" ? "/gmail-todos" : "/inbox-tasks";
+    const callbackUrl = req.session.gmailOAuthCallbackUrl || getGmailCallbackUrl(baseUrl);
     const clearCachedTasksAfterOAuthFailure = async () => {
       if (!req.session.userId) return;
       try {
@@ -2757,6 +2760,7 @@ export async function registerRoutes(
     }
     delete req.session.gmailOAuthState;
     delete req.session.gmailReturnPath;
+    delete req.session.gmailOAuthCallbackUrl;
 
     if (error) {
       await clearCachedTasksAfterOAuthFailure();
@@ -2764,7 +2768,7 @@ export async function registerRoutes(
     }
 
     try {
-      const tokens = await exchangeGmailCode(code);
+      const tokens = await exchangeGmailCode(code, callbackUrl);
       await storage.saveGoogleToken(req.session.userId, {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
