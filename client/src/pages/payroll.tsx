@@ -1568,6 +1568,139 @@ function PayrollRegisterPreviewDialog({
   );
 }
 
+// ── Gusto-backed payroll workspace ─────────────────────────────────────────────
+type GustoStatus = {
+  configured?: boolean; available?: boolean; state?: string; companyId?: string;
+  companyName?: string; fundingAccount?: { status?: string; institutionName?: string; accountMask?: string };
+  error?: string;
+};
+type GustoBankSummary = {
+  connected?: boolean; institutionName?: string; accountMask?: string; current?: number;
+  available?: number; refreshedAt?: string; stale?: boolean; error?: string;
+  transactions?: Array<{ id?: string; date?: string; name?: string; amount?: number; pending?: boolean; status?: string }>;
+};
+type GustoReadiness = { employees?: Array<{ id: string; name?: string; ready?: boolean; blockers?: string[]; correctionPath?: string }> };
+type GustoRun = {
+  id: string; status?: string; providerStatus?: string; error?: string; blockers?: string[];
+  periodStart?: string; periodEnd?: string; payDate?: string; expectedDebit?: number;
+  totals?: { gross?: number; deductions?: number; taxes?: number; reimbursements?: number; net?: number };
+  employees?: Array<{ id?: string; name?: string; hours?: number; days?: number; earnings?: number; deductions?: number; taxes?: number; reimbursements?: number; netPay?: number }>;
+  createdAt?: string; updatedAt?: string; expectedDebitDate?: string;
+};
+
+export function GustoPayrollWorkspace({ records, period }: { records: PayrollRecordWithEmployee[]; period: { start: string; end: string } | null }) {
+  const { toast } = useToast();
+  const [run, setRun] = useState<GustoRun | null>(null);
+  const [periodStart, setPeriodStart] = useState("");
+  const [periodEnd, setPeriodEnd] = useState("");
+  const [payDate, setPayDate] = useState("");
+  const [replacementWarning, setReplacementWarning] = useState(false);
+  const [fundingWarning, setFundingWarning] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [reviewItems, setReviewItems] = useState<Array<{ employeeId: string; name: string; hours: number; days: number; grossEarnings: number; deductions: number; reimbursements: number }>>([]);
+  const { data: status, isLoading: statusLoading, error: statusError } = useQuery<GustoStatus>({
+    queryKey: ["/api/gusto/status"], staleTime: 30_000,
+  });
+  const { data: bank, isLoading: bankLoading, refetch: refreshBank } = useQuery<GustoBankSummary>({
+    queryKey: ["/api/gusto/bank-summary"], staleTime: 30_000,
+  });
+  const { data: readiness } = useQuery<GustoReadiness>({ queryKey: ["/api/gusto/employees/readiness"], staleTime: 30_000 });
+  const refreshRun = useQuery<GustoRun>({
+    queryKey: ["/api/gusto/payroll-runs", run?.id], enabled: !!run?.id, refetchInterval: run && ["calculating", "submitting", "processing"].includes(run.status || "") ? 5000 : false,
+  });
+  const currentRun = refreshRun.data ?? run;
+  useEffect(() => {
+    setReviewItems(records
+      .filter(record => Number(record.grossPay) > 0 || Number(record.totalHours) > 0)
+      .map(record => ({
+        employeeId: record.employeeId,
+        name: record.employee?.name ?? "Employee",
+        hours: Number(record.totalHours) || 0,
+        days: Number(record.totalHours) > 0 ? Number(record.totalHours) / 8 : 0,
+        grossEarnings: Number(record.grossPay) || 0,
+        deductions: Number(record.deductions) || 0,
+        reimbursements: 0,
+      })));
+  }, [records]);
+  useEffect(() => {
+    if (!period || currentRun) return;
+    setPeriodStart(period.start);
+    setPeriodEnd(period.end);
+  }, [period, currentRun]);
+  const plaid = usePlaidLink({
+    entityType: "business",
+    onSuccess: () => { refreshBank(); toast({ title: "Business account connected" }); },
+  });
+  const call = async (method: string, path: string, body?: unknown) => {
+    setBusy(true);
+    try {
+      const response = await apiRequest(method, path, body);
+      const value = await response.json().catch(() => null);
+      if (value?.id) setRun(value);
+      return value;
+    } catch (error) {
+      toast({ title: "Gusto action failed", description: (error as Error).message, variant: "destructive" });
+      return null;
+    } finally { setBusy(false); }
+  };
+  const createRun = async () => {
+    const created = await call("POST", "/api/gusto/payroll-runs", {
+      periodStart, periodEnd, payDate,
+      items: reviewItems.map(({ employeeId, hours, days, grossEarnings, deductions, reimbursements }) =>
+        ({ employeeId, hours, days, grossEarnings, deductions, reimbursements })),
+    });
+    if (created?.id) setRun(created);
+  };
+  const runStatus = currentRun?.providerStatus || currentRun?.status || "draft";
+  const readinessRows = readiness?.employees ?? [];
+  const payableEmployeeIds = new Set(reviewItems.map(item => item.employeeId));
+  const relevantReadinessRows = readinessRows.filter(employee => payableEmployeeIds.has(employee.id));
+  const hasBlockers = (currentRun?.blockers?.length ?? 0) > 0 || relevantReadinessRows.some(employee => employee.ready === false);
+  const hasPayableRows = reviewItems.length > 0;
+  const isSubmissionPending = ["submission_pending", "unknown", "submitting"].includes(runStatus);
+  const buttonStyle: React.CSSProperties = { border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "8px 12px", background: "var(--panel)", color: "var(--fg)", fontSize: "12px", fontWeight: 700, cursor: busy ? "wait" : "pointer", fontFamily: "inherit" };
+  const primaryStyle: React.CSSProperties = { ...buttonStyle, border: "none", background: "var(--jox-primary)", color: "#fff" };
+  const money = (value?: number) => typeof value === "number" ? value.toLocaleString("en-US", { style: "currency", currency: "USD" }) : "—";
+
+  if (statusLoading) return <div style={{ padding: "18px", color: "var(--muted)", fontSize: "13px" }}>Checking Gusto payroll availability…</div>;
+  if (statusError || status?.configured === false || status?.available === false) return (
+    <section style={{ marginBottom: "18px", border: "1px solid #fecaca", borderRadius: "12px", padding: "18px", background: "#fff7ed" }} data-testid="gusto-unavailable">
+      <div style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}><AlertTriangle style={{ color: "#c2410c", width: "18px", flexShrink: 0 }} /><div>
+        <strong style={{ fontSize: "14px" }}>Gusto payroll is unavailable</strong>
+        <p style={{ margin: "5px 0 0", fontSize: "12.5px", color: "#9a3412" }}>{status?.error || "Gusto credentials or required payroll scopes are not configured. No manual payment fallback is available."}</p>
+      </div></div>
+    </section>
+  );
+  return (
+    <section style={{ marginBottom: "18px", display: "flex", flexDirection: "column", gap: "12px" }} aria-label="Gusto payroll workspace">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", flexWrap: "wrap" }}>
+        <div><div style={{ ...lbl, margin: 0 }}>Gusto payroll</div><h3 style={{ margin: "4px 0 0", fontSize: "18px" }}>Fund, review, and submit in one place</h3></div>
+        <span style={{ fontSize: "11px", padding: "4px 8px", borderRadius: "999px", background: "#ecfdf5", color: "#047857", fontWeight: 700 }}>Provider-calculated</span>
+      </div>
+      <div style={{ border: "1px solid var(--panel-bd)", borderRadius: "10px", padding: "14px", background: "var(--panel)", display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "10px", alignItems: "flex-start" }}><Landmark style={{ color: "var(--jox-primary)", width: "18px", marginTop: "2px" }} /><div>
+          <div style={{ fontSize: "13px", fontWeight: 700 }}>{bank?.institutionName || status?.fundingAccount?.institutionName || "Business funding account"}</div>
+          <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "3px" }}>{bank?.accountMask || status?.fundingAccount?.accountMask ? `••••${bank?.accountMask || status?.fundingAccount?.accountMask}` : "Not connected"} · {bank?.refreshedAt ? `Refreshed ${new Date(bank.refreshedAt).toLocaleString()}` : "Provider balance required before submission"}</div>
+          {bank?.error && <div style={{ color: "#b91c1c", fontSize: "12px", marginTop: "4px" }}>{bank.error}</div>}
+        </div><div style={{ display: "flex", gap: "15px", textAlign: "right" }}><div><div style={{ ...lbl, margin: 0 }}>Current</div><strong>{money(bank?.current)}</strong></div><div><div style={{ ...lbl, margin: 0 }}>Available</div><strong>{money(bank?.available)}</strong></div></div>
+        <div style={{ display: "flex", gap: "7px", width: "100%", justifyContent: "flex-end", flexWrap: "wrap" }}><button type="button" style={buttonStyle} onClick={() => refreshBank()} disabled={bankLoading}>↻ Refresh balance</button>{bank?.connected && <button type="button" style={buttonStyle} onClick={() => setFundingWarning(true)} disabled={busy}>{status?.fundingAccount?.status === "verified" ? "Funding account verified" : "Set up Gusto funding"}</button>}<button type="button" style={primaryStyle} onClick={plaid.open} disabled={plaid.isLoading}>{plaid.isLoading ? "Opening…" : bank?.connected ? "Reconnect bank" : "Connect business bank"}</button></div>
+       </div></div>
+      {bank?.transactions && <div style={{ border: "1px solid var(--panel-bd)", borderRadius: "10px", overflow: "hidden" }}><div style={{ padding: "10px 14px", fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--muted)", background: "var(--track)" }}>Latest transactions</div>{bank.transactions.slice(0, 10).sort((a, b) => String(b.date).localeCompare(String(a.date))).map((transaction, index) => <div key={transaction.id || index} style={{ display: "flex", justifyContent: "space-between", padding: "9px 14px", borderTop: "1px solid var(--panel-bd)", fontSize: "12.5px" }}><span>{transaction.name || "Bank transaction"} <span style={{ color: "var(--muted)" }}>· {transaction.date} {transaction.pending ? "· Pending" : "· Posted"}</span></span><strong>{money(transaction.amount)}</strong></div>)}</div>}
+      {relevantReadinessRows.length > 0 && <div style={{ border: "1px solid var(--panel-bd)", borderRadius: "10px", padding: "14px" }}><div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "center", marginBottom: "8px" }}><div style={{ ...lbl, margin: 0 }}>Employee direct-deposit readiness</div><button type="button" style={buttonStyle} disabled={busy} onClick={async () => { await call("POST", "/api/gusto/employees/sync"); window.location.reload(); }}>Sync with Gusto</button></div>{relevantReadinessRows.map(employee => <div key={employee.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", padding: "7px 0", borderTop: "1px solid var(--panel-bd)", fontSize: "12.5px" }}><span>{employee.name || "Employee"}</span>{employee.ready ? <span style={{ color: "#15803d", fontWeight: 700 }}>Ready</span> : <span style={{ color: "#b45309", display: "flex", gap: "8px", alignItems: "center" }}>Needs setup {employee.correctionPath && <Link href={employee.correctionPath} style={{ color: "var(--jox-primary)" }}>Fix</Link>}</span>}</div>)}</div>}
+      <div style={{ border: "1px solid var(--panel-bd)", borderRadius: "10px", padding: "14px" }}>
+        {!currentRun && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: "8px", marginBottom: "12px" }}>
+          <label style={{ fontSize: "12px" }}>Period start<input type="date" value={periodStart} readOnly style={{ ...inp, marginTop: "4px" }} /></label>
+          <label style={{ fontSize: "12px" }}>Period end<input type="date" value={periodEnd} readOnly style={{ ...inp, marginTop: "4px" }} /></label>
+          <label style={{ fontSize: "12px" }}>Pay date<input aria-label="Gusto pay date" data-testid="input-gusto-pay-date" type="date" min={periodEnd || undefined} value={payDate} onChange={event => setPayDate(event.target.value)} style={{ ...inp, marginTop: "4px" }} /></label>
+        </div>}
+       {!currentRun ? <div style={{ marginTop: "12px" }}><div style={{ ...lbl, marginBottom: "6px" }}>Employee payroll review · {reviewItems.length} payable</div>{hasPayableRows ? <div style={{ overflowX: "auto", border: "1px solid var(--panel-bd)", borderRadius: "8px" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}><thead><tr>{["Employee", "Hours / days", "Earnings", "Deductions", "Reimbursements"].map(label => <th key={label} style={{ textAlign: label === "Employee" ? "left" : "right", padding: "8px", color: "var(--muted)" }}>{label}</th>)}</tr></thead><tbody>{reviewItems.map(item => <tr key={item.employeeId}><td style={{ padding: "8px", borderTop: "1px solid var(--panel-bd)", fontWeight: 600 }}>{item.name}</td><td style={{ padding: "8px", borderTop: "1px solid var(--panel-bd)", textAlign: "right" }}>{item.hours.toFixed(2)}h / {item.days.toFixed(2)}d</td><td style={{ padding: "8px", borderTop: "1px solid var(--panel-bd)", textAlign: "right" }}>{money(item.grossEarnings)}</td><td style={{ padding: "8px", borderTop: "1px solid var(--panel-bd)", textAlign: "right" }}>{money(item.deductions)}</td><td style={{ padding: "8px", borderTop: "1px solid var(--panel-bd)", textAlign: "right" }}>{money(item.reimbursements)}</td></tr>)}</tbody></table></div> : <div style={{ padding: "12px", color: "var(--muted)" }}>No payable rows for this period. Create payroll is disabled.</div>}<div style={{ marginTop: "12px", display: "flex", justifyContent: "flex-end" }}><button type="button" style={primaryStyle} onClick={createRun} disabled={busy || !periodStart || !periodEnd || !payDate || !bank?.connected || !hasPayableRows || hasBlockers}>Create payroll review</button></div></div> : <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "10px" }}><div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}><strong>Run {currentRun.id.slice(0, 8)} · {runStatus}</strong><span style={{ color: "var(--muted)", fontSize: "12px" }}>{currentRun.expectedDebitDate ? `Expected debit ${currentRun.expectedDebitDate}` : ""}</span></div>{currentRun.error && <div style={{ color: "#b91c1c", fontSize: "12px" }}>{currentRun.error}</div>}{isSubmissionPending && <div style={{ color: "#92400e", background: "#fffbeb", padding: "10px", borderRadius: "8px" }}>Submission status is pending with Gusto. Do not create or recalculate another run.</div>}{currentRun.blockers?.map(blocker => <div key={blocker} style={{ color: "#b45309", fontSize: "12px" }}>⚠ {blocker}</div>)}{currentRun.employees && <div style={{ overflowX: "auto", border: "1px solid var(--panel-bd)", borderRadius: "8px" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}><tbody>{currentRun.employees.map((employee, index) => <tr key={employee.id || index}><td style={{ padding: "7px" }}>{reviewItems.find(item => item.employeeId === employee.id)?.name || employee.name || "Employee"}</td><td style={{ padding: "7px", textAlign: "right" }}>{employee.hours ?? 0}h / {employee.days ?? "—"}d</td><td style={{ padding: "7px", textAlign: "right" }}>{money(employee.earnings)}</td><td style={{ padding: "7px", textAlign: "right" }}>Tax {money(employee.taxes)} · Net {money(employee.netPay)}</td></tr>)}</tbody></table></div>}{currentRun.totals && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(100px,1fr))", gap: "8px", background: "var(--track)", padding: "10px", fontSize: "12px" }}>{Object.entries(currentRun.totals).map(([key, value]) => <div key={key}><span style={{ color: "var(--muted)", display: "block" }}>{key}</span><strong>{money(value as number)}</strong></div>)}<div><span style={{ color: "var(--muted)", display: "block" }}>Expected debit</span><strong>{money(currentRun.expectedDebit)}</strong></div></div>}<div style={{ display: "flex", justifyContent: "flex-end", gap: "7px", flexWrap: "wrap" }}>{isSubmissionPending ? <button type="button" style={buttonStyle} onClick={() => call("POST", `/api/gusto/payroll-runs/${currentRun.id}/status`)} disabled={busy}>Refresh provider status</button> : <><button type="button" style={buttonStyle} onClick={() => call("POST", `/api/gusto/payroll-runs/${currentRun.id}/calculate`)} disabled={busy || !hasPayableRows || hasBlockers || ["submitted", "paid", "cancelled", "failed"].includes(runStatus)}>Refresh calculation</button>{["draft", "calculated", "ready_for_review"].includes(runStatus) && <><button type="button" style={buttonStyle} onClick={() => { setReplacementWarning(true); }} disabled={busy || !hasPayableRows || hasBlockers}>Submit to Gusto</button><button type="button" style={buttonStyle} onClick={() => call("POST", `/api/gusto/payroll-runs/${currentRun.id}/cancel`)} disabled={busy}>Cancel run</button></>}{["submitted", "processing", "processed"].includes(runStatus) && <button type="button" style={buttonStyle} onClick={() => call("POST", `/api/gusto/payroll-runs/${currentRun.id}/reverse`)} disabled={busy}>Request reversal</button>}</>}</div></div>}
+      </div>
+      {fundingWarning && <AlertDialog open onOpenChange={setFundingWarning}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Use this Gusto funding account?</AlertDialogTitle><AlertDialogDescription>If another account is currently Gusto's default, replacing it will disable that previous default account. JobsOxo only sends Plaid's server-side processor token to Gusto; bank credentials never appear here.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Keep current</AlertDialogCancel><AlertDialogAction onClick={() => { setFundingWarning(false); call("POST", "/api/gusto/funding-account", { replaceDefault: true }); }}>Confirm funding account</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}
+      {replacementWarning && <AlertDialog open onOpenChange={setReplacementWarning}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Submit this payroll to Gusto?</AlertDialogTitle><AlertDialogDescription>Gusto will debit the verified funding account and initiate employee direct deposits. This action is provider-controlled and cannot be edited after submission.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Review again</AlertDialogCancel><AlertDialogAction onClick={() => { setReplacementWarning(false); if (currentRun) call("POST", `/api/gusto/payroll-runs/${currentRun.id}/submit`); }}>Submit payroll</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}
+    </section>
+  );
+}
+
 // ── SMS status helpers ────────────────────────────────────────────────────────
 const SMS_STATUS: Record<string, { bg: string; fg: string; label: string }> = {
   ok:                { bg: "var(--b-green-bg)",  fg: "var(--b-green-fg)",  label: "Logged" },
@@ -2080,6 +2213,8 @@ export default function Payroll() {
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* ── PAY RUN TABLE ── */}
           {activeSection === "payroll" && (
+            <>
+            <GustoPayrollWorkspace records={currentRecords} period={currentPeriod} />
             <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
               <div style={{ ...TH }}>
                 <span style={{ flex: 1, minWidth: 0 }}>Painter</span>
@@ -2234,6 +2369,7 @@ export default function Payroll() {
                 </div>
               )}
             </div>
+            </>
           )}
 
           {/* ══════════════════════════════════════════════════════════════════ */}

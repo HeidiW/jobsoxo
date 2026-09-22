@@ -55,6 +55,7 @@ import {
   parseGoogleDocText,
 } from "./google-docs";
 import { eq, sql, desc } from "drizzle-orm";
+import { registerGustoRoutes } from "./gusto-routes";
 
 function parseNumeric(value: unknown): number {
   if (typeof value === "number") return value;
@@ -675,7 +676,11 @@ export async function registerRoutes(
   });
 
   // All routes below require authentication
-  app.use("/api", requireAuth);
+  app.use("/api", (req, res, next) => {
+    // Gusto delivers signed provider webhooks without a JobsOxo session.
+    if (req.path === "/gusto/webhook") return next();
+    return requireAuth(req, res, next);
+  });
 
   app.get("/api/address-suggestions", async (req, res) => {
     const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
@@ -2120,7 +2125,11 @@ export async function registerRoutes(
 
   app.post("/api/payroll-worksheets", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const parsed = insertPayrollWorksheetSchema.safeParse(req.body);
+      const parsed = insertPayrollWorksheetSchema.safeParse({
+        ...req.body,
+        gustoDeductionsBreakdown:
+          req.body.gustoDeductionsBreakdown ?? req.body.adpDeductionsBreakdown,
+      });
       if (!parsed.success) return badRequest(res, parsed.error);
       if (!validWorksheetPeriod(parsed.data.periodStart, parsed.data.periodEnd)) {
         return res.status(400).json({ error: "periodEnd must be on or after periodStart" });
@@ -2158,7 +2167,11 @@ export async function registerRoutes(
 
   app.patch("/api/payroll-worksheets/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const parsed = updatePayrollWorksheetSchema.safeParse(req.body);
+      const parsed = updatePayrollWorksheetSchema.safeParse({
+        ...req.body,
+        gustoDeductionsBreakdown:
+          req.body.gustoDeductionsBreakdown ?? req.body.adpDeductionsBreakdown,
+      });
       if (!parsed.success) return badRequest(res, parsed.error);
       const existing = await storage.getPayrollWorksheet(req.params.id);
       if (!existing) return res.status(404).json({ error: "Payroll worksheet not found" });
@@ -2223,7 +2236,13 @@ export async function registerRoutes(
 
   app.post("/api/payroll-worksheets/:id/confirm", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const parsed = confirmPayrollWorksheetSchema.safeParse(req.body);
+      const parsed = confirmPayrollWorksheetSchema.safeParse({
+        ...req.body,
+        gustoConfirmationReference:
+          req.body.gustoConfirmationReference ?? req.body.adpConfirmationReference,
+        gustoConfirmationNotes:
+          req.body.gustoConfirmationNotes ?? req.body.adpConfirmationNotes,
+      });
       if (!parsed.success) return badRequest(res, parsed.error);
       const existing = await storage.getPayrollWorksheet(req.params.id);
       if (!existing) return res.status(404).json({ error: "Payroll worksheet not found" });
@@ -2238,7 +2257,12 @@ export async function registerRoutes(
         confirmedByUserId: req.session.userId!,
       });
       if (!worksheet) return res.status(409).json({ error: "Payroll worksheet is already confirmed" });
-      res.json(worksheet);
+      res.json({
+        ...worksheet,
+        adpConfirmationReference: worksheet.gustoConfirmationReference,
+        adpConfirmedAt: worksheet.gustoConfirmedAt,
+        adpConfirmationNotes: worksheet.gustoConfirmationNotes,
+      });
     } catch (error) {
       console.error("Confirm payroll worksheet error:", error);
       res.status(500).json({ error: "Failed to confirm payroll worksheet" });
@@ -3512,6 +3536,8 @@ export async function registerRoutes(
       res.status(500).json({ error: "Failed to seed demo data" });
     }
   });
+
+  registerGustoRoutes(app, requireAdmin);
 
   return httpServer;
 }

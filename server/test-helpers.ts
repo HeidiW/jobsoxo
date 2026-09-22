@@ -14,7 +14,7 @@ import bcrypt from "bcryptjs";
 export async function buildTestApp() {
   const app = express();
 
-  app.use(express.json());
+  app.use(express.json({ verify: (req, _res, buf) => { (req as any).rawBody = Buffer.from(buf); } }));
   app.use(express.urlencoded({ extended: false }));
 
   app.use(
@@ -40,7 +40,7 @@ export async function buildTestApp() {
 export async function buildAdminTestApp() {
   const app = express();
 
-  app.use(express.json());
+  app.use(express.json({ verify: (req, _res, buf) => { (req as any).rawBody = Buffer.from(buf); } }));
   app.use(express.urlencoded({ extended: false }));
 
   app.use(

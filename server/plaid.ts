@@ -166,3 +166,15 @@ export async function getTransactions(accessToken: string, days: number = 30): P
     throw error;
   }
 }
+
+/** Creates a server-side processor token; raw Plaid credentials never leave this process. */
+export async function createProcessorToken(accessToken: string, accountId: string, processor = "gusto"): Promise<string> {
+  const client = getPlaidClient();
+  if (!client) throw new Error("Plaid is not configured.");
+  const response = await (client as any).processorTokenCreate({
+    access_token: accessToken,
+    account_id: accountId,
+    processor,
+  });
+  return response.data.processor_token;
+}
