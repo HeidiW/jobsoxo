@@ -30,6 +30,152 @@ describe("calculatePayrollWorksheetTotals", () => {
   });
 });
 
+describe("Payroll worksheets — access control", () => {
+  const worksheetId = "00000000-0000-0000-0000-000000000000";
+
+  it.each([
+    ["list", "get", "/api/payroll-worksheets", undefined],
+    ["create", "post", "/api/payroll-worksheets", {}],
+    ["edit", "patch", `/api/payroll-worksheets/${worksheetId}`, {}],
+    ["export", "post", `/api/payroll-worksheets/${worksheetId}/export`, {}],
+    ["confirm", "post", `/api/payroll-worksheets/${worksheetId}/confirm`, {}],
+  ] as const)("returns 403 when a non-admin tries to %s worksheets", async (_name, method, path, body) => {
+    const pendingRequest = request(app)[method](path);
+    if (body !== undefined) pendingRequest.send(body);
+    const res = await pendingRequest.expect(403);
+
+    expect(res.body.error).toBe("Admin access required");
+  });
+});
+
+describe("Payroll worksheets — admin lifecycle and validation", () => {
+  let adminApp: Express;
+  let employeeId: string;
+
+  beforeAll(async () => {
+    adminApp = await buildAdminTestApp();
+    const employee = await request(adminApp)
+      .post("/api/employees")
+      .send({
+        name: `Worksheet Test Employee ${Date.now()}`,
+        dayRate: "200",
+        status: "active",
+      })
+      .expect(201);
+    employeeId = employee.body.id;
+  });
+
+  it("lets an admin create, list, edit, export, and confirm a server-calculated worksheet, then locks it", async () => {
+    const created = await request(adminApp)
+      .post("/api/payroll-worksheets")
+      .send({
+        employeeId,
+        periodStart: "2040-01-01",
+        periodEnd: "2040-01-14",
+        payDate: "2040-01-18",
+        daysWorked: "5",
+        dailyGross: "200",
+        adpDeductionsBreakdown: [
+          { label: "Federal tax", amount: 125 },
+          { label: "Benefits", amount: 25.5, category: "benefits" },
+        ],
+        grossPay: "1.00",
+        totalDeductions: "1.00",
+        netPay: "999999.00",
+        status: "confirmed",
+      })
+      .expect(201);
+
+    expect(created.body).toMatchObject({
+      employeeId,
+      daysWorked: "5.00",
+      dailyGross: "200.00",
+      grossPay: "1000.00",
+      totalDeductions: "150.50",
+      netPay: "849.50",
+      status: "draft",
+    });
+    const worksheetId = created.body.id;
+
+    const list = await request(adminApp)
+      .get("/api/payroll-worksheets")
+      .expect(200);
+    expect(list.body).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: worksheetId }),
+    ]));
+
+    const edited = await request(adminApp)
+      .patch(`/api/payroll-worksheets/${worksheetId}`)
+      .send({
+        daysWorked: "6",
+        grossPay: "2.00",
+        totalDeductions: "2.00",
+        netPay: "2.00",
+      })
+      .expect(200);
+    expect(edited.body).toMatchObject({
+      daysWorked: "6.00",
+      grossPay: "1200.00",
+      totalDeductions: "150.50",
+      netPay: "1049.50",
+      status: "draft",
+    });
+
+    const exported = await request(adminApp)
+      .post(`/api/payroll-worksheets/${worksheetId}/export`)
+      .send({})
+      .expect(200);
+    expect(exported.body.status).toBe("exported");
+    expect(exported.body.exportedAt).toBeTruthy();
+
+    const confirmed = await request(adminApp)
+      .post(`/api/payroll-worksheets/${worksheetId}/confirm`)
+      .send({
+        adpConfirmationReference: "ADP-TEST-2040",
+        adpConfirmationNotes: "Confirmed in endpoint test",
+      })
+      .expect(200);
+    expect(confirmed.body).toMatchObject({
+      status: "confirmed",
+      adpConfirmationReference: "ADP-TEST-2040",
+      adpConfirmationNotes: "Confirmed in endpoint test",
+    });
+    expect(confirmed.body.adpConfirmedAt).toBeTruthy();
+    expect(confirmed.body.confirmedByUserId).toBeTruthy();
+
+    const editAfterConfirmation = await request(adminApp)
+      .patch(`/api/payroll-worksheets/${worksheetId}`)
+      .send({ daysWorked: "7" })
+      .expect(409);
+    expect(editAfterConfirmation.body.error).toMatch(/cannot be edited/i);
+
+    const repeatedConfirmation = await request(adminApp)
+      .post(`/api/payroll-worksheets/${worksheetId}/confirm`)
+      .send({ adpConfirmationReference: "ADP-TEST-REPEAT" })
+      .expect(409);
+    expect(repeatedConfirmation.body.error).toMatch(/already confirmed/i);
+  });
+
+  it("rejects deductions above gross pay", async () => {
+    const res = await request(adminApp)
+      .post("/api/payroll-worksheets")
+      .send({
+        employeeId,
+        periodStart: "2040-02-01",
+        periodEnd: "2040-02-14",
+        payDate: "2040-02-18",
+        daysWorked: "1",
+        dailyGross: "100",
+        adpDeductionsBreakdown: [
+          { label: "Excess deduction", amount: 100.01 },
+        ],
+      })
+      .expect(400);
+
+    expect(res.body.error).toBe("Deductions cannot exceed gross pay");
+  });
+});
+
 describe("POST /api/clients — validation", () => {
   it("returns 400 when name is missing", async () => {
     const res = await request(app)
