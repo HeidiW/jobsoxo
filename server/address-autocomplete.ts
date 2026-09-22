@@ -1,4 +1,25 @@
 const PLACES_BASE_URL = "https://places.googleapis.com/v1";
+const SUGGESTION_CACHE_TTL_MS = 60_000;
+const DETAILS_CACHE_TTL_MS = 5 * 60_000;
+const CACHE_MAX_ENTRIES = 250;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const SUGGESTION_REQUEST_LIMIT = 30;
+const DETAILS_REQUEST_LIMIT = 20;
+const RATE_LIMIT_MAX_BUCKETS = 10_000;
+
+type CacheEntry<T> = {
+  expiresAt: number;
+  value: Promise<T>;
+};
+
+type RateLimitEntry = {
+  count: number;
+  windowStartedAt: number;
+};
+
+const suggestionCache = new Map<string, CacheEntry<AddressSuggestion[]>>();
+const detailsCache = new Map<string, CacheEntry<AddressDetails>>();
+const rateLimits = new Map<string, RateLimitEntry>();
 
 export interface AddressSuggestion {
   placeId: string;
@@ -21,6 +42,63 @@ type GoogleAddressComponent = {
   shortText?: string;
   types?: string[];
 };
+
+export class AddressLookupRateLimitError extends Error {
+  constructor(public readonly retryAfterSeconds: number) {
+    super("Too many address lookup requests");
+    this.name = "AddressLookupRateLimitError";
+  }
+}
+
+function consumeRateLimit(userId: string, kind: "suggestions" | "details", limit: number) {
+  const now = Date.now();
+  const key = `${kind}:${userId}`;
+  const existing = rateLimits.get(key);
+
+  if (!existing || now - existing.windowStartedAt >= RATE_LIMIT_WINDOW_MS) {
+    if (!existing && rateLimits.size >= RATE_LIMIT_MAX_BUCKETS) {
+      for (const [entryKey, entry] of rateLimits) {
+        if (now - entry.windowStartedAt >= RATE_LIMIT_WINDOW_MS) rateLimits.delete(entryKey);
+      }
+      if (rateLimits.size >= RATE_LIMIT_MAX_BUCKETS) {
+        throw new AddressLookupRateLimitError(Math.ceil(RATE_LIMIT_WINDOW_MS / 1000));
+      }
+    }
+    rateLimits.set(key, { count: 1, windowStartedAt: now });
+  } else {
+    if (existing.count >= limit) {
+      const retryAfterSeconds = Math.max(1, Math.ceil(
+        (RATE_LIMIT_WINDOW_MS - (now - existing.windowStartedAt)) / 1000,
+      ));
+      throw new AddressLookupRateLimitError(retryAfterSeconds);
+    }
+    existing.count += 1;
+  }
+}
+
+function getCached<T>(
+  cache: Map<string, CacheEntry<T>>,
+  key: string,
+  ttlMs: number,
+  loader: () => Promise<T>,
+): Promise<T> {
+  const now = Date.now();
+  const existing = cache.get(key);
+  if (existing && existing.expiresAt > now) {
+    cache.delete(key);
+    cache.set(key, existing);
+    return existing.value;
+  }
+  if (existing) cache.delete(key);
+
+  const value = loader();
+  cache.set(key, { expiresAt: now + ttlMs, value });
+  value.catch(() => {
+    if (cache.get(key)?.value === value) cache.delete(key);
+  });
+  while (cache.size > CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value!);
+  return value;
+}
 
 function getApiKey(): string {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY?.trim();
@@ -107,4 +185,39 @@ export async function getAddressDetails(placeId: string, sessionToken?: string):
     },
   });
   return parseGooglePlaceDetails(await readGoogleResponse(response));
+}
+
+export function searchAddressesForUser(
+  userId: string,
+  input: string,
+  sessionToken?: string,
+): Promise<AddressSuggestion[]> {
+  consumeRateLimit(userId, "suggestions", SUGGESTION_REQUEST_LIMIT);
+  const cacheKey = input.trim().replace(/\s+/g, " ").toLocaleLowerCase("en-US");
+  return getCached(
+    suggestionCache,
+    cacheKey,
+    SUGGESTION_CACHE_TTL_MS,
+    () => searchAddresses(input, sessionToken),
+  );
+}
+
+export function getAddressDetailsForUser(
+  userId: string,
+  placeId: string,
+  sessionToken?: string,
+): Promise<AddressDetails> {
+  consumeRateLimit(userId, "details", DETAILS_REQUEST_LIMIT);
+  return getCached(
+    detailsCache,
+    placeId,
+    DETAILS_CACHE_TTL_MS,
+    () => getAddressDetails(placeId, sessionToken),
+  );
+}
+
+export function resetAddressLookupStateForTests() {
+  suggestionCache.clear();
+  detailsCache.clear();
+  rateLimits.clear();
 }

@@ -30,15 +30,25 @@ export const AddressAutocomplete = forwardRef<HTMLInputElement, AddressAutocompl
     const [open, setOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [activeIndex, setActiveIndex] = useState(-1);
+    const [lookupNotice, setLookupNotice] = useState("");
     const sessionToken = useRef(crypto.randomUUID());
     const blurTimer = useRef<ReturnType<typeof setTimeout>>();
+    const skipNextLookup = useRef(false);
 
     useEffect(() => {
       const query = value.trim();
+      if (skipNextLookup.current) {
+        skipNextLookup.current = false;
+        setSuggestions([]);
+        setOpen(false);
+        setLoading(false);
+        return;
+      }
       if (query.length < 3) {
         setSuggestions([]);
         setOpen(false);
         setLoading(false);
+        setLookupNotice("");
         return;
       }
 
@@ -51,8 +61,15 @@ export const AddressAutocomplete = forwardRef<HTMLInputElement, AddressAutocompl
             credentials: "include",
             signal: controller.signal,
           });
+          if (response.status === 429) {
+            setLookupNotice("Address suggestions are paused briefly. You can keep entering the address manually.");
+            setSuggestions([]);
+            setOpen(false);
+            return;
+          }
           if (!response.ok) throw new Error("Address lookup failed");
           const results = await response.json() as Suggestion[];
+          setLookupNotice("");
           setSuggestions(results);
           setOpen(results.length > 0);
           setActiveIndex(-1);
@@ -73,13 +90,19 @@ export const AddressAutocomplete = forwardRef<HTMLInputElement, AddressAutocompl
     }, [value]);
 
     const choose = async (suggestion: Suggestion) => {
+      skipNextLookup.current = true;
       onChange(suggestion.label);
       setOpen(false);
       try {
         const params = new URLSearchParams({ placeId: suggestion.placeId, sessionToken: sessionToken.current });
         const response = await fetch(`/api/address-details?${params}`, { credentials: "include" });
+        if (response.status === 429) {
+          setLookupNotice("Address details are paused briefly. Please check or complete the address fields manually.");
+          return;
+        }
         if (!response.ok) throw new Error("Address details failed");
         const details = await response.json() as AddressDetails;
+        setLookupNotice("");
         onChange(details.formattedAddress || suggestion.label);
         onAddressSelect?.(details);
       } catch {
@@ -105,7 +128,10 @@ export const AddressAutocomplete = forwardRef<HTMLInputElement, AddressAutocompl
           aria-expanded={open}
           aria-controls="address-suggestion-list"
           aria-activedescendant={activeIndex >= 0 ? `address-suggestion-${activeIndex}` : undefined}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) => {
+            skipNextLookup.current = false;
+            onChange(event.target.value);
+          }}
           onFocus={(event) => {
             if (blurTimer.current) clearTimeout(blurTimer.current);
             if (suggestions.length) setOpen(true);
@@ -131,7 +157,10 @@ export const AddressAutocomplete = forwardRef<HTMLInputElement, AddressAutocompl
             }
           }}
         />
-        {loading && <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />}
+        {loading && <Loader2 className="absolute right-3 top-[18px] h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />}
+        {lookupNotice && (
+          <p className="mt-1 text-xs text-muted-foreground" role="status">{lookupNotice}</p>
+        )}
         {open && (
           <div
             id="address-suggestion-list"

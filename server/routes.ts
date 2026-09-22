@@ -38,7 +38,11 @@ import { syncPlaidTransactionsForUser } from "./plaid-sync";
 import { handleInboundSms, twimlReply } from "./sms";
 import { sendChangeOrderEmail } from "./email";
 import twilio from "twilio";
-import { getAddressDetails, searchAddresses } from "./address-autocomplete";
+import {
+  AddressLookupRateLimitError,
+  getAddressDetailsForUser,
+  searchAddressesForUser,
+} from "./address-autocomplete";
 import { parseDocumentText } from "./document-parser";
 import {
   buildGoogleDocsAuthUrl,
@@ -680,8 +684,15 @@ export async function registerRoutes(
       return res.status(400).json({ error: "Enter at least 3 address characters" });
     }
     try {
-      res.json(await searchAddresses(query, sessionToken));
+      res.json(await searchAddressesForUser(req.session.userId!, query, sessionToken));
     } catch (error) {
+      if (error instanceof AddressLookupRateLimitError) {
+        res.set("Retry-After", String(error.retryAfterSeconds));
+        return res.status(429).json({
+          error: "Too many address suggestion requests. You can keep entering the address manually.",
+          retryAfterSeconds: error.retryAfterSeconds,
+        });
+      }
       console.error("Address suggestion error:", error);
       res.status(502).json({ error: "Address suggestions are temporarily unavailable" });
     }
@@ -694,8 +705,15 @@ export async function registerRoutes(
       return res.status(400).json({ error: "A valid place ID is required" });
     }
     try {
-      res.json(await getAddressDetails(placeId, sessionToken));
+      res.json(await getAddressDetailsForUser(req.session.userId!, placeId, sessionToken));
     } catch (error) {
+      if (error instanceof AddressLookupRateLimitError) {
+        res.set("Retry-After", String(error.retryAfterSeconds));
+        return res.status(429).json({
+          error: "Too many address detail requests. The selected address can still be entered manually.",
+          retryAfterSeconds: error.retryAfterSeconds,
+        });
+      }
       console.error("Address details error:", error);
       res.status(502).json({ error: "Address details are temporarily unavailable" });
     }
