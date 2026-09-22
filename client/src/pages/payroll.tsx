@@ -797,7 +797,8 @@ function DirectDepositSection({ employeeId, employeeEmail, employeeName }: { emp
       setLocalAccount(null);
       queryClient.invalidateQueries({ queryKey: ["/api/plaid/bank-account", "employee", employeeId] });
       queryClient.invalidateQueries({ queryKey: ["/api/plaid/employee-bank-accounts"] });
-      toast({ title: "Direct deposit account removed" });
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll-records"] });
+      toast({ title: "Bank account disconnected" });
     },
     onError: (err: Error) => toast({ title: "Failed to disconnect", description: err.message, variant: "destructive" }),
   });
@@ -809,7 +810,8 @@ function DirectDepositSection({ employeeId, employeeEmail, employeeName }: { emp
       setLocalAccount(acct);
       queryClient.invalidateQueries({ queryKey: ["/api/plaid/bank-account", "employee", employeeId] });
       queryClient.invalidateQueries({ queryKey: ["/api/plaid/employee-bank-accounts"] });
-      toast({ title: "Direct deposit set up", description: `${acct.institutionName} ••••${acct.accountMask}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll-records"] });
+      toast({ title: "Bank account connected", description: `${acct.institutionName} ••••${acct.accountMask}` });
     },
   });
 
@@ -886,10 +888,10 @@ function DirectDepositSection({ employeeId, employeeEmail, employeeName }: { emp
             onClick={() => disconnectMutation.mutate(account.id)}
             disabled={disconnectMutation.isPending}
             style={{ display: "flex", alignItems: "center", gap: "5px", border: "1px solid #fecaca", borderRadius: "7px", padding: "5px 10px", background: "#fff5f5", color: "#dc2626", fontSize: "12px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}
-            data-testid={`button-remove-direct-deposit-${employeeId}`}
+            data-testid={`button-disconnect-direct-deposit-${employeeId}`}
           >
             <Unlink style={{ width: "12px", height: "12px" }} />
-            {disconnectMutation.isPending ? "Removing…" : "Remove"}
+            {disconnectMutation.isPending ? "Disconnecting…" : "Disconnect"}
           </button>
         </div>
       ) : (
@@ -901,10 +903,10 @@ function DirectDepositSection({ employeeId, employeeEmail, employeeName }: { emp
               onClick={open}
               disabled={linkLoading}
               style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "8px 14px", background: "var(--panel)", fontSize: "12.5px", fontWeight: 600, cursor: linkLoading ? "wait" : "pointer", fontFamily: "inherit", color: "var(--fg)" }}
-              data-testid={`button-setup-direct-deposit-${employeeId}`}
+              data-testid={`button-connect-bank-account-${employeeId}`}
             >
               <Landmark style={{ width: "13px", height: "13px" }} />
-              {linkLoading ? "Opening…" : "Connect bank"}
+              {linkLoading ? "Opening…" : "Connect bank account"}
             </button>
             {employeeEmail && (
               <button
