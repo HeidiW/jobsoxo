@@ -4,3 +4,4 @@
 - [Change order definition](change-order-definition.md) — Any modification to a saved invoice (scope/line items) is a change order, not an edit; use the CO flow for post-save changes.
 - [Post-merge schema safety](post-merge-schema-safety.md) — Schema pushes must reject destructive truncation prompts rather than auto-approving data loss.
 - [Google Places server key](google-places-server-key.md) — Address autocomplete calls Places server-side; use API-only restrictions, not browser-referrer restrictions.
+- [Design handoff scope](design-handoff-scope.md) — Redesign in reviewable stages; worksheet is a Payroll tab; visuals must preserve real financial and provider behavior.

@@ -1,250 +1,241 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ============================================================
-   JobsOxo — "Ledger" theme
-   Classical/editorial direction carried over from the CFP site.
-   Cormorant Garamond headings over Lora body, oxblood accent
-   applied as stroke rather than fill, hairline rules, 4px radii,
-   whisper elevation, tabular figures in place of IBM Plex Mono.
-
-   Drop-in replacement for client/src/index.css. Only the token
-   blocks changed; the elevate system, utilities and print rules
-   below are untouched from the original.
-   ============================================================ */
-
-/* LIGHT MODE — Ledger */
+/* JobsOxo semantic theme tokens and compatibility aliases. */
 :root {
-  --button-outline: rgba(19,42,19, .16);
-  --badge-outline: rgba(19,42,19, .10);
+  --button-outline: rgba(18, 20, 18, .16);
+  --badge-outline: rgba(18, 20, 18, .10);
   --opaque-button-border-intensity: -8;
-  --elevate-1: rgba(19,42,19, .03);
-  --elevate-2: rgba(19,42,19, .07);
+  --elevate-1: rgba(18, 20, 18, .03);
+  --elevate-2: rgba(18, 20, 18, .07);
 
-  --background: 212 60% 95%;        /* #ebf2fa pale blue ground */
-  --foreground: 120 38% 12%;        /* #132a13 deep green-black ink */
-  --border: 133 10% 83%;            /* #cfd8d1 hairline */
-  --card: 210 60% 98%;              /* #f7fafd */
-  --card-foreground: 120 38% 12%;
-  --card-border: 133 10% 86%;
-  --sidebar: 206 46% 97%;           /* #f4f8fb */
-  --sidebar-foreground: 120 38% 12%;
-  --sidebar-border: 133 10% 83%;
-  --sidebar-primary: 355 77% 22%;   /* #640d14 oxblood */
-  --sidebar-primary-foreground: 210 60% 98%;
-  --sidebar-accent: 133 12% 90%;
-  --sidebar-accent-foreground: 120 38% 12%;
-  --sidebar-ring: 355 77% 22%;
-  --popover: 210 60% 98%;
-  --popover-foreground: 120 38% 12%;
-  --popover-border: 133 10% 86%;
-  --primary: 355 77% 22%;           /* oxblood — the single accent */
-  --primary-foreground: 210 60% 98%;
-  --secondary: 133 12% 90%;
-  --secondary-foreground: 120 38% 12%;
-  --muted: 150 12% 92%;
-  --muted-foreground: 140 8% 40%;
-  --accent: 133 12% 91%;
-  --accent-foreground: 120 38% 12%;
-  --destructive: 1 54% 36%;         /* #8e2b2a brick */
-  --destructive-foreground: 210 60% 98%;
-  --input: 140 10% 45%;
-  --ring: 355 77% 22%;
+  --background: 0 0% 100%;
+  --foreground: 120 5% 7%;
+  --border: 96 9% 90%;
+  --input: 110 3% 55%;
+  --card: 0 0% 100%;
+  --card-foreground: 120 5% 7%;
+  --card-border: 96 9% 90%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 120 5% 7%;
+  --popover-border: 96 9% 90%;
+  --primary: 102 37% 36%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 80 14% 96%;
+  --secondary-foreground: 120 5% 7%;
+  --muted: 80 14% 96%;
+  --muted-foreground: 110 3% 36%;
+  --accent: 90 33% 94%;
+  --accent-foreground: 102 37% 27%;
+  --destructive: 15 79% 57%;
+  --destructive-foreground: 0 0% 100%;
+  --ring: 102 37% 36%;
+  --chart-1: 102 37% 36%;
+  --chart-2: 208 49% 46%;
+  --chart-3: 15 79% 57%;
+  --chart-4: 46 54% 49%;
+  --chart-5: 110 3% 55%;
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 120 5% 7%;
+  --sidebar-border: 96 9% 90%;
+  --sidebar-primary: 102 37% 36%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 90 33% 94%;
+  --sidebar-accent-foreground: 102 37% 27%;
+  --sidebar-ring: 102 37% 36%;
 
-  /* Charts — oxblood, gold, sage, slate, plum. No neon. */
-  --chart-1: 355 77% 22%;
-  --chart-2: 31 37% 40%;
-  --chart-3: 126 19% 30%;
-  --chart-4: 210 32% 33%;
-  --chart-5: 332 23% 29%;
+  --jx-surface: #F5F6F3;
+  --jx-ink: #121412;
+  --jx-ink-2: #5A5F59;
+  --jx-ink-3: #8B908A;
+  --jx-line: #E4E7E2;
+  --jx-green: #4E7D3A;
+  --jx-green-hover: #426B31;
+  --jx-green-ink: #3A5E2B;
+  --jx-green-tint: #F0F5EB;
+  --jx-blue: #3C78AE;
+  --jx-blue-ink: #2A5B88;
+  --jx-blue-tint: #EDF4FB;
+  --jx-orange: #E8643A;
+  --jx-orange-ink: #B5441C;
+  --jx-orange-tint: #FDEEE7;
+  --jx-gold: #C2A23A;
+  --jx-gold-ink: #7A6312;
+  --jx-gold-tint: #FDFBE4;
 
-  --track: #e6ecec;
-  --row-hover: #f4f8fb;
+  /* Preserve live-page tokens while moving their colors onto the new palette. */
+  --jox-primary: var(--jx-green);
+  --panel: #FFFFFF;
+  --panel-bd: var(--jx-line);
+  --fg: var(--jx-ink);
+  --faint: var(--jx-ink-2);
+  --soft: var(--jx-green-tint);
+  --rowhover: var(--jx-surface);
+  --row-hover: var(--jx-surface);
+  --navhover: var(--jx-surface);
+  --topbar: rgba(255, 255, 255, .88);
+  --searchbg: var(--jx-surface);
+  --activeitem: var(--jx-green-tint);
+  --activeshadow: rgba(18, 20, 18, .10);
+  --track: var(--jx-line);
+  --b-blue-bg: var(--jx-blue-tint); --b-blue-fg: var(--jx-blue-ink);
+  --b-red-bg: var(--jx-orange-tint); --b-red-fg: var(--jx-orange-ink);
+  --b-amber-bg: var(--jx-gold-tint); --b-amber-fg: var(--jx-gold-ink);
+  --b-green-bg: var(--jx-green-tint); --b-green-fg: var(--jx-green-ink);
+  --b-purple-bg: #F3EFF6; --b-purple-fg: #655276;
+  --b-gray-bg: var(--jx-surface); --b-gray-fg: var(--jx-ink-2);
+  --b-pink-bg: #F9EEF0; --b-pink-fg: #8A4A58;
+  --b-teal-bg: #EAF4F1; --b-teal-fg: #33665B;
+  --gem-bg: #FFFFFF; --gem-bd: var(--jx-line); --gem-mark: var(--jx-green);
+  --colhead: var(--jx-surface);
+  --bl-bg: var(--jx-blue-tint); --bl-fg: var(--jx-blue-ink); --bl-bd: #B8D0E5;
+  --gr-bg: var(--jx-green-tint); --gr-fg: var(--jx-green-ink); --gr-bd: #BED0B5;
+  --pu-bg: #F3EFF6; --pu-fg: #655276; --pu-bd: #D5CADF;
+  --am-bg: var(--jx-gold-tint); --am-fg: var(--jx-gold-ink); --am-bd: #E1D39C;
+  --av1: var(--jx-green-tint); --av1f: var(--jx-green-ink);
+  --av2: var(--jx-blue-tint); --av2f: var(--jx-blue-ink);
+  --av3: #F3EFF6; --av3f: #655276;
+  --av4: #EAF4F1; --av4f: #33665B;
+  --av5: #F9EEF0; --av5f: #8A4A58;
+  --av6: var(--jx-gold-tint); --av6f: var(--jx-gold-ink);
 
-  /* ── JobsOxo design tokens ── */
-  --jox-primary: #640d14;
-  --panel: #f7fafd;
-  --panel-bd: #cfd8d1;
-  --fg: #132a13;
-  --faint: #6c766e;
-  --soft: #f6ecec;
-  --rowhover: #f4f8fb;
-  --navhover: #e6ecec;
-  --topbar: rgba(247,250,253,.72);
-  --searchbg: #eef3f7;
-  --activeitem: #f7fafd;
-  --activeshadow: rgba(19,42,19,.10);
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Inter Tight", "Inter", system-ui, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --radius: 1.5rem;
 
-  /* Status badges — hue kept for meaning, saturation pulled back
-     into the classical palette. Oxblood stays reserved for money. */
-  --b-blue-bg: #e9eff5;   --b-blue-fg: #3a5570;
-  --b-red-bg: #f9ebe9;    --b-red-fg: #8e2b2a;
-  --b-amber-bg: #f7f0e4;  --b-amber-fg: #6b4e30;
-  --b-green-bg: #eaf0ea;  --b-green-fg: #3d5a40;
-  --b-purple-bg: #f2ecef; --b-purple-fg: #5c3a4a;
-  --b-gray-bg: #eaeeea;   --b-gray-fg: #4f584f;
-  --b-pink-bg: #f8ebee;   --b-pink-fg: #7d3547;
-  --b-teal-bg: #e6eff0;   --b-teal-fg: #2f5a63;
-
-  /* ── Smart Inbox tokens (light) ──
-     The gradient is gone: classical draws with rules, not fills. */
-  --gem-bg: #f7fafd;
-  --gem-bd: #cfd8d1;
-  --gem-mark: #640d14;
-
-  /* ── Scheduling block tokens (light) ── */
-  --colhead: #f4f8fb;
-  --bl-bg: #e9eff5; --bl-fg: #3a5570; --bl-bd: #b9c9d8;
-  --gr-bg: #eaf0ea; --gr-fg: #3d5a40; --gr-bd: #bacaba;
-  --pu-bg: #f2ecef; --pu-fg: #5c3a4a; --pu-bd: #d5c3cc;
-  --am-bg: #f7f0e4; --am-fg: #6b4e30; --am-bd: #ddc9a8;
-
-  /* ── Avatar palette (light) ── */
-  --av1: #f6ecec; --av1f: #640d14;
-  --av2: #e6eff0; --av2f: #2f5a63;
-  --av3: #f2ecef; --av3f: #5c3a4a;
-  --av4: #eaf0ea; --av4f: #3d5a40;
-  --av5: #f8ebee; --av5f: #7d3547;
-  --av6: #f7f0e4; --av6f: #6b4e30;
-
-  --font-sans: 'Lora', Georgia, serif;
-  --font-serif: 'Cormorant Garamond', Georgia, serif;
-  --font-mono: 'Lora', Georgia, serif;
-  --radius: .25rem;
-
-  /* Elevation is a whisper, ink-tinted to the ground */
-  --shadow-2xs: 0px 1px 1px hsl(120 38% 12% / 0.04);
-  --shadow-xs: 0px 1px 2px hsl(120 38% 12% / 0.06);
-  --shadow-sm: 0px 1px 2px hsl(120 38% 12% / 0.10);
-  --shadow: 0px 1px 2px hsl(120 38% 12% / 0.10);
-  --shadow-md: 0px 3px 10px hsl(120 38% 12% / 0.11);
-  --shadow-lg: 0px 6px 18px hsl(120 38% 12% / 0.13);
-  --shadow-xl: 0px 12px 32px hsl(120 38% 12% / 0.16);
-  --shadow-2xl: 0px 18px 44px hsl(120 38% 12% / 0.18);
+  --shadow-2xs: 0px 1px 1px hsl(120 5% 7% / 0.04);
+  --shadow-xs: 0px 1px 2px hsl(120 5% 7% / 0.06);
+  --shadow-sm: 0px 1px 2px hsl(120 5% 7% / 0.10);
+  --shadow: 0px 1px 2px hsl(120 5% 7% / 0.10);
+  --shadow-md: 0px 3px 10px hsl(120 5% 7% / 0.11);
+  --shadow-lg: 0px 6px 18px hsl(120 5% 7% / 0.13);
+  --shadow-xl: 0px 12px 32px hsl(120 5% 7% / 0.16);
+  --shadow-2xl: 0px 18px 44px hsl(120 5% 7% / 0.18);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
-/* Fallback for older browsers */
+  /* Fallback declarations followed by modern computed border values. */
   --sidebar-primary-border: hsl(var(--sidebar-primary));
   --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --sidebar-accent-border: hsl(var(--sidebar-accent));
   --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --primary-border: hsl(var(--primary));
   --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --secondary-border: hsl(var(--secondary));
   --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --muted-border: hsl(var(--muted));
   --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --accent-border: hsl(var(--accent));
   --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --destructive-border: hsl(var(--destructive));
   --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
 }
 
-/* DARK MODE — "Colophon": the deep warm near-black the classical
-   system uses for section dividers, with gold as the accent
-   (oxblood does not hold up on a dark ground). */
 .dark {
-  --button-outline: rgba(236,229,216, .12);
-  --badge-outline: rgba(236,229,216, .06);
+  --button-outline: rgba(236, 241, 236, .12);
+  --badge-outline: rgba(236, 241, 236, .06);
   --opaque-button-border-intensity: 9;
-  --elevate-1: rgba(236,229,216, .04);
-  --elevate-2: rgba(236,229,216, .09);
+  --elevate-1: rgba(236, 241, 236, .04);
+  --elevate-2: rgba(236, 241, 236, .09);
 
-  --background: 37 18% 9%;          /* #1a1712 warm near-black */
-  --foreground: 37 33% 89%;         /* #ece5d8 warm paper */
-  --border: 36 12% 22%;
-  --card: 35 15% 12%;
-  --card-foreground: 37 33% 89%;
-  --card-border: 36 12% 20%;
-  --sidebar: 35 16% 11%;
-  --sidebar-foreground: 37 33% 89%;
-  --sidebar-border: 36 12% 22%;
-  --sidebar-primary: 36 55% 46%;    /* #b68235 gold */
-  --sidebar-primary-foreground: 37 18% 9%;
-  --sidebar-accent: 36 12% 19%;
-  --sidebar-accent-foreground: 37 33% 89%;
-  --sidebar-ring: 36 55% 46%;
-  --popover: 35 15% 13%;
-  --popover-foreground: 37 33% 89%;
-  --popover-border: 36 12% 21%;
-  --primary: 36 55% 46%;
-  --primary-foreground: 37 18% 9%;
-  --secondary: 36 12% 20%;
-  --secondary-foreground: 37 33% 89%;
-  --muted: 36 10% 18%;
-  --muted-foreground: 37 15% 62%;
-  --accent: 36 12% 19%;
-  --accent-foreground: 37 33% 89%;
-  --destructive: 6 45% 45%;
-  --destructive-foreground: 37 33% 89%;
-  --input: 37 15% 55%;
-  --ring: 36 55% 46%;
+  --background: 135 13% 6%;
+  --foreground: 120 15% 94%;
+  --border: 136 12% 19%;
+  --input: 132 6% 45%;
+  --card: 135 13% 12%;
+  --card-foreground: 120 15% 94%;
+  --card-border: 136 12% 19%;
+  --popover: 135 13% 12%;
+  --popover-foreground: 120 15% 94%;
+  --popover-border: 136 12% 19%;
+  --primary: 100 30% 48%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 140 13% 9%;
+  --secondary-foreground: 120 15% 94%;
+  --muted: 140 13% 9%;
+  --muted-foreground: 132 6% 66%;
+  --accent: 95 39% 10%;
+  --accent-foreground: 96 42% 69%;
+  --destructive: 15 84% 64%;
+  --destructive-foreground: 0 0% 100%;
+  --ring: 100 30% 48%;
+  --sidebar: 135 13% 6%;
+  --sidebar-foreground: 120 15% 94%;
+  --sidebar-border: 136 12% 19%;
+  --sidebar-primary: 100 30% 48%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 95 39% 10%;
+  --sidebar-accent-foreground: 96 42% 69%;
+  --sidebar-ring: 100 30% 48%;
+  --chart-1: 100 30% 48%;
+  --chart-2: 208 49% 62%;
+  --chart-3: 15 84% 64%;
+  --chart-4: 46 54% 60%;
+  --chart-5: 132 6% 66%;
 
-  --track: #241f18;
-  --row-hover: #221d17;
+  --jx-surface: #141A16;
+  --jx-ink: #ECF1EC;
+  --jx-ink-2: #A3ADA5;
+  --jx-ink-3: #6F7A72;
+  --jx-line: #2A352D;
+  --jx-green: #6E9F55;
+  --jx-green-hover: #7DAF63;
+  --jx-green-ink: #A9D18E;
+  --jx-green-tint: #17220F;
+  --jx-blue: #6FA3D4;
+  --jx-blue-ink: #9CC2E6;
+  --jx-blue-tint: #131F2A;
+  --jx-orange: #F07C55;
+  --jx-orange-ink: #F6A285;
+  --jx-orange-tint: #2A1811;
+  --jx-gold: #D8BC55;
+  --jx-gold-ink: #E6D07E;
+  --jx-gold-tint: #24200E;
 
-  /* ── JobsOxo design tokens (dark) ── */
-  --jox-primary: #b68235;
-  --panel: #1f1a14;
-  --panel-bd: #3a332a;
-  --fg: #ece5d8;
-  --faint: #9c9083;
-  --soft: #2a2118;
-  --rowhover: #221d17;
-  --navhover: #2a241c;
-  --topbar: rgba(31,26,20,.72);
-  --searchbg: #241f18;
-  --activeitem: #2a241c;
-  --activeshadow: rgba(0,0,0,.4);
-
-  --b-blue-bg: rgba(120,160,196,.16);  --b-blue-fg: #a8c4dc;
-  --b-red-bg: rgba(190,90,80,.20);     --b-red-fg: #dda49b;
-  --b-amber-bg: rgba(182,130,53,.20);  --b-amber-fg: #d9b378;
-  --b-green-bg: rgba(120,164,124,.18); --b-green-fg: #a6c8a9;
-  --b-purple-bg: rgba(160,120,140,.20);--b-purple-fg: #c9a8ba;
-  --b-gray-bg: rgba(200,196,186,.14);  --b-gray-fg: #b6b0a5;
-  --b-pink-bg: rgba(190,110,132,.20);  --b-pink-fg: #dca8b8;
-  --b-teal-bg: rgba(100,150,158,.18);  --b-teal-fg: #a0c4c9;
-
-  /* ── Smart Inbox tokens (dark) ── */
-  --gem-bg: #1f1a14;
-  --gem-bd: #3a332a;
-  --gem-mark: #b68235;
-
-  /* ── Scheduling block tokens (dark) ── */
-  --colhead: #16120e;
-  --bl-bg: rgba(120,160,196,.16); --bl-fg: #a8c4dc; --bl-bd: rgba(120,160,196,.42);
-  --gr-bg: rgba(120,164,124,.16); --gr-fg: #a6c8a9; --gr-bd: rgba(120,164,124,.42);
-  --pu-bg: rgba(160,120,140,.18); --pu-fg: #c9a8ba; --pu-bd: rgba(160,120,140,.45);
-  --am-bg: rgba(182,130,53,.16);  --am-fg: #d9b378; --am-bd: rgba(182,130,53,.42);
-
-  /* ── Avatar palette (dark) ── */
-  --av1: #2e2318; --av1f: #d9b378;
-  --av2: #1c2a2c; --av2f: #a0c4c9;
-  --av3: #2a2027; --av3f: #c9a8ba;
-  --av4: #1e2a20; --av4f: #a6c8a9;
-  --av5: #2c1f24; --av5f: #dca8b8;
-  --av6: #2e2718; --av6f: #d9b378;
-
-  --chart-1: 36 55% 56%;
-  --chart-2: 31 37% 52%;
-  --chart-3: 126 19% 52%;
-  --chart-4: 210 32% 58%;
-  --chart-5: 332 23% 55%;
+  --jox-primary: var(--jx-green);
+  --panel: #1B231D;
+  --panel-bd: var(--jx-line);
+  --fg: var(--jx-ink);
+  --faint: var(--jx-ink-2);
+  --soft: var(--jx-green-tint);
+  --rowhover: #141A16;
+  --row-hover: #141A16;
+  --navhover: #17220F;
+  --topbar: rgba(27, 35, 29, .88);
+  --searchbg: #141A16;
+  --activeitem: #17220F;
+  --activeshadow: rgba(0, 0, 0, .40);
+  --track: var(--jx-line);
+  --b-blue-bg: var(--jx-blue-tint); --b-blue-fg: var(--jx-blue-ink);
+  --b-red-bg: var(--jx-orange-tint); --b-red-fg: var(--jx-orange-ink);
+  --b-amber-bg: var(--jx-gold-tint); --b-amber-fg: var(--jx-gold-ink);
+  --b-green-bg: var(--jx-green-tint); --b-green-fg: var(--jx-green-ink);
+  --b-purple-bg: rgba(160, 137, 180, .18); --b-purple-fg: #C9B7D8;
+  --b-gray-bg: rgba(163, 173, 165, .14); --b-gray-fg: #B8C0B9;
+  --b-pink-bg: rgba(196, 126, 145, .18); --b-pink-fg: #DFA9B6;
+  --b-teal-bg: rgba(104, 161, 147, .18); --b-teal-fg: #A5CEC2;
+  --gem-bg: #1B231D; --gem-bd: var(--jx-line); --gem-mark: var(--jx-green);
+  --colhead: #141A16;
+  --bl-bg: var(--jx-blue-tint); --bl-fg: var(--jx-blue-ink); --bl-bd: rgba(111, 163, 212, .42);
+  --gr-bg: var(--jx-green-tint); --gr-fg: var(--jx-green-ink); --gr-bd: rgba(110, 159, 85, .42);
+  --pu-bg: rgba(160, 137, 180, .18); --pu-fg: #C9B7D8; --pu-bd: rgba(160, 137, 180, .45);
+  --am-bg: var(--jx-gold-tint); --am-fg: var(--jx-gold-ink); --am-bd: rgba(216, 188, 85, .42);
+  --av1: #17220F; --av1f: #A9D18E;
+  --av2: #131F2A; --av2f: #9CC2E6;
+  --av3: #211A28; --av3f: #C9B7D8;
+  --av4: #15251F; --av4f: #A5CEC2;
+  --av5: #2A181F; --av5f: #DFA9B6;
+  --av6: #24200E; --av6f: #E6D07E;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Inter Tight", "Inter", system-ui, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --radius: 1.5rem;
 
   --shadow-2xs: 0px 1px 1px hsl(0 0% 0% / 0.20);
   --shadow-xs: 0px 1px 2px hsl(0 0% 0% / 0.26);
@@ -255,31 +246,18 @@
   --shadow-xl: 0px 12px 32px hsl(0 0% 0% / 0.52);
   --shadow-2xl: 0px 18px 44px hsl(0 0% 0% / 0.58);
 
-/* Fallback for older browsers */
   --sidebar-primary-border: hsl(var(--sidebar-primary));
   --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --sidebar-accent-border: hsl(var(--sidebar-accent));
   --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --primary-border: hsl(var(--primary));
   --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --secondary-border: hsl(var(--secondary));
   --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --muted-border: hsl(var(--muted));
   --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --accent-border: hsl(var(--accent));
   --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --destructive-border: hsl(var(--destructive));
   --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
 }
@@ -295,10 +273,8 @@
     line-height: 1.55;
   }
 
-  /* Headings set in Cormorant Garamond. Bold is retired — semibold
-     is the ceiling, and the bigger the text the lighter it sets. */
   h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-serif);
+    font-family: var(--font-display);
     font-weight: 600;
     line-height: 1.12;
     letter-spacing: -0.015em;
@@ -306,9 +282,6 @@
   h1 { font-weight: 400; letter-spacing: -0.025em; }
   h2 { font-weight: 400; letter-spacing: -0.02em; }
 
-  /* Figures set tabular wherever they stand as numbers or columns.
-     This replaces IBM Plex Mono — Lora keeps its own figure style
-     and gains equal widths, so money still aligns in a column. */
   .font-mono,
   table td, table th,
   [data-tabular] {
@@ -391,15 +364,13 @@
     pointer-events: none;
   }
 
-  /* Display face for large figures and page titles that are not
-     semantic headings — use instead of reaching for a bold sans. */
   .font-display {
-    font-family: var(--font-serif);
+    font-family: var(--font-display);
     font-weight: 400;
     letter-spacing: -0.02em;
   }
 
-  /* Letterspaced small caps kicker — the classical label treatment */
+  /* Existing kicker utility retained for current pages. */
   .kicker {
     font-size: 10.5px;
     letter-spacing: 0.18em;
