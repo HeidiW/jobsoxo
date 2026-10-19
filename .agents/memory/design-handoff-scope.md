@@ -20,3 +20,9 @@ Prototype examples are not authorization to change financial or payment behavior
 **Why:** The handoff calls this a visual-only redesign, while sample interactions include marking payroll paid and copying a Gusto worksheet, which conflict with the user's established automated-payroll requirements.
 
 **How to apply:** Keep existing validation, configured tax rules, and provider-driven payment statuses. Never mark payroll paid from a UI click or introduce a manual Gusto handoff; follow [payroll provider scope](payroll-provider-scope.md).
+
+During staged page redesigns, resolve conflicting legacy visual defaults locally rather than changing shared defaults for every page.
+
+**Why:** The supplied design expects bold display headings and solid primary actions, but the existing display-font utility forces regular weight and the shared default button is outlined. Changing these globally would restyle pages before their review stage.
+
+**How to apply:** Explicitly set the redesigned page's heading weight and primary button fill, check their computed appearance in the browser, and leave shared defaults unchanged until a separately approved global cleanup.

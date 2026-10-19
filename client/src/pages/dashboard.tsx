@@ -1,16 +1,37 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Link, useLocation } from "wouter";
-import { AlertCircle, Bell, Plus, CheckCircle, CalendarDays, TrendingUp, TrendingDown } from "lucide-react";
+import { useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { format } from "date-fns";
+import {
+  AlertCircle,
+  ArrowRight,
+  Bell,
+  BriefcaseBusiness,
+  CalendarDays,
+  Check,
+  CheckCircle2,
+  FileText,
+  Plus,
+  TrendingDown,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import DashboardSitePanel from "./dashboard-site-panel";
+import { DashboardPanelHeading as PanelHeading, DashboardSkeleton } from "./dashboard-primitives";
+import JobForm from "@/components/job-form";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-
-const fmt = (n: number) =>
-  new Intl.NumberFormat("en-US", {
-    style: "currency", currency: "USD",
-    minimumFractionDigits: 0, maximumFractionDigits: 0,
-  }).format(n);
+import { Button } from "@/components/ui/button";
+import {
+  chooseFeaturedJob,
+  countUnscheduledQuotedJobs,
+  getBulkReminderFeedback,
+  individualReminderPath,
+  isReminderDispatchConfirmed,
+  type BulkReminderResult,
+} from "./dashboard-model";
+import type { Client, Job } from "@shared/schema";
 
 interface DashboardData {
   outstanding: { total: number; invoiceCount: number; clientCount: number; overdue: number; dueSoon: number; draft: number };
@@ -21,322 +42,318 @@ interface DashboardData {
   greeting: { firstName: string; timeOfDay: "morning" | "afternoon" | "evening" };
 }
 
-function DashboardSkeleton() {
-  return (
-    <div className="space-y-[18px]">
-      <Skeleton className="h-8 w-56" />
-      <div style={{ display: "grid", gridTemplateColumns: "1.55fr 1fr", gap: 16 }}>
-        <Skeleton className="h-52 rounded-[13px]" />
-        <div className="flex flex-col gap-4">
-          <Skeleton className="flex-1 rounded-[11px]" style={{ minHeight: 88 }} />
-          <Skeleton className="flex-1 rounded-[11px]" style={{ minHeight: 88 }} />
-        </div>
-      </div>
-      <Skeleton className="h-48 rounded-[11px]" />
-      <Skeleton className="h-40 rounded-[11px]" />
-    </div>
-  );
+interface JobWithClient extends Job {
+  client: Client | null;
 }
 
+const fmt = (value: number) =>
+  new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value);
+
+const panelStyle = {
+  background: "hsl(var(--card))",
+  borderColor: "hsl(var(--border))",
+};
+
 export default function Dashboard() {
-  const [, setLocation] = useLocation();
+  const [newJobOpen, setNewJobOpen] = useState(false);
+  const [sentInvoiceIds, setSentInvoiceIds] = useState<Set<string>>(() => new Set());
   const { toast } = useToast();
 
   const { data, isLoading, error, refetch } = useQuery<DashboardData>({
     queryKey: ["/api/dashboard"],
   });
+  const jobsQuery = useQuery<JobWithClient[]>({ queryKey: ["/api/jobs"] });
+  const jobs = jobsQuery.data ?? [];
+  const featuredJob = data ? chooseFeaturedJob(jobs, data.week) : undefined;
 
   const remindAllMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/reminders/process"),
-    onSuccess: () => toast({ title: "Reminders sent", description: "Payment reminders dispatched." }),
-    onError: () => toast({ title: "Failed to send reminders", variant: "destructive" }),
+    mutationFn: async () => (await apiRequest("POST", "/api/reminders/process")).json() as Promise<BulkReminderResult>,
+    onSuccess: (result) => {
+      const feedback = getBulkReminderFeedback(result);
+      toast({
+        title: feedback.title,
+        description: feedback.description,
+        ...(feedback.variant ? { variant: feedback.variant } : {}),
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+    },
+    onError: () => toast({ title: "Could not send reminders", description: "Try again in a moment.", variant: "destructive" }),
   });
-
   const remindOneMutation = useMutation({
-    mutationFn: (invoiceId: string) => apiRequest("POST", `/api/invoices/${invoiceId}/send-email`),
-    onSuccess: () => { toast({ title: "Reminder sent" }); queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] }); },
-    onError: () => toast({ title: "Failed to send reminder", variant: "destructive" }),
+    mutationFn: async (invoiceId: string) => {
+      const response = await apiRequest("POST", individualReminderPath(invoiceId));
+      const payload = await response.json() as { success?: boolean };
+      if (!isReminderDispatchConfirmed(payload)) throw new Error("Reminder dispatch was not confirmed");
+      return payload;
+    },
+    onSuccess: (_result, invoiceId) => {
+      setSentInvoiceIds((old) => new Set(old).add(invoiceId));
+      toast({ title: "Reminder sent" });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+    },
+    onError: (error: Error) => toast({ title: "Could not send reminder", description: error.message, variant: "destructive" }),
   });
 
-  if (error) {
+  if (isLoading) return <DashboardSkeleton />;
+  if (error || !data) {
     return (
-      <div className="p-6 max-w-[1280px] mx-auto">
-        <div className="rounded-[11px] border border-destructive/30 bg-destructive/5 p-8 text-center">
-          <AlertCircle className="h-8 w-8 text-destructive mx-auto mb-3" />
-          <p className="text-destructive font-semibold">Failed to load dashboard</p>
-          <p className="text-muted-foreground text-sm mt-1">Please try again.</p>
-          <button
-            onClick={() => refetch()}
-            className="mt-4 px-4 py-2 rounded-[9px] border border-border text-sm font-semibold text-foreground bg-panel hover:bg-muted transition-colors"
-          >
-            Retry
-          </button>
-        </div>
-      </div>
+      <main className="mx-auto max-w-[1280px] px-5 py-10 sm:px-8">
+        <section className="rounded-[22px] border p-9 text-center" style={{ ...panelStyle, borderColor: "hsl(var(--destructive) / .35)" }}>
+          <AlertCircle className="mx-auto mb-3 h-8 w-8 text-destructive" aria-hidden="true" />
+          <h1 className="font-display text-xl font-bold">Dashboard unavailable</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Your work and invoice totals could not be loaded.</p>
+          <Button onClick={() => refetch()} variant="outline" className="mt-5">Try again</Button>
+        </section>
+      </main>
     );
   }
 
-  if (isLoading) {
-    return (
-      <div className="p-6 max-w-[1280px] mx-auto">
-        <DashboardSkeleton />
-      </div>
-    );
-  }
-
-  const { outstanding, collectedThisMonth, activeJobs, needsAttention, week, greeting } = data!;
-  const momPositive = collectedThisMonth.momDeltaPct >= 0;
-
+  const { outstanding, collectedThisMonth, activeJobs, needsAttention, week, greeting } = data;
+  const today = week.find((day) => day.isToday);
+  const todayCount = today?.jobs.length ?? 0;
+  const visibleAttention = needsAttention.slice(0, 3);
+  const monthUp = collectedThisMonth.momDeltaPct >= 0;
+  const unscheduledCount = jobsQuery.data ? countUnscheduledQuotedJobs(jobs) : null;
   return (
-    <div className="px-[26px] py-6 pb-10 max-w-[1280px] mx-auto">
-
-      {/* Greeting */}
-      <h2 className="text-[26px] font-bold tracking-[-0.02em] mb-[18px]">
-        Good {greeting.timeOfDay}, {greeting.firstName}
-      </h2>
-
-      {/* Hero + KPIs — 1.55fr / 1fr */}
-      <div style={{ display: "grid", gridTemplateColumns: "1.55fr 1fr", gap: 16, marginBottom: 18 }}>
-
-        {/* Hero — Total Outstanding */}
-        <div className="rounded-[13px] p-[22px_24px] text-white" style={{ background: "hsl(var(--primary))" }}>
-          <div className="text-[12px] font-bold tracking-[.06em] uppercase" style={{ color: "#cfddfb" }}>
-            Total outstanding
+    <>
+      <main className="mx-auto flex min-w-0 max-w-[1440px] flex-col gap-7 px-5 pb-12 pt-7 sm:gap-8 sm:px-8 sm:pt-9 lg:px-10">
+        <header className="flex flex-wrap items-end justify-between gap-x-7 gap-y-5">
+          <div className="min-w-0 max-w-full">
+            <h1 className="max-w-full break-words font-display text-[48px] !font-extrabold leading-[.92] tracking-[-.065em] sm:text-[64px] lg:text-[72px]">
+              <span style={{ color: "var(--jx-green)" }}>Good {greeting.timeOfDay}, </span>{greeting.firstName}
+            </h1>
+            <p className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px] sm:text-[16px]" style={{ color: "var(--jx-ink-2)" }}>
+              <CalendarDays className="h-4 w-4" aria-hidden="true" />
+              <time dateTime={format(new Date(), "yyyy-MM-dd")}>{format(new Date(), "EEEE, MMMM d")}</time>
+              <span aria-hidden="true">·</span>
+              <span>{todayCount} job{todayCount === 1 ? "" : "s"} scheduled today</span>
+            </p>
           </div>
-          <div className="font-mono text-[42px] font-semibold tracking-[-0.03em] mt-[6px] mb-[2px]" data-testid="text-outstanding-total">
-            {fmt(outstanding.total)}
+          <div className="flex flex-wrap gap-3">
+            <Button
+              variant="outline"
+              className="h-11 rounded-full border-2 px-5 font-semibold"
+              onClick={() => setNewJobOpen(true)}
+              data-testid="button-dashboard-new-job"
+            >
+              <BriefcaseBusiness className="mr-2 h-4 w-4" aria-hidden="true" />
+              New job
+            </Button>
+            <Button
+              asChild
+              className="h-11 rounded-full border-jx-green bg-jx-green px-5 font-bold uppercase tracking-[.04em] text-white hover:bg-jx-green-hover active:bg-jx-green-hover"
+              data-testid="button-dashboard-new-invoice"
+            >
+              <Link href="/invoices/new"><Plus className="mr-2 h-4 w-4" aria-hidden="true" />New invoice</Link>
+            </Button>
           </div>
-          <div className="text-[13px] mb-[18px]" style={{ color: "#cfddfb" }}>
-            across {outstanding.invoiceCount} open invoice{outstanding.invoiceCount !== 1 ? "s" : ""} · {outstanding.clientCount} client{outstanding.clientCount !== 1 ? "s" : ""}
-          </div>
+        </header>
 
-          {/* Breakdown */}
-          <div className="flex gap-[9px] flex-wrap mb-5">
-            {[
-              { label: "Overdue", value: outstanding.overdue, testid: "text-outstanding-overdue" },
-              { label: "Due soon", value: outstanding.dueSoon, testid: "text-outstanding-due-soon" },
-              { label: "Draft", value: outstanding.draft, testid: "text-outstanding-draft" },
-            ].map(({ label, value, testid }) => (
-              <div key={label} className="rounded-[9px] px-[13px] py-[9px] flex-1 min-w-[108px]" style={{ background: "rgba(255,255,255,.14)" }}>
-                <div className="text-[11px] mb-[3px]" style={{ color: "#cfddfb" }}>{label}</div>
-                <div className="font-mono text-[16px] font-semibold" data-testid={testid}>{fmt(value)}</div>
+        <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.14fr)_minmax(0,.86fr)]" aria-label="Today's work and invoices">
+          <div className="min-w-0 rounded-[24px] p-5 sm:p-6" style={{ background: "var(--jx-surface)" }}>
+            <PanelHeading
+              eyebrow="Monday to Friday"
+              title="This week on site"
+              action={<Link href="/scheduling" className="inline-flex items-center gap-1 text-sm font-semibold no-underline" style={{ color: "var(--jx-green-ink)" }}>Scheduling <ArrowRight className="h-4 w-4" /></Link>}
+            />
+            {week.every((day) => day.jobs.length === 0) ? (
+              <div className="flex min-h-[202px] flex-col items-center justify-center rounded-[17px] border border-dashed px-5 text-center" style={{ borderColor: "var(--jx-line)" }}>
+                <CalendarDays className="mb-3 h-8 w-8" style={{ color: "var(--jx-ink-3)" }} aria-hidden="true" />
+                <p className="font-display text-lg font-bold">Nothing scheduled this week</p>
+                <p className="mt-1 max-w-sm text-sm text-muted-foreground">Jobs with dates will appear here. You can add dates from a job’s details.</p>
               </div>
-            ))}
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-[10px]">
-            <button
-              onClick={() => remindAllMutation.mutate()}
-              disabled={remindAllMutation.isPending}
-              data-testid="button-send-reminders"
-              className="rounded-[9px] px-4 py-[10px] text-[13px] font-bold border-0 cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-60"
-              style={{ background: "#fff", color: "hsl(var(--primary))", fontFamily: "inherit" }}
-            >
-              {remindAllMutation.isPending ? "Sending…" : "Send reminders"}
-            </button>
-            <button
-              onClick={() => setLocation("/invoices/new")}
-              data-testid="button-new-invoice"
-              className="rounded-[9px] px-4 py-[10px] text-[13px] font-semibold text-white border-0 cursor-pointer transition-opacity hover:opacity-90 inline-flex items-center gap-2"
-              style={{ background: "rgba(255,255,255,.16)", fontFamily: "inherit" }}
-            >
-              <Plus className="h-4 w-4" />
-              New invoice
-            </button>
-          </div>
-        </div>
-
-        {/* KPI column */}
-        <div className="flex flex-col gap-4">
-          {/* Collected this month */}
-          <div
-            className="rounded-[11px] px-[17px] py-[15px] flex-1 flex flex-col justify-center border"
-            style={{ background: "hsl(var(--card))", borderColor: "hsl(var(--border))" }}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold tracking-[.05em] uppercase" style={{ color: "hsl(var(--muted-foreground))" }}>
-                Collected this month
-              </span>
-              {collectedThisMonth.momDeltaPct !== 0 && (
-                <span className="text-[12px] font-bold flex items-center gap-0.5" style={{ color: momPositive ? "#15a35a" : "#d23b1f" }}>
-                  {momPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                  {momPositive ? "▲" : "▼"}{Math.abs(collectedThisMonth.momDeltaPct)}%
-                </span>
-              )}
-            </div>
-            <div className="font-mono text-[24px] font-semibold mt-2" data-testid="text-collected-month">
-              {fmt(collectedThisMonth.amount)}
-            </div>
-          </div>
-
-          {/* Active jobs */}
-          <div
-            className="rounded-[11px] px-[17px] py-[15px] flex-1 flex flex-col justify-center border"
-            style={{ background: "hsl(var(--card))", borderColor: "hsl(var(--border))" }}
-          >
-            <span className="text-[11px] font-bold tracking-[.05em] uppercase" style={{ color: "hsl(var(--muted-foreground))" }}>
-              Active jobs
-            </span>
-            <div className="flex items-baseline gap-[10px] mt-2">
-              <span className="font-mono text-[24px] font-semibold" data-testid="text-active-jobs">{activeJobs.count}</span>
-              <span className="text-[12px]" style={{ color: "hsl(var(--muted-foreground))" }}>
-                {activeJobs.crews > 0 || activeJobs.hoursToday > 0
-                  ? `· ${activeJobs.crews} crew${activeJobs.crews !== 1 ? "s" : ""} · ${activeJobs.hoursToday} hrs logged today`
-                  : "· in progress"}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Needs attention */}
-      <div
-        className="rounded-[11px] overflow-hidden mb-[18px] border"
-        style={{ background: "hsl(var(--card))", borderColor: "hsl(var(--border))" }}
-      >
-        {/* Card header */}
-        <div className="flex items-center gap-[9px] px-[18px] py-[14px] border-b" style={{ borderColor: "hsl(var(--border))" }}>
-          <span className="w-[7px] h-[7px] rounded-full shrink-0" style={{ background: "#d23b1f" }} />
-          <span className="text-[14.5px] font-semibold">Needs attention</span>
-          <span className="text-[12px]" style={{ color: "hsl(var(--muted-foreground))" }}>
-            {needsAttention.length > 0
-              ? `${needsAttention.length} invoice${needsAttention.length !== 1 ? "s" : ""} past due or due today`
-              : "Nothing to chase"}
-          </span>
-          <Link
-            href="/invoices"
-            data-testid="link-needs-attention-all"
-            className="ml-auto text-[12.5px] font-semibold no-underline"
-            style={{ color: "hsl(var(--primary))" }}
-          >
-            View all →
-          </Link>
-        </div>
-
-        {needsAttention.length === 0 ? (
-          <div className="flex flex-col items-center py-10 text-center">
-            <CheckCircle className="h-8 w-8 mb-2" style={{ color: "#15a35a" }} />
-            <p className="font-semibold text-sm">You're all caught up</p>
-            <p className="text-sm mt-1" style={{ color: "hsl(var(--muted-foreground))" }}>No overdue or due-today invoices.</p>
-          </div>
-        ) : (
-          needsAttention.map((item, i) => (
-            <div
-              key={item.invoiceId}
-              className="flex items-center gap-[14px] px-[18px] py-[12px] transition-colors group"
-              style={{
-                borderBottom: i < needsAttention.length - 1 ? "1px solid hsl(var(--border))" : undefined,
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = "var(--row-hover)")}
-              onMouseLeave={e => (e.currentTarget.style.background = "")}
-            >
-              <Link
-                href={`/invoices/${item.invoiceId}`}
-                data-testid={`link-needs-attention-${item.invoiceId}`}
-                className="flex-1 min-w-0 no-underline"
-                style={{ color: "inherit" }}
-              >
-                <div className="text-[13px] font-semibold">
-                  {item.client}{item.project ? ` — ${item.project}` : " "}
-                  {" "}<span className="font-mono font-normal" style={{ color: "hsl(var(--muted-foreground))" }}>· {item.invoiceNumber}</span>
-                </div>
-                <div
-                  className="text-[11.5px] font-semibold mt-0.5"
-                  style={{
-                    color: item.reason === "overdue" ? "#d23b1f"
-                      : item.reason === "due-today" ? "#b6731a"
-                      : "hsl(var(--muted-foreground))",
-                  }}
-                >
-                  {item.detail}
-                </div>
-              </Link>
-              <span className="font-mono text-[13.5px] font-semibold shrink-0" data-testid={`text-balance-${item.invoiceId}`}>
-                {fmt(item.balance)}
-              </span>
-              <button
-                onClick={() => remindOneMutation.mutate(item.invoiceId)}
-                disabled={remindOneMutation.isPending}
-                data-testid={`button-remind-${item.invoiceId}`}
-                className="rounded-[8px] px-[13px] py-[7px] text-[12px] font-semibold border cursor-pointer shrink-0 transition-colors"
-                style={{
-                  background: "hsl(var(--card))",
-                  borderColor: "hsl(var(--border))",
-                  color: "hsl(var(--primary))",
-                  fontFamily: "inherit",
-                }}
-              >
-                <Bell className="h-3 w-3 inline mr-1" />
-                Remind
-              </button>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* This week on site */}
-      <div
-        className="rounded-[11px] p-[16px_18px] border"
-        style={{ background: "hsl(var(--card))", borderColor: "hsl(var(--border))" }}
-      >
-        <div className="flex items-center justify-between mb-[14px]">
-          <span className="text-[14.5px] font-semibold">This week on site</span>
-          <Link
-            href="/scheduling"
-            data-testid="link-scheduling"
-            className="text-[12.5px] font-semibold no-underline"
-            style={{ color: "hsl(var(--primary))" }}
-          >
-            Scheduling →
-          </Link>
-        </div>
-
-        {week.every(d => d.jobs.length === 0) ? (
-          <div className="flex flex-col items-center py-8 text-center">
-            <CalendarDays className="h-8 w-8 mb-2" style={{ color: "hsl(var(--muted-foreground))" }} />
-            <p className="font-semibold text-sm">Nothing scheduled this week</p>
-            <p className="text-sm mt-1" style={{ color: "hsl(var(--muted-foreground))" }}>Add start/end dates to jobs to see them here.</p>
-          </div>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 10 }}>
-            {week.map((day) => (
-              <div
-                key={day.date}
-                className="rounded-[9px] p-[10px] border"
-                style={{ background: "var(--track)", borderColor: "hsl(var(--border))" }}
-              >
-                <div
-                  className="text-[11px] font-bold mb-2"
-                  style={{ color: day.isToday ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))" }}
-                >
-                  {day.weekday} {day.dayNum}
-                </div>
-                {day.jobs.length === 0 ? (
-                  <div className="text-[10.5px] opacity-70 px-[2px] py-[6px]" style={{ color: "hsl(var(--muted-foreground))" }}>
-                    No jobs
+            ) : (
+              <div className="min-w-0 overflow-x-auto pb-1">
+                <div className="grid min-w-[580px] grid-cols-5 gap-2 xl:min-w-0">
+                {week.map((day) => (
+                  <div
+                    key={day.date}
+                    className="min-h-[206px] min-w-0 rounded-[15px] border p-3 sm:p-3.5"
+                    style={{ background: "hsl(var(--card))", borderColor: day.isToday ? "var(--jx-green)" : "var(--jx-line)", boxShadow: day.isToday ? "inset 0 3px 0 var(--jx-green)" : undefined }}
+                  >
+                    <div className="mb-3 flex items-baseline justify-between gap-1">
+                      <span className="text-[10px] font-bold tracking-[.1em]" style={{ color: day.isToday ? "var(--jx-green-ink)" : "var(--jx-ink-3)" }}>{day.weekday}</span>
+                      <span className="font-display text-xl font-bold">{day.dayNum}</span>
+                    </div>
+                    <div className="space-y-2">
+                      {day.jobs.length === 0 ? (
+                        <span className="block px-1 py-2 text-[11px]" style={{ color: "var(--jx-ink-3)" }}>No jobs</span>
+                      ) : day.jobs.map((job) => (
+                        <Link
+                          key={job.jobId}
+                          href={`/jobs/${job.jobId}`}
+                          className="block rounded-[10px] px-2.5 py-2 text-[11px] font-semibold leading-snug no-underline transition-opacity hover:opacity-75 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                          style={{ background: `${job.color}20`, color: "var(--jx-ink)" }}
+                          data-testid={`link-week-job-${job.jobId}`}
+                        >
+                          {job.label}
+                        </Link>
+                      ))}
+                    </div>
                   </div>
-                ) : (
-                  day.jobs.map((job) => (
-                    <Link
-                      key={job.jobId}
-                      href={`/jobs/${job.jobId}`}
-                      data-testid={`link-week-job-${job.jobId}`}
-                      className="block rounded-[6px] px-2 py-[6px] text-[11px] font-semibold mb-[5px] no-underline last:mb-0 transition-opacity hover:opacity-80"
-                      style={{ background: job.color + "2e", color: job.color }}
-                    >
-                      {job.label}
-                      {job.crewSize > 0 && (
-                        <div className="text-[10.5px] font-normal mt-0.5 opacity-80">Crew of {job.crewSize}</div>
-                      )}
-                    </Link>
-                  ))
+                ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0 rounded-[24px] p-5 text-jx-orange-ink sm:p-6" style={{ background: "var(--jx-orange-tint)" }}>
+            <PanelHeading
+              eyebrow="Invoices to follow up"
+              title="Needs attention"
+              action={<Link href="/invoices" className="inline-flex items-center gap-1 text-sm font-semibold no-underline" style={{ color: "var(--jx-orange-ink)" }}>View all <ArrowRight className="h-4 w-4" /></Link>}
+            />
+            {visibleAttention.length === 0 ? (
+              <div className="flex min-h-[202px] flex-col items-center justify-center rounded-[17px] px-4 text-center text-foreground" style={{ background: "var(--jx-green-tint)" }}>
+                <CheckCircle2 className="mb-3 h-8 w-8" style={{ color: "var(--jx-green)" }} aria-hidden="true" />
+                <p className="font-display text-lg font-bold">Nothing to chase</p>
+                <p className="mt-1 text-sm text-muted-foreground">No overdue or due-today invoices.</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {visibleAttention.map((item) => {
+                  const sent = sentInvoiceIds.has(item.invoiceId);
+                  const failed = remindOneMutation.isError && remindOneMutation.variables === item.invoiceId;
+                  const pending = remindOneMutation.isPending && remindOneMutation.variables === item.invoiceId;
+                  return (
+                    <article key={item.invoiceId} className="rounded-[15px] p-3.5 text-foreground sm:p-4" style={{ background: "hsl(var(--card))" }}>
+                      <div className="flex items-start justify-between gap-3">
+                        <Link href={`/invoices/${item.invoiceId}`} className="min-w-0 flex-1 no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                          <span className="block truncate font-display text-[15px] font-bold">{item.client}</span>
+                          <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--jx-ink-2)" }}>
+                            {item.project ? `${item.project} · ` : ""}<span className="font-mono">{item.invoiceNumber}</span>
+                          </span>
+                          <span className="mt-2 block text-[11px] font-semibold" style={{ color: item.reason === "overdue" ? "var(--jx-orange-ink)" : "var(--jx-gold-ink)" }}>
+                            {item.detail}
+                          </span>
+                        </Link>
+                        <div className="shrink-0 text-right">
+                          <div className="font-mono text-[15px] font-semibold">{fmt(item.balance)}</div>
+                          <button
+                            type="button"
+                            onClick={() => remindOneMutation.mutate(item.invoiceId)}
+                            disabled={remindOneMutation.isPending || sent}
+                            className="mt-2 inline-flex min-h-8 items-center justify-center gap-1 rounded-full border px-3 text-[11px] font-bold transition-colors hover:border-primary disabled:cursor-default disabled:opacity-100"
+                            style={sent ? { color: "var(--jx-green-ink)", borderColor: "var(--jx-green)", background: "var(--jx-green-tint)" } : { color: "var(--jx-green-ink)", borderColor: "var(--jx-line)", background: "hsl(var(--card))" }}
+                            aria-label={sent ? `Reminder sent to ${item.client}` : `${failed ? "Retry reminder for" : "Send reminder to"} ${item.client}`}
+                            data-testid={`button-remind-${item.invoiceId}`}
+                          >
+                            {sent ? <><Check className="h-3 w-3" />Sent</> : pending ? "Sending…" : failed ? "Retry" : <><Bell className="h-3 w-3" />Remind</>}
+                          </button>
+                        </div>
+                      </div>
+                      {failed && <p role="alert" className="mt-2 text-[11px] text-destructive">Reminder wasn’t sent. Try again.</p>}
+                    </article>
+                  );
+                })}
+                {needsAttention.length > visibleAttention.length && (
+                  <Link href="/invoices" className="block py-1 text-center text-xs font-semibold no-underline" style={{ color: "var(--jx-green-ink)" }}>
+                    + {needsAttention.length - visibleAttention.length} more invoice{needsAttention.length - visibleAttention.length === 1 ? "" : "s"}
+                  </Link>
                 )}
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
-    </div>
+        </section>
+
+        <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.12fr)_minmax(0,.88fr)]" aria-label="Outstanding balance and job photo">
+          <div className="rounded-[24px] p-5 text-white sm:p-7 lg:p-8" style={{ background: "var(--jx-green)" }}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-[.14em] text-white/75">Total outstanding</div>
+                <div className="mt-2 whitespace-nowrap font-mono text-[clamp(46px,5.2vw,76px)] font-semibold leading-none tracking-[-.06em]" data-testid="text-outstanding-total">{fmt(outstanding.total)}</div>
+                <p className="mt-2 text-[13px] text-white/80">Across {outstanding.invoiceCount} open invoice{outstanding.invoiceCount === 1 ? "" : "s"} · {outstanding.clientCount} client{outstanding.clientCount === 1 ? "" : "s"}</p>
+              </div>
+              <Wallet className="mt-1 h-8 w-8 text-white/65" aria-hidden="true" />
+            </div>
+            <div className="mt-6 grid grid-cols-3 gap-2.5 sm:gap-3">
+              {[
+                ["Overdue", outstanding.overdue, "text-outstanding-overdue"],
+                ["Due soon", outstanding.dueSoon, "text-outstanding-due-soon"],
+                ["Draft", outstanding.draft, "text-outstanding-draft"],
+              ].map(([label, amount, testId]) => (
+                <div key={label} className="rounded-[13px] px-3 py-3 sm:px-4" style={{ background: "rgba(255,255,255,.15)" }}>
+                  <div className="text-[10px] font-semibold text-white/75 sm:text-[11px]">{label}</div>
+                  <div className="mt-1 font-mono text-[16px] font-semibold sm:text-[18px]" data-testid={testId}>{fmt(Number(amount))}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 flex flex-wrap gap-2.5">
+              <button
+                type="button"
+                onClick={() => remindAllMutation.mutate()}
+                disabled={remindAllMutation.isPending}
+                className="inline-flex h-11 items-center rounded-full px-5 text-[13px] font-bold transition-opacity hover:opacity-90 disabled:opacity-60"
+                style={{ color: "#365c24", background: "#fff" }}
+                data-testid="button-send-reminders"
+              >
+                {remindAllMutation.isPending ? "Sending reminders…" : "Send reminders"}
+              </button>
+              <Link
+                href="/invoices"
+                className="inline-flex h-11 items-center gap-2 rounded-full border border-white/45 px-5 text-[13px] font-semibold text-white no-underline transition-colors hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+                data-testid="link-view-invoices"
+              >
+                <FileText className="h-4 w-4" aria-hidden="true" />View invoices
+              </Link>
+            </div>
+            {remindAllMutation.isError && <p role="alert" className="mt-3 text-xs text-white">Reminders could not be sent. You can try again.</p>}
+          </div>
+
+          <DashboardSitePanel
+            job={featuredJob}
+            todayJobIds={today?.jobs.map((item) => item.jobId) ?? []}
+            jobsLoading={jobsQuery.isLoading}
+            jobsError={jobsQuery.isError}
+            onRetryJobs={() => { void jobsQuery.refetch(); }}
+          />
+        </section>
+
+        <section className="grid gap-4 md:grid-cols-3" aria-label="Business snapshot">
+          <article className="rounded-[21px] p-5 sm:p-6" style={{ background: "var(--jx-blue-tint)" }}>
+            <div className="flex items-start justify-between">
+              <div className="grid h-11 w-11 place-items-center rounded-[14px]" style={{ color: "var(--jx-blue-ink)", background: "hsl(var(--card) / .75)" }}><Wallet className="h-5 w-5" /></div>
+              {collectedThisMonth.momDeltaPct !== 0 && <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold" style={{ color: "var(--jx-blue-ink)", background: "hsl(var(--card) / .72)" }}>{monthUp ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}{monthUp ? "+" : ""}{collectedThisMonth.momDeltaPct}%</span>}
+            </div>
+            <p className="mt-5 text-[11px] font-bold uppercase tracking-[.1em]" style={{ color: "var(--jx-blue-ink)" }}>Collected this month</p>
+            <div className="mt-1 font-mono text-[32px] font-semibold tracking-[-.05em] sm:text-[38px]" data-testid="text-collected-month">{fmt(collectedThisMonth.amount)}</div>
+            <p className="mt-1 text-xs" style={{ color: "var(--jx-ink-2)" }}>Compared with last month</p>
+          </article>
+          <article className="rounded-[21px] p-5 sm:p-6" style={{ background: "var(--jx-green-tint)" }}>
+            <div className="grid h-11 w-11 place-items-center rounded-[14px]" style={{ color: "var(--jx-green-ink)", background: "hsl(var(--card) / .75)" }}><BriefcaseBusiness className="h-5 w-5" /></div>
+            <p className="mt-5 text-[11px] font-bold uppercase tracking-[.1em]" style={{ color: "var(--jx-green-ink)" }}>Active jobs</p>
+            <div className="mt-1 font-mono text-[32px] font-semibold tracking-[-.05em] sm:text-[38px]" data-testid="text-active-jobs">{activeJobs.count}</div>
+            <p className="mt-1 text-xs" style={{ color: "var(--jx-ink-2)" }}>In progress · {activeJobs.hoursToday} hours logged today</p>
+          </article>
+          <article className="rounded-[21px] p-5 sm:p-6" style={{ background: "var(--jx-gold-tint)" }}>
+            <div className="grid h-11 w-11 place-items-center rounded-[14px]" style={{ color: "var(--jx-gold-ink)", background: "hsl(var(--card) / .75)" }}><CalendarDays className="h-5 w-5" /></div>
+            <p className="mt-5 text-[11px] font-bold uppercase tracking-[.1em]" style={{ color: "var(--jx-gold-ink)" }}>Quoted · needs dates</p>
+            <div className="mt-1 font-mono text-[32px] font-semibold tracking-[-.05em] sm:text-[38px]" data-testid="text-unscheduled-jobs">
+              {unscheduledCount === null ? "—" : unscheduledCount}
+            </div>
+            <p className="mt-1 text-xs" style={{ color: "var(--jx-ink-2)" }}>{jobsQuery.isError ? "Job count unavailable" : "Quoted jobs without a start date"}</p>
+          </article>
+        </section>
+      </main>
+
+      <Dialog open={newJobOpen} onOpenChange={setNewJobOpen}>
+        <DialogContent className="!flex max-h-[90dvh] max-w-lg flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
+            <DialogTitle className="font-display text-[19px] font-bold">New job</DialogTitle>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <JobForm onSuccess={() => {
+              queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+              queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+            }} onClose={() => setNewJobOpen(false)} />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

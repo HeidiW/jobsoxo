@@ -15,6 +15,7 @@ function _require(id: string): any {
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { sendDashboardReminder } from "./dashboard-reminders";
 import { db } from "./db";
 import { 
   clients, jobs, invoices, lineItems, payments, employees, timeEntries, users, changeOrders, plaidTransactions,
@@ -1676,6 +1677,8 @@ export async function registerRoutes(
       res.status(500).json({ error: "Failed to send change order email" });
     }
   });
+
+  app.post("/api/invoices/:id/remind", sendDashboardReminder);
 
   app.post("/api/reminders/process", async (req, res) => {
     try {
