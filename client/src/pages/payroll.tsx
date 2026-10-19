@@ -1708,9 +1708,6 @@ export default function Payroll() {
             <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <button onClick={() => setIsTimeEntryDialogOpen(true)} style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-log-hours">
                 Log hours</button>
-              <Link href="/payroll/worksheet" className="flex items-center gap-2 rounded-[9px] border border-primary px-3.5 py-2 text-[13px] font-semibold text-primary no-underline hover:bg-primary/5" data-testid="link-gusto-worksheet">
-                <ClipboardList className="h-3.5 w-3.5" /> Gusto worksheet
-              </Link>
               <button onClick={() => { setEditingEmployee(null); setIsEmployeeDialogOpen(true); }} style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-add-employee">
                 <Plus style={{ width: "14px", height: "14px" }} /> Add employee</button>
               {activeSection === "payroll" && periods.length > 1 && (

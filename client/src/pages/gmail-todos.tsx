@@ -141,7 +141,7 @@ function dismissedAgeLabel(receivedAt: string | Date): string {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────
-export default function GmailTodos() {
+export default function GmailTodos({ embedded = false }: { embedded?: boolean }) {
   const { toast } = useToast();
   const [filter, setFilter] = useState<string>("all");
   const [connecting, setConnecting] = useState(false);
@@ -430,7 +430,7 @@ export default function GmailTodos() {
         {/* ── Title row ── */}
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "16px", marginBottom: "18px" }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: "27px", fontWeight: 700, letterSpacing: "-.02em" }}>Today's tasks</h2>
+            {!embedded && <h2 style={{ margin: 0, fontSize: "27px", fontWeight: 700, letterSpacing: "-.02em" }}>Today's tasks</h2>}
             <p style={{ margin: "6px 0 0", fontSize: "13.5px", color: "var(--faint)" }}>
               {todayLabel} · {isLoading ? "Loading…" : `${doneCount} of ${total} done`}
             </p>

@@ -131,7 +131,7 @@ function HiddenTaskRow({
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-export default function InboxTasks() {
+export default function InboxTasks({ embedded = false }: { embedded?: boolean }) {
   const { toast } = useToast();
   const [filter, setFilter] = useState<TaskType | "all">("all");
   const [dismissed, setDismissed] = useState<Set<string>>(loadDismissed);
@@ -427,11 +427,11 @@ export default function InboxTasks() {
     <div style={{ flex: 1, overflowY: "auto", padding: "24px 26px 40px" }}>
       <div style={{ maxWidth: "920px", margin: "0 auto" }}>
 
-        {/* ── Title row ── */}
+        {/* Embedded in InboxShell; keep the existing action without repeating its page title. */}
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "16px", marginBottom: "20px" }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: "26px", fontWeight: 700, letterSpacing: "-.02em" }}>Inbox Tasks</h2>
-            <p style={{ margin: "5px 0 0", fontSize: "13.5px", color: "var(--muted)" }}>
+            {!embedded && <h2 style={{ margin: 0, fontSize: "26px", fontWeight: 700, letterSpacing: "-.02em" }}>Inbox Tasks</h2>}
+            <p style={{ margin: embedded ? 0 : "5px 0 0", fontSize: "13.5px", color: "var(--muted)" }}>
               {isLoading
                 ? "Loading…"
                 : activeTasks.length === 0
@@ -560,10 +560,10 @@ export default function InboxTasks() {
           <div style={{ padding: "14px 18px", textAlign: "center", borderTop: filtered.length > 0 && !isLoading ? "1px solid var(--panel-bd)" : "none" }}>
             <span style={{ fontSize: "12.5px", color: "var(--faint)" }}>
               {activeTasks.length === 0
-                ? "You're all caught up. 🎉"
+                ? "You're all caught up."
                 : filter !== "all" && filtered.length === 0
                 ? `No ${FILTER_LABELS.find(f => f.key === filter)?.label.toLowerCase()} tasks right now.`
-                : "You're caught up on everything else. 🎉"}
+                : "You're caught up on everything else."}
             </span>
           </div>
         </div>
