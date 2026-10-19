@@ -53,8 +53,8 @@
  */
 
 import { db } from "./db";
-import { bankAccounts } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { bankAccounts, gustoIntegrations } from "@shared/schema";
+import { eq, and, isNotNull } from "drizzle-orm";
 import { decryptWithKey, encryptWithKey, isEncrypted } from "./encryption";
 
 // ---------------------------------------------------------------------------
@@ -260,6 +260,35 @@ async function rotateRowWithRetry(
 // Main
 // ---------------------------------------------------------------------------
 
+/** Rotate Gusto's encrypted access/refresh-token bundle without logging it. */
+export function reEncryptGustoCredential(value: string, oldKey: Buffer, newKey: Buffer) {
+  if (!isEncrypted(value)) throw new Error("Gusto credential is not encrypted.");
+  try {
+    decryptWithKey(value, newKey);
+    return { value, alreadyRotated: true };
+  } catch {
+    try {
+      return { value: encryptWithKey(decryptWithKey(value, oldKey), newKey), alreadyRotated: false };
+    } catch {
+      throw new Error("Gusto credential cannot be decrypted with either encryption key.");
+    }
+  }
+}
+
+async function rotateGustoCredential(id: string, oldKey: Buffer, newKey: Buffer) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const [row] = await db.select().from(gustoIntegrations).where(eq(gustoIntegrations.id, id));
+    if (!row?.encryptedAccessToken) return "skipped";
+    const result = reEncryptGustoCredential(row.encryptedAccessToken, oldKey, newKey);
+    if (result.alreadyRotated) return "alreadyRotated";
+    const updated = await db.update(gustoIntegrations).set({ encryptedAccessToken: result.value })
+      .where(and(eq(gustoIntegrations.id, id), eq(gustoIntegrations.encryptedAccessToken, row.encryptedAccessToken)))
+      .returning({ id: gustoIntegrations.id });
+    if (updated.length) return "rotated";
+  }
+  throw new Error("Gusto credential changed repeatedly during rotation. Re-run rotation before removing the previous key.");
+}
+
 async function main() {
   // The script uses the same env vars as the server for consistency.
   // ENCRYPTION_KEY      = new (target) key
@@ -281,12 +310,15 @@ async function main() {
     .select({ id: bankAccounts.id })
     .from(bankAccounts);
 
-  if (ids.length === 0) {
+  const gustoIds = await db.select({ id: gustoIntegrations.id }).from(gustoIntegrations)
+    .where(isNotNull(gustoIntegrations.encryptedAccessToken));
+
+  if (ids.length === 0 && gustoIds.length === 0) {
     console.log("[rotate] No rows found. Nothing to do.");
     process.exit(0);
   }
 
-  console.log(`[rotate] Found ${ids.length} row(s) to inspect.`);
+  console.log(`[rotate] Found ${ids.length} bank account and ${gustoIds.length} Gusto credential row(s) to inspect.`);
 
   let rotated = 0;
   let alreadyRotated = 0;
@@ -304,6 +336,18 @@ async function main() {
         `[rotate] ERROR on row ${id}:`,
         err instanceof Error ? err.message : err
       );
+      errors++;
+    }
+  }
+
+  for (const { id } of gustoIds) {
+    try {
+      const outcome = await rotateGustoCredential(id, oldKey, newKey);
+      if (outcome === "rotated") rotated++;
+      else if (outcome === "alreadyRotated") alreadyRotated++;
+      else skipped++;
+    } catch {
+      console.error("[rotate] A Gusto credential could not be rotated. Keep the previous encryption key and retry.");
       errors++;
     }
   }

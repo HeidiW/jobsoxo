@@ -5,9 +5,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Landmark, Plus, Download, Save, Trash2, CheckCircle2, AlertCircle, ArrowLeft } from "lucide-react";
+import { Plus, Download, Save, Trash2, ArrowLeft } from "lucide-react";
 import type { Employee } from "@shared/schema";
 
 type Deduction = { id: string; label: string; category: string; amount: string };
@@ -35,10 +34,6 @@ export default function PayrollWorksheet() {
   const contextEmployee = params.get("employeeId") ?? "";
   const { data: employees = [], isLoading: employeeLoading } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
   const { data: worksheets = [] } = useQuery<Worksheet[]>({ queryKey: ["/api/payroll-worksheets"] });
-  const { data: balance } = useQuery<{ current?: number; available?: number; connected?: boolean; institutionName?: string; accountMask?: string }>({
-    queryKey: ["/api/plaid/balance"],
-    queryFn: async () => (await fetch("/api/plaid/balance", { credentials: "include" })).json(),
-  });
   const activeEmployees = employees.filter((employee) => employee.status === "active");
   const [employeeId, setEmployeeId] = useState(contextEmployee);
   const selected = activeEmployees.find((employee) => String(employee.id) === employeeId);
@@ -48,11 +43,9 @@ export default function PayrollWorksheet() {
   const [daysWorked, setDaysWorked] = useState("0");
   const [dailyGross, setDailyGross] = useState("");
   const [deductions, setDeductions] = useState<Deduction[]>([]);
-  const [gustoRef, setGustoRef] = useState("");
-  const [gustoDate, setGustoDate] = useState("");
-  const [gustoNotes, setGustoNotes] = useState("");
   const [savedId, setSavedId] = useState("");
   const [worksheetStatus, setWorksheetStatus] = useState<Worksheet["status"]>("draft");
+  const savedWorksheet = worksheets.find((worksheet) => worksheet.id === savedId);
 
   const loadWorksheet = (worksheet: Worksheet) => {
     setSavedId(worksheet.id);
@@ -68,9 +61,6 @@ export default function PayrollWorksheet() {
       category: row.category || "Other",
       amount: String(row.amount),
     })));
-    setGustoRef(worksheet.gustoConfirmationReference || "");
-    setGustoDate(worksheet.gustoConfirmedAt?.slice(0, 10) || "");
-    setGustoNotes(worksheet.gustoConfirmationNotes || "");
     setWorksheetStatus(worksheet.status);
   };
 
@@ -90,8 +80,6 @@ export default function PayrollWorksheet() {
   const totalDeductions = useMemo(() => deductions.reduce((sum, row) => sum + Number(row.amount || 0), 0), [deductions]);
   const net = Math.max(0, gross - totalDeductions);
   const deductionsValid = totalDeductions <= gross;
-  const available = balance?.available ?? balance?.current;
-  const ready = typeof available === "number" && available >= net;
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -115,26 +103,9 @@ export default function PayrollWorksheet() {
       setSavedId(String(worksheet.id));
       setWorksheetStatus(worksheet.status);
       queryClient.invalidateQueries({ queryKey: ["/api/payroll-worksheets"] });
-      toast({ title: "Worksheet saved", description: "Your Gusto review is still a draft." });
+      toast({ title: "Worksheet saved", description: "Local worksheet changes are saved; no Gusto payroll or payment was initiated." });
     },
     onError: (error: Error) => toast({ title: "Worksheet could not be saved", description: error.message, variant: "destructive" }),
-  });
-
-  const confirmMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("POST", `/api/payroll-worksheets/${savedId}/confirm`, {
-        gustoConfirmationReference: gustoRef,
-        gustoConfirmedAt: gustoDate || undefined,
-        gustoConfirmationNotes: gustoNotes || undefined,
-      });
-      return response.json() as Promise<Worksheet>;
-    },
-    onSuccess: (worksheet) => {
-      setWorksheetStatus(worksheet.status);
-      queryClient.invalidateQueries({ queryKey: ["/api/payroll-worksheets"] });
-      toast({ title: "Gusto confirmation recorded", description: "This Gusto worksheet is now locked for audit history." });
-    },
-    onError: (error: Error) => toast({ title: "Confirmation could not be recorded", description: error.message, variant: "destructive" }),
   });
 
   const addDeduction = () => setDeductions((rows) => [...rows, { id: crypto.randomUUID(), label: "", category: "Other", amount: "" }]);
@@ -145,11 +116,13 @@ export default function PayrollWorksheet() {
     const worksheet = await response.json() as Worksheet;
     setWorksheetStatus(worksheet.status);
     const lines = [
-      ["Gusto-assisted payroll worksheet", ""], ["Employee", selected?.name ?? ""], ["Employee ID", employeeId],
+      ["Local reference worksheet", ""], ["Employee", selected?.name ?? ""], ["Employee ID", employeeId],
       ["Period start", periodStart], ["Period end", periodEnd], ["Pay date", payDate], ["Days worked", daysWorked],
       ["Daily gross", dailyGross], ["Gross pay", gross.toFixed(2)], ["Total deductions", totalDeductions.toFixed(2)], ["Net pay", net.toFixed(2)],
       [], ["Deduction", "Category", "Amount"], ...deductions.map((row) => [row.label, row.category, Number(row.amount || 0).toFixed(2)]),
-      [], ["Gusto confirmation reference", gustoRef], ["Gusto confirmation date", gustoDate], ["Notes", gustoNotes],
+      [], ["Existing Gusto confirmation reference", savedWorksheet?.gustoConfirmationReference ?? ""],
+      ["Existing Gusto confirmation date", savedWorksheet?.gustoConfirmedAt?.slice(0, 10) ?? ""],
+      ["Existing confirmation notes", savedWorksheet?.gustoConfirmationNotes ?? ""],
     ];
     const blob = new Blob([lines.map((line) => line.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
     const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `payroll-worksheet-${periodEnd || today}.csv`; link.click(); URL.revokeObjectURL(link.href);
@@ -168,12 +141,12 @@ export default function PayrollWorksheet() {
         <div className="flex flex-wrap items-start justify-between gap-5 border-b border-border pb-6">
           <div>
             <button onClick={() => setLocation("/payroll")} className="mb-4 flex items-center gap-2 text-xs text-muted-foreground hover:text-primary"><ArrowLeft className="h-3.5 w-3.5" /> Payroll</button>
-            <p className="kicker">Gusto-assisted review</p>
+            <p className="kicker">Local source record · not submitted</p>
             <h1 className="mt-2 text-4xl">Payroll worksheet</h1>
-            <p className="mt-2 max-w-xl text-sm text-muted-foreground">Build one clear pay record, reconcile deductions, and keep the Gusto confirmation beside it.</p>
+            <p className="mt-2 max-w-xl text-sm text-muted-foreground">Keep a local worksheet and its audit history. This screen does not calculate Gusto taxes or initiate payroll or ACH.</p>
           </div>
           <div className="flex gap-2 pt-8">
-            <Button variant="outline" onClick={exportCsv} disabled={!savedId || worksheetStatus === "confirmed"}><Download className="mr-2 h-4 w-4" /> Export CSV</Button>
+            <Button variant="outline" onClick={exportCsv} disabled={!savedId}><Download className="mr-2 h-4 w-4" /> Export CSV</Button>
             <Button onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending || worksheetStatus === "confirmed" || !deductionsValid || !employeeId || !periodStart || !periodEnd || !payDate}><Save className="mr-2 h-4 w-4" /> {saveMutation.isPending ? "Saving…" : "Save draft"}</Button>
           </div>
         </div>
@@ -230,9 +203,9 @@ export default function PayrollWorksheet() {
             </section>
 
             <section className="border border-card-border bg-card/50 p-6">
-              <div className="flex items-start justify-between gap-4"><div><p className="kicker">Gusto deductions</p><h2 className="mt-2 text-2xl">Manual adjustments</h2></div><Button variant="outline" size="sm" onClick={addDeduction}><Plus className="mr-2 h-4 w-4" /> Add row</Button></div>
+              <div className="flex items-start justify-between gap-4"><div><p className="kicker">Local worksheet only</p><h2 className="mt-2 text-2xl">Reference adjustments</h2></div><Button variant="outline" size="sm" onClick={addDeduction}><Plus className="mr-2 h-4 w-4" /> Add row</Button></div>
               <div className="mt-5 space-y-3">
-                {deductions.length === 0 && <p className="border border-dashed border-border p-5 text-sm text-muted-foreground">No deductions added. Add the categories from the Gusto preview to keep the net calculation explicit.</p>}
+                {deductions.length === 0 && <p className="border border-dashed border-border p-5 text-sm text-muted-foreground">No reference adjustments added. These entries are for local record keeping only; Gusto determines actual deductions.</p>}
                 {deductions.map((row) => <div key={row.id} className="grid gap-2 md:grid-cols-[1.4fr_1fr_130px_36px]">
                   <Input aria-label="Deduction label" placeholder="e.g. Health premium" value={row.label} onChange={(e) => updateDeduction(row.id, "label", e.target.value)} />
                   <select aria-label="Deduction category" value={row.category} onChange={(e) => updateDeduction(row.id, "category", e.target.value)} className="h-10 border border-input bg-transparent px-3 text-sm">{categories.map((category) => <option key={category}>{category}</option>)}</select>
@@ -243,27 +216,20 @@ export default function PayrollWorksheet() {
             </section>
 
             <section className="border border-card-border bg-card/50 p-6">
-              <p className="kicker">Close the loop</p><h2 className="mt-2 text-2xl">Gusto confirmation</h2>
-              <div className="mt-5 grid gap-5 md:grid-cols-2">
-                <label className="space-y-2 text-sm"><span className="text-xs uppercase tracking-wider text-muted-foreground">Confirmation reference</span><Input value={gustoRef} onChange={(e) => setGustoRef(e.target.value)} placeholder="Gusto payroll or confirmation ID" /></label>
-                <label className="space-y-2 text-sm"><span className="text-xs uppercase tracking-wider text-muted-foreground">Confirmation date</span><Input type="date" value={gustoDate} onChange={(e) => setGustoDate(e.target.value)} /></label>
-                <label className="space-y-2 text-sm md:col-span-2"><span className="text-xs uppercase tracking-wider text-muted-foreground">Notes</span><Textarea value={gustoNotes} onChange={(e) => setGustoNotes(e.target.value)} placeholder="What did you verify in Gusto?" /></label>
-              </div>
-              <div className="mt-5 flex justify-end">
-                <Button
-                  onClick={() => confirmMutation.mutate()}
-                  disabled={!savedId || !deductionsValid || !gustoRef.trim() || worksheetStatus === "confirmed" || confirmMutation.isPending}
-                >
-                  <CheckCircle2 className="mr-2 h-4 w-4" />
-                  {worksheetStatus === "confirmed" ? "Gusto confirmed" : confirmMutation.isPending ? "Recording…" : "Record Gusto confirmation"}
-                </Button>
-              </div>
+              <p className="kicker">Existing audit metadata · read only</p><h2 className="mt-2 text-2xl">Gusto confirmation history</h2>
+              {savedWorksheet?.gustoConfirmationReference || savedWorksheet?.gustoConfirmedAt || savedWorksheet?.gustoConfirmationNotes
+                ? <dl className="mt-5 grid gap-4 md:grid-cols-2">
+                    <div><dt className="text-xs uppercase tracking-wider text-muted-foreground">Confirmation reference</dt><dd className="mt-1 break-words text-sm">{savedWorksheet.gustoConfirmationReference || "—"}</dd></div>
+                    <div><dt className="text-xs uppercase tracking-wider text-muted-foreground">Confirmation date</dt><dd className="mt-1 text-sm">{savedWorksheet.gustoConfirmedAt?.slice(0, 10) || "—"}</dd></div>
+                    <div className="md:col-span-2"><dt className="text-xs uppercase tracking-wider text-muted-foreground">Existing notes</dt><dd className="mt-1 whitespace-pre-wrap text-sm">{savedWorksheet.gustoConfirmationNotes || "—"}</dd></div>
+                  </dl>
+                : <p className="mt-4 text-sm text-muted-foreground">No preexisting confirmation metadata is recorded for this worksheet. This page does not record provider confirmations.</p>}
             </section>
           </div>
 
           <aside className="space-y-5 lg:sticky lg:top-6 lg:self-start">
             <section className="border border-primary/40 bg-primary/[.035] p-6">
-              <p className="kicker">Live calculation</p><div className="mt-6 space-y-3 text-sm">
+              <p className="kicker">Local estimate</p><div className="mt-6 space-y-3 text-sm">
                 <div className="flex justify-between"><span>Gross pay</span><span data-tabular>{money(gross)}</span></div>
                 <div className="flex justify-between text-muted-foreground"><span>Deductions</span><span data-tabular>− {money(totalDeductions)}</span></div>
                 <div className="my-4 border-t border-primary/20" /><div className="flex items-end justify-between"><span className="font-serif text-xl">Net pay</span><strong className="font-serif text-3xl font-normal" data-testid="text-net-pay">{money(net)}</strong></div>
@@ -271,8 +237,8 @@ export default function PayrollWorksheet() {
               </div>
             </section>
             <section className="border border-card-border p-5">
-              <div className="flex gap-3"><Landmark className="mt-0.5 h-5 w-5 text-primary" /><div><p className="font-serif text-lg">Funding readiness</p>{!balance?.connected ? <p className="mt-2 text-sm text-muted-foreground">No business account connected. This worksheet does not send money.</p> : <><p className="mt-2 text-sm text-muted-foreground">{balance.institutionName ?? "Business account"} {balance.accountMask ? `••••${balance.accountMask}` : ""}</p><div className="mt-4 flex items-center gap-2 text-sm">{ready ? <CheckCircle2 className="h-4 w-4 text-[var(--b-green-fg)]" /> : <AlertCircle className="h-4 w-4 text-[var(--b-amber-fg)]" />}<span>{ready ? "Balance appears to cover this net pay." : `Available balance ${money(Number(available || 0))} is below this net pay.`}</span></div><p className="mt-3 text-xs text-muted-foreground">Read-only check. No payment was sent.</p></>}</div>
-              </div>
+              <p className="font-serif text-lg">Gusto controls payment</p>
+              <p className="mt-2 text-sm text-muted-foreground">This worksheet is not a payment route. Use the Gusto payroll workspace to prepare, review and submit payroll with provider-calculated totals.</p>
             </section>
             <Badge variant="outline" className="rounded-none px-3 py-1 text-[10px] uppercase tracking-wider">{savedId ? worksheetStatus : "Unsaved draft"}</Badge>
           </aside>

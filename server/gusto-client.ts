@@ -1,4 +1,8 @@
 import { timingSafeEqual, createHmac } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { db } from "./db";
+import { gustoIntegrations } from "@shared/schema";
+import { encrypt, decrypt } from "./encryption";
 
 export class GustoConfigurationError extends Error {}
 export class GustoProviderError extends Error {
@@ -9,25 +13,108 @@ export class GustoProviderError extends Error {
   }
 }
 
-function config() {
-  const token = process.env.GUSTO_ACCESS_TOKEN;
-  const baseUrl = (process.env.GUSTO_API_BASE_URL || "https://api.gusto.com").replace(/\/$/, "");
-  if (!token) throw new GustoConfigurationError("Gusto is not configured. Add GUSTO_ACCESS_TOKEN.");
-  return { token, baseUrl };
+export function gustoEnvironment(): "demo" | "production" {
+  const environment = process.env.GUSTO_ENV || "demo";
+  if (!["demo", "production"].includes(environment)) throw new GustoConfigurationError("GUSTO_ENV must be demo or production.");
+  return environment as "demo" | "production";
 }
 
-export async function gustoRequest<T>(path: string, options: { method?: string; body?: unknown; idempotencyKey?: string } = {}): Promise<T> {
-  const { token, baseUrl } = config();
+function baseUrl() {
+  const expected = gustoEnvironment() === "demo" ? "https://api.gusto-demo.com" : "https://api.gusto.com";
+  const value = (process.env.GUSTO_API_BASE_URL || expected).replace(/\/$/, "");
+  if (value !== expected && !(process.env.NODE_ENV === "test" && value === "https://gusto.test")) {
+    throw new GustoConfigurationError("Gusto API URL does not match the selected environment.");
+  }
+  return value;
+}
+
+export function gustoConfigured() {
+  return !!(process.env.GUSTO_ACCESS_TOKEN && process.env.GUSTO_COMPANY_ID);
+}
+
+type Credentials = { accessToken: string; refreshToken?: string; expiresAt?: number };
+
+function parseCredentials(encrypted: string): Credentials {
+  const result = JSON.parse(decrypt(encrypted));
+  if (!result.accessToken) throw new GustoConfigurationError("Reconnect the Gusto company.");
+  return result;
+}
+
+// This bootstrap is used only by the explicit admin Connect action. Once bound,
+// every payroll call uses that admin's encrypted, company-scoped credentials.
+export function bootstrapGustoCredentials(): string {
+  if (!gustoConfigured()) throw new GustoConfigurationError("Gusto company credentials are not configured.");
+  return encrypt(JSON.stringify({
+    accessToken: process.env.GUSTO_ACCESS_TOKEN!,
+    refreshToken: process.env.GUSTO_REFRESH_TOKEN,
+  } satisfies Credentials));
+}
+
+async function accessToken(userId?: string, rejectedToken?: string): Promise<string> {
+  if (!userId) {
+    // Bootstrap introspection and isolated client tests only.
+    if (!process.env.GUSTO_ACCESS_TOKEN) throw new GustoConfigurationError("Gusto company credentials are not configured.");
+    return process.env.GUSTO_ACCESS_TOKEN;
+  }
+  // The DB row lock serializes refresh-token rotation across server processes.
+  return db.transaction(async (tx) => {
+    const [integration] = await tx.select().from(gustoIntegrations).where(eq(gustoIntegrations.userId, userId)).for("update");
+    if (!integration?.encryptedAccessToken || integration.environment !== gustoEnvironment()) {
+      throw new GustoConfigurationError("Connect an authorized Gusto company for this environment.");
+    }
+    const credentials = parseCredentials(integration.encryptedAccessToken);
+    if (rejectedToken && rejectedToken !== credentials.accessToken) return credentials.accessToken;
+    const expired = credentials.expiresAt !== undefined && credentials.expiresAt <= Date.now() + 60_000;
+    if (!rejectedToken && !expired) return credentials.accessToken;
+    if (!credentials.refreshToken || !process.env.GUSTO_CLIENT_ID || !process.env.GUSTO_CLIENT_SECRET) {
+      throw new GustoConfigurationError("Gusto authorization expired. Reconnect with refresh-capable Embedded credentials.");
+    }
+    const refreshed = await send<any>("/oauth/token", undefined, {
+      method: "POST",
+      body: {
+        client_id: process.env.GUSTO_CLIENT_ID, client_secret: process.env.GUSTO_CLIENT_SECRET,
+        grant_type: "refresh_token", refresh_token: credentials.refreshToken,
+      },
+    });
+    if (!refreshed?.access_token || !refreshed?.refresh_token || !Number.isFinite(refreshed.expires_in)) {
+      throw new GustoProviderError("Gusto returned an invalid authorization response.", 502, "invalid_response");
+    }
+    await tx.update(gustoIntegrations).set({
+      encryptedAccessToken: encrypt(JSON.stringify({
+        accessToken: refreshed.access_token, refreshToken: refreshed.refresh_token,
+        expiresAt: Date.now() + refreshed.expires_in * 1000,
+      } satisfies Credentials)), updatedAt: new Date(),
+    }).where(eq(gustoIntegrations.id, integration.id));
+    return refreshed.access_token;
+  });
+}
+
+type RequestOptions = { method?: string; body?: unknown; idempotencyKey?: string; userId?: string };
+
+export async function gustoRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const token = await accessToken(options.userId);
+  try {
+    return await send<T>(path, token, options);
+  } catch (error) {
+    // A rejected (401) request has not been authorized to mutate anything.
+    // Never replay timeouts, 5xxs, or any ambiguous money-moving request.
+    if (!(error instanceof GustoProviderError) || error.status !== 401 || !options.userId) throw error;
+    return send<T>(path, await accessToken(options.userId, token), options);
+  }
+}
+
+async function send<T>(path: string, token: string | undefined, options: RequestOptions): Promise<T> {
+  if (!path.startsWith("/") || path.startsWith("//")) throw new GustoConfigurationError("Invalid Gusto API path.");
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(process.env.GUSTO_TIMEOUT_MS || 15000));
   try {
-    const response = await fetch(`${baseUrl}${path}`, {
+    const response = await fetch(`${baseUrl()}${path}`, {
       method: options.method || "GET",
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         "Content-Type": "application/json",
         Accept: "application/json",
-        "X-Gusto-API-Version": process.env.GUSTO_API_VERSION || "2024-04-01",
+        "X-Gusto-API-Version": "2026-06-15",
         ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
       },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
@@ -37,12 +124,14 @@ export async function gustoRequest<T>(path: string, options: { method?: string; 
     let data: any = null;
     try { data = raw ? JSON.parse(raw) : null; } catch { data = null; }
     if (!response.ok) {
-      const providerCode = typeof data?.code === "string" ? data.code : "provider_error";
+      const code = data?.errors?.[0]?.category ?? data?.code;
+      const providerCode = typeof code === "string" && /^[a-z_]{1,60}$/.test(code) ? code : "provider_error";
       throw new GustoProviderError(
-        typeof data?.message === "string" ? data.message : `Gusto request failed (${response.status})`,
+        `Gusto request was not accepted (${response.status}). Check company setup and payroll readiness.`,
         response.status, providerCode,
       );
     }
+    if (raw && data === null) throw new GustoProviderError("Gusto returned an invalid response.", 502, "invalid_response");
     return data as T;
   } catch (error: any) {
     if (error instanceof GustoProviderError || error instanceof GustoConfigurationError) throw error;

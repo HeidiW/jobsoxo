@@ -69,7 +69,9 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
+      // Payroll responses contain wages, provider setup links and masked
+      // account metadata. Never persist those in request/response logs.
+      if (capturedJsonResponse && !path.startsWith("/api/gusto") && path !== "/api/plaid/bank-summary") {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 

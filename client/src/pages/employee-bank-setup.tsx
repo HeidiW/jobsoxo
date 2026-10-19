@@ -155,8 +155,8 @@ export default function EmployeeBankSetup() {
       <div style={pageWrap}>
         <div style={card}>
           <CheckCircle style={{ width: "44px", height: "44px", color: "#16a34a", margin: "0 auto 16px" }} />
-          <h1 style={{ ...heading, color: "#15803d" }}>Bank Account Connected!</h1>
-          <p style={sub}>Your direct deposit has been set up successfully.</p>
+          <h1 style={{ ...heading, color: "#15803d" }}>Bank Connection Saved</h1>
+          <p style={sub}>This legacy Plaid bank connection was saved. It does not indicate that your Gusto payroll or payment method is ready.</p>
           <div style={bankBox}>
             <Landmark style={{ width: "18px", height: "18px", color: "#2563eb", flexShrink: 0 }} />
             <div>
@@ -167,7 +167,7 @@ export default function EmployeeBankSetup() {
               </div>
             </div>
           </div>
-          <p style={{ ...sub, marginTop: "16px", fontSize: "12px" }}>You can close this page. Your employer has been notified.</p>
+          <p style={{ ...sub, marginTop: "16px", fontSize: "12px" }}>You can close this page. Your employer has been notified; Gusto setup is managed separately.</p>
         </div>
       </div>
     );
@@ -179,12 +179,12 @@ export default function EmployeeBankSetup() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", marginBottom: "20px" }}>
           <Building2 style={{ width: "28px", height: "28px", color: "#2563eb" }} />
         </div>
-        <h1 style={heading}>Set Up Direct Deposit</h1>
+        <h1 style={heading}>Connect a Bank for the Legacy Bank View</h1>
         <p style={sub}>
-          Hi <strong>{data.employeeName}</strong>! Connect your bank account to receive your paycheck via direct deposit.
+          Hi <strong>{data.employeeName}</strong>! This older bank-link workflow is separate from Gusto payroll setup.
         </p>
         <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: "10px", padding: "14px 16px", marginBottom: "20px", fontSize: "13px", color: "#0369a1" }}>
-          <strong>Secure &amp; private.</strong> Your bank credentials are handled by Plaid and are never shared with your employer. Only your account number and routing number are stored.
+          <strong>Secure &amp; private.</strong> Your bank credentials are handled by Plaid and are never shared with your employer. A connected account here does not mean a Gusto payment method is ready.
         </div>
 
         {linkError && (

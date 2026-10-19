@@ -9,14 +9,17 @@ import {
 
 const originalToken = process.env.GUSTO_ACCESS_TOKEN;
 const originalBaseUrl = process.env.GUSTO_API_BASE_URL;
+const originalSecret = process.env.GUSTO_WEBHOOK_SECRET;
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   if (originalToken === undefined) delete process.env.GUSTO_ACCESS_TOKEN;
   else process.env.GUSTO_ACCESS_TOKEN = originalToken;
   if (originalBaseUrl === undefined) delete process.env.GUSTO_API_BASE_URL;
   else process.env.GUSTO_API_BASE_URL = originalBaseUrl;
-  delete process.env.GUSTO_WEBHOOK_SECRET;
+  if (originalSecret === undefined) delete process.env.GUSTO_WEBHOOK_SECRET;
+  else process.env.GUSTO_WEBHOOK_SECRET = originalSecret;
 });
 
 describe("Gusto server client", () => {
@@ -39,7 +42,7 @@ describe("Gusto server client", () => {
     await expect(gustoRequest("/v1/payrolls")).rejects.toMatchObject({
       status: 422,
       code: "invalid_request",
-      message: "provider detail should not be sent to the browser",
+      message: "Gusto request was not accepted (422). Check company setup and payroll readiness.",
     });
     try {
       await gustoRequest("/v1/payrolls");
@@ -69,6 +72,7 @@ describe("Gusto server client", () => {
         headers: expect.objectContaining({
           Authorization: "Bearer test-token",
           "Idempotency-Key": "run-key",
+          "X-Gusto-API-Version": "2026-06-15",
         }),
       }),
     );
@@ -82,5 +86,14 @@ describe("Gusto server client", () => {
     expect(verifyGustoSignature(raw, `sha256=${signature}`)).toBe(true);
     expect(verifyGustoSignature(Buffer.from('{"id":"evt-1","status":"paid"}'), `sha256=${signature}`)).toBe(false);
     expect(verifyGustoSignature(raw, "not-a-signature")).toBe(false);
+  });
+
+  it("refuses to send credentials to an arbitrary API host", async () => {
+    process.env.GUSTO_ACCESS_TOKEN = "test-token";
+    process.env.GUSTO_API_BASE_URL = "https://untrusted.example";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(gustoRequest("/v1/token_info")).rejects.toBeInstanceOf(GustoConfigurationError);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
