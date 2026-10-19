@@ -1,1078 +1,385 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMemo, useState, type MouseEvent } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
-import { Input } from "@/components/ui/input";
+import { format } from "date-fns";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { trackEvent } from "@/lib/analytics";
 import {
-  Plus,
-  Download,
-  Eye,
-  Mail,
-  DollarSign,
-  Trash2,
-  MoreVertical,
-  CheckCircle,
-  Banknote,
-  FileText,
-  Building2,
-  CreditCard,
-  Bell,
-  BellOff,
-  PauseCircle,
-  PlayCircle,
-  AlertTriangle,
-  RefreshCw,
-  Landmark,
-  AlertCircle,
+  Banknote, Building2, Check, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert,
+  CreditCard, Download, Eye, FileText, Landmark, Mail, MoreHorizontal, Plus,
+  RefreshCw, Search, Trash2, X,
 } from "lucide-react";
-import { format } from "date-fns";
-import type { Invoice, Client, Job } from "@shared/schema";
-const BADGE: Record<string, { bg: string; fg: string }> = {
-  draft:   { bg: "#eef0f3", fg: "#6b7686" },
-  sent:    { bg: "#eef2fe", fg: "#2563eb" },
-  paid:    { bg: "#e7f7ee", fg: "#15a35a" },
-  overdue: { bg: "#fdeeec", fg: "#d23b1f" },
-  partial: { bg: "#fef5e7", fg: "#b6731a" },
-};
+import { CollectionsView } from "@/components/invoices/CollectionsView";
+import { ReconcileDialog } from "@/components/invoices/ReconcileDialog";
+import type { InvoiceWithRelations } from "@/components/invoices/types";
+import { invoicesToCsv } from "./invoices-export";
 
-const PAYMENT_METHODS = [
-  { value: "cash", label: "Cash", icon: Banknote },
-  { value: "check", label: "Cheque", icon: FileText },
-  { value: "bank_transfer", label: "Bank Transfer", icon: Building2 },
-  { value: "credit_card", label: "Card", icon: CreditCard },
-] as const;
-
-interface InvoiceWithRelations extends Invoice {
-  client: Client;
-  job?: Job;
-  paymentDate?: Date;
-}
-
-const TABS = [
+const PAGE_SIZE = 12;
+const FILTERS = [
   { key: "all", label: "All" },
   { key: "draft", label: "Draft" },
   { key: "sent", label: "Sent" },
-  { key: "partial", label: "Partial" },
-  { key: "paid", label: "Paid" },
+  { key: "partial", label: "Partly paid" },
   { key: "overdue", label: "Overdue" },
+  { key: "paid", label: "Paid" },
   { key: "collections", label: "Collections" },
-];
-
-const PAGE_SIZE = 12;
-
-function fmtMoney(n: number, decimals = 0) {
-  return "$" + n.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-}
-
-function fmtDate(d: string | Date | null | undefined) {
-  if (!d) return "—";
-  try { return format(new Date(d), "MMM d"); } catch { return "—"; }
-}
-
-interface PlaidTransaction {
-  transactionId: string;
-  date: string;
-  amount: number;
-  name: string;
-  merchantName?: string;
-}
-
-interface ReconcileMatch {
-  transaction: PlaidTransaction;
-  invoice: InvoiceWithRelations;
-  ambiguous: boolean; // true if the transaction amount fell within ±$1 of more than one open invoice
-}
-
-interface TransactionResponse {
-  connected: boolean;
-  ready: boolean;
-  transactions: PlaidTransaction[];
-  reason?: "no_account" | "not_configured" | "product_not_ready";
-}
-
-function ReconcileDialog({ open, onClose, invoices }: { open: boolean; onClose: () => void; invoices: InvoiceWithRelations[] }) {
-  const { toast } = useToast();
-  const [confirming, setConfirming] = useState<string | null>(null);
-
-  const { data: txData, isLoading, error, refetch } = useQuery<TransactionResponse>({
-    queryKey: ["/api/plaid/transactions"],
-    enabled: open,
-    staleTime: 0,
-    queryFn: async () => {
-      const res = await fetch("/api/plaid/transactions", { credentials: "include" });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.error || "Failed to fetch"); }
-      return res.json();
-    },
-  });
-
-  const transactions = txData?.transactions;
-
-  const confirmPaymentMutation = useMutation({
-    mutationFn: async ({ invoiceId, amount, transactionId, date }: { invoiceId: string; amount: number; transactionId: string; date: string }) => {
-      const res = await apiRequest("POST", `/api/invoices/${invoiceId}/mark-paid`, {
-        paymentMethod: "bank_transfer",
-        paymentDate: new Date(date + "T12:00:00").toISOString(),
-        referenceNumber: transactionId,
-      });
-      return res.json();
-    },
-    onSuccess: (_data, vars) => {
-      setConfirming(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      trackEvent("payment_recorded", {
-        method: "bank_transfer",
-        source: "reconciliation",
-      });
-      toast({ title: "Payment confirmed", description: "Invoice marked as paid from bank transaction." });
-      refetch();
-    },
-    onError: (err: Error) => {
-      toast({ title: "Failed to confirm payment", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const openInvoices = invoices.filter(inv => inv.status !== "paid" && inv.status !== "draft");
-
-  // In Plaid, negative amounts = money flowing INTO the account (deposits/incoming payments).
-  // Positive amounts = money flowing OUT (purchases/expenses). We want incoming payments only.
-  //
-  // Matching strategy:
-  //   1. Collect every (tx, invoice) candidate pair within ±$1 tolerance.
-  //   2. Sort all candidates by delta ascending so the closest match wins ties.
-  //   3. Assign greedily — once a tx or invoice is claimed, skip it in later pairs.
-  //   4. Flag matches as ambiguous when the winning tx had more than one invoice candidate
-  //      (so the UI can warn the user to double-check before confirming).
-  type Candidate = { tx: PlaidTransaction; inboundAmount: number; inv: InvoiceWithRelations; delta: number };
-  const candidates: Candidate[] = [];
-  const txCandidateCount = new Map<string, number>(); // how many invoices each tx matched
-
-  if (transactions) {
-    for (const tx of transactions) {
-      if (tx.amount >= 0) continue;
-      const inboundAmount = Math.abs(tx.amount);
-      for (const inv of openInvoices) {
-        const balance = Number(inv.balance);
-        const delta = Math.abs(inboundAmount - balance);
-        if (delta <= 1.0) {
-          candidates.push({ tx, inboundAmount, inv, delta });
-          txCandidateCount.set(tx.transactionId, (txCandidateCount.get(tx.transactionId) ?? 0) + 1);
-        }
-      }
-    }
-  }
-
-  // Sort by delta ascending (closest match wins).
-  // Tie-breaker: oldest due date first (most overdue invoice takes priority),
-  // then invoice number ascending for fully stable ordering.
-  candidates.sort((a, b) => {
-    if (a.delta !== b.delta) return a.delta - b.delta;
-    const dateA = a.inv.dueDate ? new Date(a.inv.dueDate).getTime() : 0;
-    const dateB = b.inv.dueDate ? new Date(b.inv.dueDate).getTime() : 0;
-    if (dateA !== dateB) return dateA - dateB;
-    return (a.inv.invoiceNumber ?? "").localeCompare(b.inv.invoiceNumber ?? "");
-  });
-
-  const matches: ReconcileMatch[] = [];
-  const usedInvoiceIds = new Set<string>();
-  const usedTxIds = new Set<string>();
-  for (const { tx, inboundAmount, inv } of candidates) {
-    if (usedTxIds.has(tx.transactionId) || usedInvoiceIds.has(inv.id)) continue;
-    const ambiguous = (txCandidateCount.get(tx.transactionId) ?? 0) > 1;
-    matches.push({ transaction: { ...tx, amount: inboundAmount }, invoice: inv, ambiguous });
-    usedTxIds.add(tx.transactionId);
-    usedInvoiceIds.add(inv.id);
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden">
-        <DialogHeader className="shrink-0">
-          <DialogTitle className="flex items-center gap-2">
-            <Landmark className="h-5 w-5" />
-            Reconcile Payments
-          </DialogTitle>
-          <p className="text-sm text-muted-foreground">Last 30 days of bank transactions matched to open invoices (±$1 tolerance)</p>
-        </DialogHeader>
-        <div className="flex-1 overflow-y-auto min-h-0">
-          {isLoading ? (
-            <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
-              <RefreshCw className="h-4 w-4 animate-spin" />
-              Fetching transactions…
-            </div>
-          ) : error ? (
-            <div className="flex items-start gap-3 rounded-md border border-dashed p-4 m-4 text-sm">
-              <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium">Unable to fetch transactions</p>
-                <p className="text-muted-foreground mt-1">{(error as Error).message}</p>
-              </div>
-            </div>
-          ) : !txData?.connected ? (
-            <div className="flex items-start gap-3 rounded-md border border-dashed p-4 m-4 text-sm" data-testid="reconcile-no-account">
-              <Landmark className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium text-foreground">No bank account connected</p>
-                <p className="text-muted-foreground mt-1">
-                  <a href="/settings" className="text-primary font-medium hover:underline">Connect a bank account in Settings</a> to enable payment reconciliation.
-                </p>
-              </div>
-            </div>
-          ) : !txData?.ready ? (
-            <div className="flex items-start gap-3 rounded-md border border-dashed p-4 m-4 text-sm" data-testid="reconcile-syncing">
-              <RefreshCw className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium text-foreground">Transactions syncing</p>
-                <p className="text-muted-foreground mt-1">Your bank is still preparing transaction data. This usually takes a moment — close and reopen to retry.</p>
-                <button
-                  className="mt-2 text-xs text-primary font-medium hover:underline"
-                  onClick={() => refetch()}
-                  data-testid="button-retry-transactions"
-                >
-                  Retry now
-                </button>
-              </div>
-            </div>
-          ) : matches.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground text-sm px-6" data-testid="reconcile-no-matches">
-              <CheckCircle className="h-10 w-10 text-muted-foreground/40" />
-              <p className="font-medium text-foreground">No matches found</p>
-              <p>No bank transactions in the last 30 days matched any open invoice balances within ±$1.</p>
-            </div>
-          ) : (
-            <div className="p-4 space-y-3">
-              {matches.map(({ transaction, invoice, ambiguous }) => (
-                <div
-                  key={transaction.transactionId + invoice.id}
-                  className={`rounded-lg border p-4 space-y-3${ambiguous ? " border-amber-400 dark:border-amber-500" : ""}`}
-                  data-testid={`reconcile-match-${transaction.transactionId}`}
-                >
-                  {ambiguous && (
-                    <div className="flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-300" data-testid={`warning-ambiguous-${transaction.transactionId}`}>
-                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                      <span>This transaction amount matched multiple open invoices. The closest match is shown — verify before confirming.</span>
-                    </div>
-                  )}
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2 text-sm font-medium">
-                        <span className="text-muted-foreground">{format(new Date(transaction.date + "T12:00:00"), "MMM d, yyyy")}</span>
-                        <span>·</span>
-                        <span className="truncate">{transaction.merchantName || transaction.name}</span>
-                      </div>
-                      <div className="text-xs text-muted-foreground truncate">{transaction.name}</div>
-                    </div>
-                    <span className="font-mono font-semibold text-green-700 dark:text-green-400 shrink-0">
-                      ${transaction.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2 text-sm">
-                    <span className="text-muted-foreground">Matches invoice</span>
-                    <span className="font-mono font-medium">{invoice.invoiceNumber}</span>
-                    <span className="text-muted-foreground">·</span>
-                    <span>{invoice.client?.name}</span>
-                    <span className="font-mono font-semibold">${Number(invoice.balance).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
-                  </div>
-                  <Button
-                    size="sm"
-                    className="w-full bg-green-600 hover:bg-green-700 text-white"
-                    disabled={confirmPaymentMutation.isPending && confirming === transaction.transactionId}
-                    onClick={() => {
-                      setConfirming(transaction.transactionId);
-                      confirmPaymentMutation.mutate({
-                        invoiceId: invoice.id,
-                        amount: transaction.amount,
-                        transactionId: transaction.transactionId,
-                        date: transaction.date,
-                      });
-                    }}
-                    data-testid={`button-confirm-reconcile-${transaction.transactionId}`}
-                  >
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    {confirmPaymentMutation.isPending && confirming === transaction.transactionId
-                      ? "Confirming…"
-                      : "Confirm as payment"}
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <DialogFooter className="shrink-0">
-          <Button variant="outline" onClick={onClose} data-testid="button-close-reconcile">Close</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-type CollectionsEntry = {
-  id: string;
-  invoiceNumber: string;
-  status: string;
-  balance: string;
-  dueDate: string;
-  lastReminderSent: string | null;
-  reminderCount: number;
-  remindersPaused: boolean;
-  clientName: string | null;
-  clientEmail: string | null;
-  clientPhone: string | null;
-  jobTitle: string | null;
-  daysOverdue: number;
-  currentStage: number;
-  nextActionDate: string | null;
+] as const;
+const PAYMENT_METHODS = [
+  { value: "cash", label: "Cash", Icon: Banknote },
+  { value: "check", label: "Cheque", Icon: FileText },
+  { value: "bank_transfer", label: "Bank transfer", Icon: Building2 },
+  { value: "credit_card", label: "Card", Icon: CreditCard },
+] as const;
+const STATUS_STYLES: Record<string, string> = {
+  draft: "bg-jx-surface text-jx-ink-2",
+  sent: "bg-jx-blue-tint text-jx-blue-ink",
+  partial: "bg-jx-gold-tint text-jx-gold-ink",
+  overdue: "bg-jx-orange-tint text-jx-orange-ink",
+  paid: "bg-jx-green-tint text-jx-green-ink",
+};
+const money = (value: string | number | null | undefined) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(Number(value ?? 0));
+const dateLabel = (value: string | Date | null | undefined) => {
+  if (!value) return "—";
+  try { return format(new Date(value), "MMM d, yyyy"); } catch { return "—"; }
 };
 
-function CollectionsView() {
-  const { toast } = useToast();
-  const [, setLocation] = useLocation();
-  const [stageFilter, setStageFilter] = useState<string>("all");
-  const [sortBy, setSortBy] = useState<"daysOverdue" | "balance" | "clientName">("daysOverdue");
-
-  const { data: entries = [], isLoading, refetch } = useQuery<CollectionsEntry[]>({
-    queryKey: ["/api/collections"],
-    queryFn: async () => {
-      const res = await fetch("/api/collections");
-      if (!res.ok) throw new Error("Failed to fetch collections");
-      return res.json();
-    },
-  });
-
-  const toggleMutation = useMutation({
-    mutationFn: async ({ id, paused }: { id: string; paused: boolean }) => {
-      const res = await apiRequest("PATCH", `/api/invoices/${id}/collections`, { remindersPaused: paused });
-      if (!res.ok) throw new Error("Failed to update");
-      return res.json();
-    },
-    onSuccess: () => { refetch(); queryClient.invalidateQueries({ queryKey: ["/api/invoices"] }); },
-    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-  });
-
-  const processMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/reminders/process");
-      return res.json();
-    },
-    onSuccess: (data: any) => {
-      refetch();
-      toast({ title: "Reminders processed", description: `${data.sent ?? 0} sent, ${data.processed ?? 0} checked` });
-    },
-    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
-  });
-
-  const fmtBalance = (b: string) =>
-    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(b));
-
-  const filteredEntries = entries
-    .filter((e) => stageFilter === "all" || String(e.currentStage) === stageFilter)
-    .sort((a, b) => {
-      if (sortBy === "daysOverdue") return b.daysOverdue - a.daysOverdue;
-      if (sortBy === "balance") return Number(b.balance) - Number(a.balance);
-      return (a.clientName ?? "").localeCompare(b.clientName ?? "");
-    });
-
-  return (
-    <div style={{ padding: "0" }}>
-      {/* Header row */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)", background: "var(--track)", flexWrap: "wrap" as const, gap: "8px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" as const }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <Bell style={{ width: 15, height: 15, color: "var(--faint)" }} />
-            <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", letterSpacing: ".04em" }}>
-              {filteredEntries.length}/{entries.length} invoice{entries.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-          {/* Stage filter */}
-          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-            {[
-              { key: "all", label: "All stages" },
-              { key: "0", label: "Stage 0" },
-              { key: "1", label: "Stage 1" },
-              { key: "2", label: "Stage 2" },
-              { key: "3", label: "Stage 3" },
-            ].map((opt) => (
-              <button
-                key={opt.key}
-                onClick={() => setStageFilter(opt.key)}
-                style={{
-                  border: "none", cursor: "pointer", fontFamily: "inherit",
-                  fontSize: "11.5px", fontWeight: 600, padding: "4px 9px", borderRadius: "6px",
-                  background: stageFilter === opt.key ? "var(--jox-primary)" : "var(--track)",
-                  color: stageFilter === opt.key ? "#fff" : "var(--faint)",
-                }}
-                data-testid={`filter-stage-${opt.key}`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          {/* Sort */}
-          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-            <span style={{ fontSize: "11px", color: "var(--faint)", fontWeight: 600 }}>Sort:</span>
-            {([["daysOverdue", "Days overdue"], ["balance", "Balance"], ["clientName", "Client"]] as const).map(([k, lbl]) => (
-              <button
-                key={k}
-                onClick={() => setSortBy(k)}
-                style={{
-                  border: "none", cursor: "pointer", fontFamily: "inherit",
-                  fontSize: "11.5px", fontWeight: 600, padding: "4px 9px", borderRadius: "6px",
-                  background: sortBy === k ? "var(--jox-primary)" : "var(--track)",
-                  color: sortBy === k ? "#fff" : "var(--faint)",
-                }}
-                data-testid={`sort-${k}`}
-              >
-                {lbl}
-              </button>
-            ))}
-          </div>
-        </div>
-        <button
-          onClick={() => processMutation.mutate()}
-          disabled={processMutation.isPending}
-          style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "8px", padding: "7px 13px", fontSize: "12.5px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", opacity: processMutation.isPending ? 0.6 : 1 }}
-          data-testid="button-process-reminders"
-        >
-          {processMutation.isPending ? "Sending…" : "Run Reminders Now"}
-        </button>
-      </div>
-
-      {isLoading ? (
-        <div style={{ padding: "40px", textAlign: "center", color: "var(--faint)", fontSize: "13px" }}>Loading…</div>
-      ) : entries.length === 0 ? (
-        <div style={{ padding: "56px 24px", textAlign: "center" }}>
-          <div style={{ fontSize: "32px", marginBottom: "10px" }}>✅</div>
-          <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--fg)", marginBottom: "4px" }}>No overdue invoices</div>
-          <div style={{ fontSize: "13px", color: "var(--faint)" }}>All invoices are up to date.</div>
-        </div>
-      ) : filteredEntries.length === 0 ? (
-        <div style={{ padding: "40px", textAlign: "center", color: "var(--faint)", fontSize: "13px" }}>No invoices match the current filter.</div>
-      ) : (
-        <>
-          {/* Table header */}
-          <div style={{ display: "flex", alignItems: "center", fontSize: "10.5px", fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" as const, color: "var(--faint)", padding: "11px 18px", background: "var(--track)", borderBottom: "1px solid var(--panel-bd)" }}>
-            <span style={{ width: "104px", flexShrink: 0 }}>Invoice</span>
-            <span style={{ flex: 1, minWidth: 0 }}>Client</span>
-            <span style={{ width: "72px", flexShrink: 0, textAlign: "center" as const }}>Overdue</span>
-            <span style={{ width: "64px", flexShrink: 0, textAlign: "center" as const }}>Stage</span>
-            <span style={{ width: "96px", flexShrink: 0, textAlign: "right" as const }}>Balance</span>
-            <span style={{ width: "88px", flexShrink: 0 }}>Last Contact</span>
-            <span style={{ width: "88px", flexShrink: 0 }}>Next Action</span>
-            <span style={{ width: "80px", flexShrink: 0, textAlign: "center" as const }}>Status</span>
-            <span style={{ width: "40px", flexShrink: 0 }}></span>
-          </div>
-
-          {filteredEntries.map((entry) => (
-            <div
-              key={entry.id}
-              className="rowhover"
-              style={{ display: "flex", alignItems: "center", padding: "13px 18px", borderBottom: "1px solid var(--panel-bd)", cursor: "pointer" }}
-              onClick={() => setLocation(`/invoices/${entry.id}`)}
-              data-testid={`row-collections-${entry.id}`}
-            >
-              <span style={{ width: "104px", flexShrink: 0, fontFamily: "monospace", fontSize: "13px", fontWeight: 600 }}>{entry.invoiceNumber}</span>
-              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const, fontSize: "13px" }}>
-                {entry.clientName ?? "—"}
-                {entry.jobTitle && <span style={{ color: "var(--faint)", marginLeft: "6px", fontSize: "12px" }}>{entry.jobTitle}</span>}
-              </span>
-              <span style={{ width: "72px", flexShrink: 0, textAlign: "center" as const, fontSize: "13px", fontWeight: 600, color: entry.daysOverdue > 30 ? "#dc2626" : entry.daysOverdue > 14 ? "#ea580c" : "inherit" }}>
-                {entry.daysOverdue}d
-              </span>
-              <span style={{ width: "64px", flexShrink: 0, textAlign: "center" as const, fontSize: "12px" }}>
-                {entry.currentStage === 0 ? "—" : `${entry.currentStage}/3`}
-              </span>
-              <span style={{ width: "96px", flexShrink: 0, textAlign: "right" as const, fontFamily: "monospace", fontSize: "13px", fontWeight: 600, color: "#dc2626" }}>
-                {fmtBalance(entry.balance)}
-              </span>
-              <span style={{ width: "88px", flexShrink: 0, fontSize: "12px", color: "var(--faint)", paddingLeft: "4px" }} data-testid={`text-last-contact-${entry.id}`}>
-                {entry.lastReminderSent ? format(new Date(entry.lastReminderSent), "MMM d") : "—"}
-              </span>
-              <span style={{ width: "88px", flexShrink: 0, fontSize: "12px", color: "var(--faint)", paddingLeft: "4px" }}>
-                {entry.nextActionDate ? format(new Date(entry.nextActionDate), "MMM d") : entry.reminderCount >= 3 ? "Complete" : "—"}
-              </span>
-              <span style={{ width: "88px", flexShrink: 0, textAlign: "center" as const }}>
-                {entry.remindersPaused ? (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 600, color: "var(--faint)", background: "var(--track)", borderRadius: "5px", padding: "2px 8px" }}>
-                    <BellOff style={{ width: 11, height: 11 }} /> Paused
-                  </span>
-                ) : (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 600, color: "#15a35a", background: "rgba(21,163,90,.1)", borderRadius: "5px", padding: "2px 8px" }}>
-                    <Bell style={{ width: 11, height: 11 }} /> Active
-                  </span>
-                )}
-              </span>
-              <span style={{ width: "40px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
-                <button
-                  onClick={(e) => { e.stopPropagation(); toggleMutation.mutate({ id: entry.id, paused: !entry.remindersPaused }); }}
-                  disabled={toggleMutation.isPending}
-                  title={entry.remindersPaused ? "Resume reminders" : "Pause reminders"}
-                  style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", borderRadius: "4px", color: "var(--faint)" }}
-                  data-testid={`button-toggle-collections-${entry.id}`}
-                >
-                  {entry.remindersPaused
-                    ? <PlayCircle style={{ width: 15, height: 15 }} />
-                    : <PauseCircle style={{ width: 15, height: 15 }} />}
-                </button>
-              </span>
-            </div>
-          ))}
-        </>
-      )}
-    </div>
-  );
-}
-
 export default function Invoices() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<string>("all");
   const [page, setPage] = useState(1);
+  const [quickPayInvoice, setQuickPayInvoice] = useState<InvoiceWithRelations | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<string>("cash");
+  const [paymentDate, setPaymentDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [showReconcile, setShowReconcile] = useState(false);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const [quickPayInvoice, setQuickPayInvoice] = useState<InvoiceWithRelations | null>(null);
-  const [quickPayMethod, setQuickPayMethod] = useState<string>("cash");
-  const [quickPayDate, setQuickPayDate] = useState<string>(format(new Date(), "yyyy-MM-dd"));
-  const [deleteInvoiceId, setDeleteInvoiceId] = useState<string | null>(null);
-  const [showReconcile, setShowReconcile] = useState(false);
-
-  const { data: invoices, isLoading } = useQuery<InvoiceWithRelations[]>({
-    queryKey: ["/api/invoices"],
-  });
-
-  const sendInvoiceMutation = useMutation({
-    mutationFn: async (invoiceId: string) => {
-      const res = await apiRequest("POST", `/api/invoices/${invoiceId}/send`);
-      return res.json();
-    },
+  const {
+    data: invoices,
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useQuery<InvoiceWithRelations[]>({ queryKey: ["/api/invoices"] });
+  const rows = invoices ?? [];
+  const sendMutation = useMutation({
+    mutationFn: async (id: string) => (await apiRequest("POST", `/api/invoices/${id}/send`)).json(),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       toast({ title: "Invoice sent", description: "The invoice has been sent to the client." });
     },
-    onError: (error: Error) => {
-      toast({ title: "Error sending invoice", description: error.message, variant: "destructive" });
-    },
+    onError: (error: Error) => toast({ title: "Error sending invoice", description: error.message, variant: "destructive" }),
   });
-
-  const markPaidMutation = useMutation({
-    mutationFn: async ({ invoiceId, paymentMethod, paymentDate }: { invoiceId: string; paymentMethod: string; paymentDate: string }) => {
-      const res = await apiRequest("POST", `/api/invoices/${invoiceId}/mark-paid`, {
-        paymentMethod,
-        paymentDate: new Date(paymentDate).toISOString(),
-      });
-      return res.json();
-    },
-    onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+  const paidMutation = useMutation({
+    mutationFn: async ({ id, method, date }: { id: string; method: string; date: string }) =>
+      (await apiRequest("POST", `/api/invoices/${id}/mark-paid`, {
+        paymentMethod: method,
+        paymentDate: new Date(date).toISOString(),
+      })).json(),
+    onSuccess: (_data, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
       setQuickPayInvoice(null);
-      trackEvent("payment_recorded", {
-        method: vars.paymentMethod,
-        source: "invoice_list",
-      });
+      trackEvent("payment_recorded", { method: variables.method, source: "invoice_list" });
       toast({ title: "Payment recorded", description: "Invoice marked as paid and payment logged." });
     },
-    onError: (error: Error) => {
-      toast({ title: "Error recording payment", description: error.message, variant: "destructive" });
-    },
+    onError: (error: Error) => toast({ title: "Error recording payment", description: error.message, variant: "destructive" }),
   });
-
-  const deleteInvoiceMutation = useMutation({
-    mutationFn: async (invoiceId: string) => {
-      await apiRequest("DELETE", `/api/invoices/${invoiceId}`);
-    },
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/invoices/${id}`); },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
-      setDeleteInvoiceId(null);
+      void queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      setDeleteId(null);
       toast({ title: "Invoice deleted", description: "The invoice has been permanently deleted." });
     },
-    onError: (error: Error) => {
-      toast({ title: "Error deleting invoice", description: error.message, variant: "destructive" });
-    },
+    onError: (error: Error) => toast({ title: "Error deleting invoice", description: error.message, variant: "destructive" }),
   });
 
-  const openQuickPay = (invoice: InvoiceWithRelations) => {
-    setQuickPayInvoice(invoice);
-    setQuickPayMethod("cash");
-    setQuickPayDate(format(new Date(), "yyyy-MM-dd"));
-  };
-
+  const visible = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return rows.filter((invoice) => {
+      const matchesText = !term || [invoice.invoiceNumber, invoice.client?.name, invoice.job?.title]
+        .some((part) => String(part ?? "").toLowerCase().includes(term));
+      return matchesText && (filter === "all" || invoice.status === filter);
+    });
+  }, [rows, search, filter]);
+  const totalPages = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = visible.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const now = new Date();
-  const thisMonth = now.getMonth();
-  const thisYear = now.getFullYear();
-
-  const stats = (() => {
-    if (!invoices) return { outstanding: 0, overdue: 0, paidThisMonth: 0, drafts: 0 };
-    let outstanding = 0, overdue = 0, paidThisMonth = 0, drafts = 0;
-    for (const inv of invoices) {
-      const bal = Number(inv.balance ?? 0);
-      if (inv.status === "draft") {
-        drafts += Number(inv.total ?? 0);
-      } else if (inv.status === "overdue") {
-        overdue += bal;
-        outstanding += bal;
-      } else if (inv.status === "sent" || inv.status === "partial") {
-        outstanding += bal;
-      } else if (inv.status === "paid" && inv.paymentDate) {
-        const pd = new Date(inv.paymentDate);
-        if (pd.getMonth() === thisMonth && pd.getFullYear() === thisYear) {
-          paidThisMonth += Number(inv.total ?? 0);
-        }
+  const stats = rows.reduce((totals, invoice) => {
+    const balance = Number(invoice.balance ?? 0);
+    if (invoice.status === "draft") totals.drafts += Number(invoice.total ?? 0);
+    else if (invoice.status === "overdue") {
+      totals.overdue += balance;
+      totals.outstanding += balance;
+    } else if (invoice.status === "sent" || invoice.status === "partial") totals.outstanding += balance;
+    else if (invoice.status === "paid" && invoice.paymentDate) {
+      const paidDate = new Date(invoice.paymentDate);
+      if (paidDate.getMonth() === now.getMonth() && paidDate.getFullYear() === now.getFullYear()) {
+        totals.paidThisMonth += Number(invoice.total ?? 0);
       }
     }
-    return { outstanding, overdue, paidThisMonth, drafts };
-  })();
+    return totals;
+  }, { outstanding: 0, overdue: 0, paidThisMonth: 0, drafts: 0 });
 
-  const countByStatus = (s: string) => {
-    if (s === "collections") return null;
-    if (!invoices) return 0;
-    if (s === "all") return invoices.length;
-    return invoices.filter(i => i.status === s).length;
-  };
-
-  const filteredInvoices = (invoices ?? []).filter((inv) => {
-    const matchesSearch =
-      inv.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (inv.client?.name ?? "").toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === "all" || inv.status === statusFilter;
-    return matchesSearch && matchesStatus;
-  });
-
-  const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / PAGE_SIZE));
-  const safePageNum = Math.min(page, totalPages);
-  const pageInvoices = filteredInvoices.slice((safePageNum - 1) * PAGE_SIZE, safePageNum * PAGE_SIZE);
-
-  const handleTabClick = (key: string) => {
-    setStatusFilter(key);
+  function chooseFilter(nextFilter: string) {
+    setFilter(nextFilter);
     setPage(1);
-  };
-
-  const formatCurrency = (amount: string | number | null | undefined) => {
-    if (!amount) return "$0.00";
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(Number(amount));
-  };
+  }
+  function exportCsv() {
+    const csv = invoicesToCsv(visible.map((invoice) => ({
+      invoiceNumber: invoice.invoiceNumber,
+      client: invoice.client?.name,
+      job: invoice.job?.title,
+      issued: dateLabel(invoice.issueDate),
+      due: dateLabel(invoice.dueDate),
+      status: invoice.status,
+      total: Number(invoice.total ?? 0).toFixed(2),
+      balance: Number(invoice.balance ?? 0).toFixed(2),
+    })));
+    const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "jobsoxo-invoices.csv";
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
 
   return (
     <>
-      {/* ── Reconcile Dialog ── */}
-      <ReconcileDialog open={showReconcile} onClose={() => setShowReconcile(false)} invoices={invoices ?? []} />
-
-      {/* ── Quick-Pay Dialog ── */}
-      <Dialog open={!!quickPayInvoice} onOpenChange={(open) => !open && setQuickPayInvoice(null)}>
-        <DialogContent className="sm:max-w-sm !flex flex-col max-h-[90dvh] overflow-hidden">
-          <DialogHeader className="shrink-0">
-            <DialogTitle className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-600" />
-              Record Payment
-            </DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto min-h-0">
+      <ReconcileDialog open={showReconcile} onClose={() => setShowReconcile(false)} invoices={rows} />
+      <Dialog open={!!quickPayInvoice} onOpenChange={(open) => { if (!open) setQuickPayInvoice(null); }}>
+        <DialogContent className="max-h-[90dvh] !flex flex-col overflow-hidden rounded-3xl sm:max-w-md">
+          <DialogHeader><DialogTitle className="font-display text-2xl !font-bold text-jx-ink">Record payment</DialogTitle></DialogHeader>
           {quickPayInvoice && (
-            <div className="space-y-4 py-2">
-              <div className="rounded-md bg-muted/50 p-3 text-sm space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Invoice</span>
-                  <span className="font-mono font-medium">{quickPayInvoice.invoiceNumber}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Client</span>
-                  <span className="font-medium">{quickPayInvoice.client?.name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Amount due</span>
-                  <span className="font-mono font-semibold text-green-700 dark:text-green-400">{formatCurrency(quickPayInvoice.balance)}</span>
-                </div>
+            <div className="space-y-5 overflow-y-auto py-1">
+              <div className="space-y-2 rounded-2xl bg-jx-surface p-4 text-sm">
+                <p className="flex justify-between gap-4"><span className="text-jx-ink-2">Invoice</span><span className="font-mono">{quickPayInvoice.invoiceNumber}</span></p>
+                <p className="flex justify-between gap-4"><span className="text-jx-ink-2">Client</span><span>{quickPayInvoice.client?.name}</span></p>
+                <p className="flex justify-between gap-4"><span className="text-jx-ink-2">Amount due</span><span className="font-mono font-semibold">{money(quickPayInvoice.balance)}</span></p>
               </div>
-              <div className="space-y-2">
-                <Label>How was payment received?</Label>
+              <fieldset>
+                <legend className="mb-2 text-sm font-semibold">How was payment received?</legend>
                 <div className="grid grid-cols-2 gap-2">
-                  {PAYMENT_METHODS.map(({ value, label, icon: Icon }) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setQuickPayMethod(value)}
+                  {PAYMENT_METHODS.map(({ value, label, Icon }) => (
+                    <button type="button" key={value} onClick={() => setPaymentMethod(value)} aria-pressed={paymentMethod === value}
                       data-testid={`button-pay-method-${value}`}
-                      className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                        quickPayMethod === value
-                          ? "border-primary bg-primary/10 text-primary"
-                          : "border-input bg-background hover:bg-accent"
-                      }`}
-                    >
-                      <Icon className="h-4 w-4" />
-                      {label}
+                      className={`flex min-h-11 items-center gap-2 rounded-xl border-2 px-3 text-sm font-medium focus-visible:ring-2 focus-visible:ring-jx-green ${paymentMethod === value ? "border-jx-green bg-jx-green-tint text-jx-green-ink" : "border-jx-line hover:border-jx-green"}`}>
+                      <Icon className="h-4 w-4" />{label}
                     </button>
                   ))}
                 </div>
-              </div>
+              </fieldset>
               <div className="space-y-2">
                 <Label htmlFor="quick-pay-date">Payment date</Label>
-                <Input
-                  id="quick-pay-date"
-                  type="date"
-                  value={quickPayDate}
-                  onChange={(e) => setQuickPayDate(e.target.value)}
-                  data-testid="input-quick-pay-date"
-                />
+                <Input id="quick-pay-date" type="date" value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} data-testid="input-quick-pay-date" />
               </div>
             </div>
           )}
-          </div>
-          <DialogFooter className="shrink-0">
+          <DialogFooter>
             <Button variant="outline" onClick={() => setQuickPayInvoice(null)} data-testid="button-cancel-quick-pay">Cancel</Button>
-            <Button
-              className="bg-green-600 hover:bg-green-700 text-white"
-              disabled={markPaidMutation.isPending}
-              onClick={() => quickPayInvoice && markPaidMutation.mutate({ invoiceId: quickPayInvoice.id, paymentMethod: quickPayMethod, paymentDate: quickPayDate })}
-              data-testid="button-confirm-quick-pay"
-            >
-              <CheckCircle className="h-4 w-4 mr-2" />
-              {markPaidMutation.isPending ? "Saving…" : "Confirm Payment"}
+            <Button className="rounded-full bg-jx-green text-white hover:bg-jx-green-hover" disabled={paidMutation.isPending}
+              onClick={() => quickPayInvoice && paidMutation.mutate({ id: quickPayInvoice.id, method: paymentMethod, date: paymentDate })}
+              data-testid="button-confirm-quick-pay">
+              <CheckCircle2 className="mr-2 h-4 w-4" />{paidMutation.isPending ? "Saving…" : "Confirm payment"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* ── Delete Dialog ── */}
-      <AlertDialog open={!!deleteInvoiceId} onOpenChange={(o) => { if (!o) setDeleteInvoiceId(null); }}>
-        <AlertDialogContent>
+      <AlertDialog open={!!deleteId} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
+        <AlertDialogContent className="rounded-3xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete invoice?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the invoice and all its line items. This cannot be undone.
-            </AlertDialogDescription>
+            <AlertDialogTitle className="font-display text-2xl !font-bold">Delete invoice?</AlertDialogTitle>
+            <AlertDialogDescription>This permanently deletes the invoice and all its line items. This cannot be undone.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="button-cancel-delete-invoice">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deleteInvoiceId && deleteInvoiceMutation.mutate(deleteInvoiceId)}
-              disabled={deleteInvoiceMutation.isPending}
-              data-testid="button-confirm-delete-invoice"
-            >
-              {deleteInvoiceMutation.isPending ? "Deleting…" : "Delete"}
+            <AlertDialogAction className="bg-destructive text-destructive-foreground" disabled={deleteMutation.isPending}
+              onClick={() => deleteId && deleteMutation.mutate(deleteId)} data-testid="button-confirm-delete-invoice">
+              {deleteMutation.isPending ? "Deleting…" : "Delete invoice"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Page body ── */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "24px 26px 40px" }}>
-        <div style={{ maxWidth: "1280px", margin: "0 auto" }}>
-
-          {/* ── Title row ── */}
-          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "16px", marginBottom: "20px" }}>
+      <main className="min-h-[100dvh] px-4 pb-12 pt-7 sm:px-7 sm:pt-9 xl:px-10">
+        <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-7">
+          <header className="flex flex-wrap items-end justify-between gap-6">
             <div>
-              <h2 style={{ margin: 0, fontSize: "26px", fontWeight: 700, letterSpacing: "-.02em" }}>Invoices</h2>
-              <p style={{ margin: "5px 0 0", fontSize: "13.5px", color: "var(--faint)" }}>
-                {invoices ? `${invoices.length} invoice${invoices.length !== 1 ? "s" : ""} total` : "Loading…"}
+              <h1 className="font-display text-[54px] !font-bold leading-[.95] tracking-[-.055em] text-jx-ink sm:text-[64px]">Invoices</h1>
+              <p className="mt-3 text-[15px] text-jx-ink-2 sm:text-[17px]" data-testid="text-invoices-subtitle">
+                {isError ? "Invoice totals are unavailable" : isLoading ? "Loading invoice totals" : (
+                  <>{rows.length} {rows.length === 1 ? "invoice" : "invoices"} · <span className="font-mono">{money(stats.outstanding)}</span> outstanding · <span className="font-mono text-jx-orange-ink">{money(stats.overdue)}</span> overdue</>
+                )}
               </p>
             </div>
-            <div style={{ display: "flex", gap: "9px" }}>
-              <button
-                style={{ display: "flex", alignItems: "center", gap: "7px", background: "var(--panel)", color: "var(--fg)", border: "1px solid var(--panel-bd)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
-              >
-                <Download style={{ width: "15px", height: "15px" }} />
-                Export
-              </button>
-              <button
-                onClick={() => setShowReconcile(true)}
-                style={{ display: "flex", alignItems: "center", gap: "7px", background: "var(--panel)", color: "var(--fg)", border: "1px solid var(--panel-bd)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
-                data-testid="button-reconcile-payments"
-              >
-                <Landmark style={{ width: "15px", height: "15px" }} />
-                Reconcile
-              </button>
-              <button
-                onClick={() => setLocation("/invoices/new")}
-                style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 16px", fontSize: "13.5px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 1px 2px rgba(37,99,235,.3)", textDecoration: "none" }}
-                data-testid="button-create-invoice"
-              >
-                <Plus style={{ width: "16px", height: "16px" }} />
-                Create Invoice
-              </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" onClick={exportCsv} disabled={isLoading || isError}
+                className="min-h-12 rounded-full border-2 border-jx-ink px-5 font-semibold" data-testid="button-export-invoices">
+                <Download className="h-4 w-4" />Export
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setShowReconcile(true)}
+                className="min-h-12 rounded-full border-2 border-jx-ink px-5 font-semibold" data-testid="button-reconcile-payments">
+                <Landmark className="h-4 w-4" />Reconcile
+              </Button>
+              <Button type="button" onClick={() => setLocation("/invoices/new")}
+                className="min-h-12 rounded-full bg-jx-green px-6 text-xs font-bold tracking-[.08em] text-white hover:bg-jx-green-hover sm:text-sm"
+                data-testid="button-create-invoice"><Plus className="h-4 w-4" strokeWidth={2.5} />NEW INVOICE</Button>
             </div>
-          </div>
+          </header>
 
-          {/* ── Stat strip ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "14px", marginBottom: "20px" }}>
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>Outstanding</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px" }} data-testid="stat-outstanding">{fmtMoney(stats.outstanding)}</div>
-            </div>
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>Overdue</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px", color: stats.overdue > 0 ? "#d23b1f" : undefined }} data-testid="stat-overdue">{fmtMoney(stats.overdue)}</div>
-            </div>
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>Paid this month</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px", color: "#15a35a" }} data-testid="stat-paid-month">{fmtMoney(stats.paidThisMonth)}</div>
-            </div>
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>Drafts</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px" }} data-testid="stat-drafts">{fmtMoney(stats.drafts)}</div>
-            </div>
-          </div>
+          <section className="grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Invoice totals">
+            {[
+              ["Outstanding", stats.outstanding, "text-jx-ink"],
+              ["Overdue", stats.overdue, "text-jx-orange-ink"],
+              ["Paid this month", stats.paidThisMonth, "text-jx-green-ink"],
+              ["Drafts", stats.drafts, "text-jx-ink"],
+            ].map(([label, value, color]) => (
+              <div key={label} className="rounded-2xl bg-jx-surface px-4 py-4 sm:px-5">
+                <div className="text-[11px] font-bold uppercase tracking-[.08em] text-jx-ink-3">{label}</div>
+                <div className={`mt-2 font-mono text-xl font-semibold tabular-nums sm:text-[25px] ${color}`}
+                  data-testid={label === "Paid this month" ? "stat-paid-month" : `stat-${String(label).toLowerCase().replaceAll(" ", "-")}`}>
+                  {isError || isLoading ? "—" : money(Number(value))}
+                </div>
+              </div>
+            ))}
+          </section>
 
-          {/* ── Table card ── */}
-          <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
-
-            {/* Filter tabs row */}
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "12px 16px", borderBottom: "1px solid var(--panel-bd)", flexWrap: "wrap" as const }}>
-              {TABS.map((tab) => {
-                const active = statusFilter === tab.key;
-                const count = countByStatus(tab.key);
+          <section className="flex flex-col gap-3 xl:flex-row xl:items-center" aria-label="Filter invoices">
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Invoice status">
+              {FILTERS.map(({ key, label }) => {
+                const selected = filter === key;
+                const count = key === "collections" ? null : key === "all" ? rows.length : rows.filter((invoice) => invoice.status === key).length;
                 return (
-                  <button
-                    key={tab.key}
-                    onClick={() => handleTabClick(tab.key)}
-                    data-testid={`tab-${tab.key}`}
-                    style={{
-                      display: "inline-flex", alignItems: "center", gap: "6px",
-                      border: "none", cursor: "pointer", fontFamily: "inherit",
-                      fontSize: "13px", fontWeight: 600, padding: "7px 13px", borderRadius: "8px",
-                      background: active ? "var(--jox-primary)" : "transparent",
-                      color: active ? "#fff" : "var(--faint)",
-                    }}
-                  >
-                    {tab.label}
-                    {count !== null && (
-                      <span
-                        className="font-mono"
-                        style={{
-                          fontSize: "11px", fontWeight: 600, padding: "0 6px", borderRadius: "5px",
-                          background: active ? "rgba(255,255,255,.22)" : "var(--track)",
-                          color: active ? "#fff" : "var(--faint)",
-                        }}
-                      >
-                        {count}
-                      </span>
-                    )}
+                  <button type="button" key={key} onClick={() => chooseFilter(key)} aria-pressed={selected} data-testid={`tab-${key}`}
+                    className={`inline-flex min-h-11 items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-jx-green focus-visible:ring-offset-2 sm:px-[18px] ${selected ? "border-jx-green bg-jx-green text-white" : "border-jx-ink-3 bg-card text-jx-ink hover:border-jx-green"}`}>
+                    {label}<span className={`font-mono text-xs tabular-nums ${selected ? "text-white/80" : "text-jx-ink-3"}`}>{isError || isLoading ? "—" : count}</span>
                   </button>
                 );
               })}
-              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "7px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "7px", background: "var(--track)", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "6px 11px" }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                  <input
-                    type="text"
-                    placeholder="Search invoices, clients…"
-                    value={searchQuery}
-                    onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
-                    style={{ border: "none", background: "transparent", fontSize: "12.5px", color: "var(--fg)", outline: "none", width: "180px", fontFamily: "inherit" }}
-                    data-testid="input-search-invoices"
-                  />
-                </div>
-              </div>
             </div>
+            <div className="flex h-11 min-w-0 items-center gap-2.5 rounded-full border-2 border-transparent bg-jx-surface px-4 focus-within:border-jx-green xl:ml-auto xl:w-[310px]">
+              <Search className="h-4 w-4 shrink-0 text-jx-ink-3" aria-hidden="true" />
+              <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+                placeholder="Search invoices, clients, jobs" aria-label="Search invoices"
+                className="min-w-0 flex-1 bg-transparent text-sm text-jx-ink outline-none placeholder:text-jx-ink-3" data-testid="input-search-invoices" />
+              {search && <button type="button" aria-label="Clear search" onClick={() => { setSearch(""); setPage(1); }}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-jx-ink-3 hover:bg-card hover:text-jx-ink"><X className="h-4 w-4" /></button>}
+            </div>
+          </section>
 
-            {/* Collections view */}
-            {statusFilter === "collections" && <CollectionsView />}
-
-            {/* Table header */}
-            {statusFilter !== "collections" && <div style={{ display: "flex", alignItems: "center", fontSize: "10.5px", fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" as const, color: "var(--faint)", padding: "11px 18px", background: "var(--track)", borderBottom: "1px solid var(--panel-bd)" }}>
-              <span style={{ width: "104px", flexShrink: 0 }}>Invoice</span>
-              <span style={{ flex: 1, minWidth: 0 }}>Client / Project</span>
-              <span style={{ width: "88px", flexShrink: 0 }}>Issued</span>
-              <span style={{ width: "88px", flexShrink: 0 }}>Due</span>
-              <span style={{ width: "104px", textAlign: "right" as const, flexShrink: 0 }}>Amount</span>
-              <span style={{ width: "92px", textAlign: "center" as const, flexShrink: 0 }}>Status</span>
-              <span style={{ width: "34px", flexShrink: 0 }}></span>
-            </div>}
-
-            {/* Rows */}
-            {statusFilter !== "collections" && (isLoading ? (
-              <div style={{ padding: "40px", textAlign: "center", color: "var(--faint)", fontSize: "13px" }}>Loading invoices…</div>
-            ) : pageInvoices.length === 0 ? (
-              <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
-                <div style={{ fontSize: "32px", marginBottom: "10px" }}>📄</div>
-                <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--fg)", marginBottom: "4px" }}>
-                  {searchQuery || statusFilter !== "all" ? "No matching invoices" : "No invoices yet"}
+          <section className="overflow-hidden rounded-3xl bg-jx-surface p-2.5 sm:p-3" aria-label="Invoices table" data-testid="invoices-table">
+            {filter === "collections" ? <CollectionsView /> : isLoading ? (
+              <div className="my-2 flex min-h-[280px] flex-col justify-center gap-3 rounded-2xl bg-card p-5" aria-label="Loading invoices" data-testid="invoices-loading">
+                {[0, 1, 2].map((item) => <div key={item} className="flex h-12 items-center gap-4 rounded-xl bg-jx-surface px-4">
+                  <div className="h-4 w-24 animate-pulse rounded bg-jx-line" /><div className="h-4 w-32 animate-pulse rounded bg-jx-line" /><div className="h-4 flex-1 animate-pulse rounded bg-jx-line" />
+                </div>)}
+              </div>
+            ) : isError ? (
+              <div className="my-2 flex min-h-64 flex-col items-center justify-center rounded-2xl bg-card px-6 text-center" role="alert" data-testid="invoices-error">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-jx-gold-tint text-jx-gold-ink"><CircleAlert className="h-6 w-6" /></div>
+                <h2 className="font-display text-xl !font-bold text-jx-ink">Invoices didn’t load</h2>
+                <p className="mt-1 max-w-sm text-sm text-jx-ink-2">Your invoice balances are not available right now. Check your connection and try again.</p>
+                <Button type="button" variant="outline" onClick={() => { void refetch(); }} disabled={isFetching}
+                  className="mt-5 min-h-11 rounded-full border-2 border-jx-ink px-5 font-semibold" data-testid="button-retry-invoices">
+                  {isFetching ? "Trying again…" : "Retry"}
+                </Button>
+              </div>
+            ) : pageRows.length === 0 ? (
+              <div className="my-2 flex min-h-[300px] flex-col items-center justify-center rounded-2xl bg-card px-6 py-10 text-center" data-testid="invoices-empty">
+                <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-jx-green-tint text-jx-green-ink">
+                  {search || filter !== "all" ? <Search className="h-6 w-6" /> : <FileText className="h-6 w-6" />}
                 </div>
-                <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>
-                  {searchQuery || statusFilter !== "all" ? "Try a different filter" : "Create your first invoice to get started"}
-                </div>
-                {!searchQuery && statusFilter === "all" && (
-                  <button
-                    onClick={() => setLocation("/invoices/new")}
-                    style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 18px", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-                    data-testid="button-create-first-invoice"
-                  >
-                    <Plus style={{ width: "15px", height: "15px" }} /> Create Invoice
-                  </button>
-                )}
+                <h2 className="font-display text-2xl !font-bold text-jx-ink">{rows.length === 0 ? "No invoices yet" : "No matching invoices"}</h2>
+                <p className="mt-2 max-w-md text-sm leading-relaxed text-jx-ink-2">{rows.length === 0 ? "Create an invoice to keep the work and the amount due together." : "Try another status, client, job, or invoice number."}</p>
+                {rows.length === 0 && <Button onClick={() => setLocation("/invoices/new")} className="mt-5 min-h-12 rounded-full bg-jx-green px-6 font-bold text-white hover:bg-jx-green-hover" data-testid="button-create-first-invoice"><Plus className="h-4 w-4" />New invoice</Button>}
+                {rows.length > 0 && (search || filter !== "all") && <Button variant="outline" onClick={() => { setSearch(""); chooseFilter("all"); }} className="mt-5 min-h-11 rounded-full border-2 border-jx-ink px-5 font-semibold">Clear filters</Button>}
               </div>
             ) : (
-              pageInvoices.map((invoice) => (
-                <div
-                  key={invoice.id}
-                  className="rowhover"
-                  style={{ display: "flex", alignItems: "center", padding: "13px 18px", borderBottom: "1px solid var(--panel-bd)", cursor: "pointer" }}
-                  data-testid={`row-invoice-${invoice.id}`}
-                >
-                  {/* Invoice # */}
-                  <Link
-                    href={`/invoices/${invoice.id}`}
-                    style={{ display: "contents", textDecoration: "none", color: "inherit" }}
-                    data-testid={`link-invoice-${invoice.id}`}
-                  >
-                    <span
-                      className="font-mono"
-                      style={{ width: "104px", flexShrink: 0, fontSize: "12.5px", fontWeight: 600, color: "var(--jox-primary)" }}
-                    >
-                      {invoice.invoiceNumber}
-                    </span>
-
-                    {/* Client / Project */}
-                    <div style={{ flex: 1, minWidth: 0, paddingRight: "12px" }}>
-                      <div style={{ fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {invoice.client?.name || "—"}
-                      </div>
-                      {invoice.job && (
-                        <div style={{ fontSize: "11.5px", color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {invoice.job.title}
-                        </div>
-                      )}
+              <>
+                <div className="overflow-x-auto">
+                  <div className="min-w-[1280px]">
+                    <div data-testid="invoices-table-header" className="grid h-[52px] grid-cols-[140px_minmax(190px,1fr)_minmax(170px,1fr)_120px_120px_130px_130px_130px_48px] items-center gap-3 border-2 border-transparent px-[18px] text-xs font-semibold uppercase tracking-[.06em] text-jx-ink-3">
+                      <span>Invoice</span><span>Client</span><span>Job</span><span>Issued</span><span>Due</span><span>Status</span><span className="text-right">Total</span><span className="text-right">Balance</span><span className="relative"><span className="sr-only">Actions</span></span>
                     </div>
-
-                    {/* Issued */}
-                    <span className="font-mono" style={{ width: "88px", flexShrink: 0, fontSize: "12px", color: "var(--faint)" }}>
-                      {fmtDate(invoice.issueDate)}
-                    </span>
-
-                    {/* Due */}
-                    <span className="font-mono" style={{ width: "88px", flexShrink: 0, fontSize: "12px", color: "var(--faint)" }}>
-                      {fmtDate(invoice.dueDate)}
-                    </span>
-
-                    {/* Amount */}
-                    <span className="font-mono" style={{ width: "104px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 600 }}>
-                      {fmtMoney(Number(invoice.total ?? 0))}
-                    </span>
-                  </Link>
-
-                  {/* Status badge */}
-                  <span style={{ width: "92px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
-                    <span style={{
-                      fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px",
-                      textTransform: "capitalize" as const,
-                      background: BADGE[invoice.status]?.bg ?? "#eef0f3",
-                      color: BADGE[invoice.status]?.fg ?? "#6b7686",
-                    }}>
-                      {invoice.status}
-                    </span>
-                  </span>
-
-                  {/* Actions */}
-                  <span style={{ width: "34px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          style={{ border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "4px", display: "flex" }}
-                          data-testid={`button-invoice-actions-${invoice.id}`}
-                        >
-                          <MoreVertical style={{ width: "16px", height: "16px" }} />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" sideOffset={4}>
-                        <DropdownMenuItem asChild>
-                          <Link href={`/invoices/${invoice.id}`} data-testid={`button-view-invoice-${invoice.id}`}>
-                            <Eye className="h-4 w-4 mr-2" />View
-                          </Link>
-                        </DropdownMenuItem>
-                        {invoice.status !== "paid" && (
-                          <>
-                            <DropdownMenuItem onClick={() => sendInvoiceMutation.mutate(invoice.id)} disabled={sendInvoiceMutation.isPending} data-testid={`button-send-invoice-${invoice.id}`}>
-                              <Mail className="h-4 w-4 mr-2" />Send to Client
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onClick={() => openQuickPay(invoice)} data-testid={`button-mark-paid-${invoice.id}`}>
-                              <CheckCircle className="h-4 w-4 mr-2" />Mark as Paid
-                            </DropdownMenuItem>
-                            <DropdownMenuItem asChild>
-                              <Link href={`/invoices/${invoice.id}/payment`} data-testid={`button-record-payment-${invoice.id}`}>
-                                <DollarSign className="h-4 w-4 mr-2" />Record Partial Payment
-                              </Link>
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem asChild>
-                          <Link href={`/invoices/${invoice.id}?autoDownload=1`} data-testid={`button-download-invoice-${invoice.id}`}>
-                            <Download className="h-4 w-4 mr-2" />Download PDF
-                          </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => setDeleteInvoiceId(invoice.id)}
-                          data-testid={`button-delete-invoice-${invoice.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </span>
+                    {pageRows.map((invoice) => {
+                      const overdue = invoice.status === "overdue";
+                      return (
+                        <div key={invoice.id} role="link" tabIndex={0} aria-label={`Open invoice ${invoice.invoiceNumber}`}
+                          onClick={() => setLocation(`/invoices/${invoice.id}`)}
+                          onKeyDown={(event) => {
+                            if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) {
+                              event.preventDefault();
+                              setLocation(`/invoices/${invoice.id}`);
+                            }
+                          }}
+                          className="group mb-2 grid min-h-[76px] cursor-pointer grid-cols-[140px_minmax(190px,1fr)_minmax(170px,1fr)_120px_120px_130px_130px_130px_48px] items-center gap-3 rounded-2xl border-2 border-transparent bg-card px-[18px] py-3 transition-colors hover:border-jx-green focus-visible:border-jx-green focus-visible:outline-none motion-reduce:transition-none"
+                          data-testid={`row-invoice-${invoice.id}`}>
+                          <div className="min-w-0"><Link href={`/invoices/${invoice.id}`} onClick={(event: MouseEvent<HTMLAnchorElement>) => event.stopPropagation()}
+                            className="truncate font-mono text-[13px] font-semibold text-jx-green-ink hover:underline" data-testid={`link-invoice-${invoice.id}`}>{invoice.invoiceNumber}</Link></div>
+                          <div className="truncate text-sm font-semibold text-jx-ink">{invoice.client?.name || "—"}</div>
+                          <div className="truncate text-sm text-jx-ink-2">{invoice.job?.title || "—"}</div>
+                          <span className="font-mono text-xs text-jx-ink-2">{dateLabel(invoice.issueDate)}</span>
+                          <span className={`font-mono text-xs ${overdue ? "font-semibold text-jx-orange-ink" : "text-jx-ink-2"}`} data-overdue={overdue || undefined}>{dateLabel(invoice.dueDate)}</span>
+                          <span><span className={`inline-flex min-h-7 items-center rounded-full px-3 text-xs font-semibold ${STATUS_STYLES[invoice.status] ?? STATUS_STYLES.draft}`}>{invoice.status === "partial" ? "Partly paid" : invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}</span></span>
+                          <span className="text-right font-mono text-[15px] font-medium tabular-nums text-jx-ink">{money(invoice.total)}</span>
+                          <span className="text-right font-mono text-[15px] font-medium tabular-nums text-jx-ink">{money(invoice.balance)}</span>
+                          <div onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label={`Actions for ${invoice.invoiceNumber}`}
+                                className="h-10 w-10 rounded-full text-jx-ink-3 hover:bg-jx-green-tint hover:text-jx-green-ink" data-testid={`button-invoice-actions-${invoice.id}`}><MoreHorizontal className="h-5 w-5" /></Button></DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" sideOffset={6} className="w-52 rounded-2xl p-1.5">
+                                <DropdownMenuItem asChild data-testid={`button-view-invoice-${invoice.id}`}><Link href={`/invoices/${invoice.id}`} className="cursor-pointer rounded-xl"><Eye className="mr-2 h-4 w-4" />View invoice</Link></DropdownMenuItem>
+                                {invoice.status !== "paid" && <>
+                                  <DropdownMenuItem onSelect={() => sendMutation.mutate(invoice.id)} disabled={sendMutation.isPending} data-testid={`button-send-invoice-${invoice.id}`} className="rounded-xl"><Mail className="mr-2 h-4 w-4" />Send to client</DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onSelect={() => { setQuickPayInvoice(invoice); setPaymentMethod("cash"); setPaymentDate(format(new Date(), "yyyy-MM-dd")); }} data-testid={`button-mark-paid-${invoice.id}`} className="rounded-xl"><Check className="mr-2 h-4 w-4" />Mark as paid</DropdownMenuItem>
+                                  <DropdownMenuItem asChild data-testid={`button-record-payment-${invoice.id}`}><Link href={`/invoices/${invoice.id}/payment`} className="cursor-pointer rounded-xl"><CreditCard className="mr-2 h-4 w-4" />Record partial payment</Link></DropdownMenuItem>
+                                </>}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem asChild data-testid={`button-download-invoice-${invoice.id}`}><Link href={`/invoices/${invoice.id}?autoDownload=1`} className="cursor-pointer rounded-xl"><Download className="mr-2 h-4 w-4" />Download PDF</Link></DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onSelect={() => setDeleteId(invoice.id)} className="rounded-xl text-destructive focus:text-destructive" data-testid={`button-delete-invoice-${invoice.id}`}><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              ))
-            ))}
-
-            {/* Footer / pagination */}
-            {statusFilter !== "collections" && filteredInvoices.length > 0 && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 18px" }}>
-                <span style={{ fontSize: "12.5px", color: "var(--faint)" }}>
-                  Showing {Math.min((safePageNum - 1) * PAGE_SIZE + 1, filteredInvoices.length)}–{Math.min(safePageNum * PAGE_SIZE, filteredInvoices.length)} of {filteredInvoices.length} invoice{filteredInvoices.length !== 1 ? "s" : ""}
-                </span>
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <button
-                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                    disabled={safePageNum <= 1}
-                    style={{ border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--faint)", borderRadius: "7px", padding: "6px 12px", fontSize: "12.5px", fontWeight: 600, cursor: safePageNum <= 1 ? "default" : "pointer", fontFamily: "inherit", opacity: safePageNum <= 1 ? 0.4 : 1 }}
-                    data-testid="button-prev-page"
-                  >
-                    Previous
-                  </button>
-                  <button
-                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                    disabled={safePageNum >= totalPages}
-                    style={{ border: "1px solid var(--jox-primary)", background: "var(--jox-primary)", color: "#fff", borderRadius: "7px", padding: "6px 12px", fontSize: "12.5px", fontWeight: 600, cursor: safePageNum >= totalPages ? "default" : "pointer", fontFamily: "inherit", opacity: safePageNum >= totalPages ? 0.5 : 1 }}
-                    data-testid="button-next-page"
-                  >
-                    Next
-                  </button>
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-1 pt-3 text-sm text-jx-ink-2">
+                  <span data-testid="text-visible-invoice-count">Showing <span className="font-semibold text-jx-ink">{Math.min((safePage - 1) * PAGE_SIZE + 1, visible.length)}–{Math.min(safePage * PAGE_SIZE, visible.length)}</span> of {visible.length} invoices</span>
+                  <div className="flex items-center gap-2">
+                    {isFetching && <span className="inline-flex items-center gap-1.5 text-xs text-jx-ink-3" role="status"><RefreshCw className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" />Refreshing</span>}
+                    <Button type="button" variant="outline" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={safePage <= 1}
+                      className="min-h-10 rounded-full border border-jx-line px-4 font-semibold" data-testid="button-prev-page"><ChevronLeft className="h-4 w-4" />Previous</Button>
+                    <Button type="button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={safePage >= totalPages}
+                      className="min-h-10 rounded-full bg-jx-green px-4 font-semibold text-white hover:bg-jx-green-hover" data-testid="button-next-page">Next<ChevronRight className="h-4 w-4" /></Button>
+                  </div>
                 </div>
-              </div>
+              </>
             )}
-          </div>
-
+          </section>
         </div>
-      </div>
+      </main>
     </>
   );
 }
