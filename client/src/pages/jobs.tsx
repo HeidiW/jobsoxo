@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useLocation, Link } from "wouter";
+import { useLocation, useSearch, Link } from "wouter";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -132,6 +132,7 @@ function RowActions({
 }
 
 export default function Jobs() {
+  const clientId = new URLSearchParams(useSearch()).get("clientId");
   const [activeFilter, setActiveFilter] = useState<JobFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -162,11 +163,14 @@ export default function Jobs() {
     onError: () => toast({ title: "Failed to delete job", variant: "destructive" }),
   });
 
-  const allJobs = jobs ?? [];
-  const counts = useMemo(() => countJobsByStatus(allJobs), [jobs]);
+  const allJobs = useMemo(
+    () => (jobs ?? []).filter((job) => !clientId || job.clientId === clientId),
+    [jobs, clientId],
+  );
+  const counts = useMemo(() => countJobsByStatus(allJobs), [allJobs]);
   const visibleJobs = useMemo(
     () => filterJobs(allJobs, activeFilter, searchQuery),
-    [jobs, activeFilter, searchQuery],
+    [allJobs, activeFilter, searchQuery],
   );
   const quotedTotal = allJobs
     .filter((job) => job.status === "quoted")
@@ -196,7 +200,7 @@ export default function Jobs() {
     setLocation(`/jobs/${job.id}`);
   }
 
-  const filtersAreActive = activeFilter !== "all" || searchQuery.trim().length > 0;
+  const filtersAreActive = activeFilter !== "all" || searchQuery.trim().length > 0 || !!clientId;
 
   return (
     <>
@@ -257,6 +261,14 @@ export default function Jobs() {
             </Button>
           </header>
 
+          {clientId && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-jx-green-tint px-4 py-3 text-sm text-jx-green-ink" data-testid="job-client-filter">
+              <span className="min-w-0 break-words">Jobs for <strong>{allJobs[0]?.client?.name || "the selected client"}</strong></span>
+              <Button variant="outline" className="min-h-11 rounded-full border-jx-green text-jx-green-ink" onClick={() => setLocation("/jobs")} data-testid="button-clear-client-filter">
+                View all clients’ jobs
+              </Button>
+            </div>
+          )}
           <section aria-label="Filter jobs" className="flex flex-col gap-3 xl:flex-row xl:items-center">
             <div className="flex flex-wrap gap-2" role="group" aria-label="Job status">
               {FILTERS.map(({ key, label }) => {
@@ -397,7 +409,7 @@ export default function Jobs() {
                     ) : filtersAreActive ? (
                       <Button
                         variant="outline"
-                        onClick={() => { setActiveFilter("all"); setSearchQuery(""); }}
+                        onClick={() => { setActiveFilter("all"); setSearchQuery(""); if (clientId) setLocation("/jobs"); }}
                         className="mt-5 min-h-11 rounded-full border-2 border-jx-ink px-5 font-semibold"
                         data-testid="button-clear-job-filters"
                       >

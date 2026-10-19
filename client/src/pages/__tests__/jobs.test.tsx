@@ -5,6 +5,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Jobs from "../jobs";
 
+const route = vi.hoisted(() => ({ search: "", navigate: vi.fn() }));
+vi.mock("wouter", async (original) => ({
+  ...await original<typeof import("wouter")>(),
+  useSearch: () => route.search,
+  useLocation: () => ["/jobs", route.navigate],
+}));
+
 vi.mock("@/components/jobs-list-thumbnail", () => ({
   default: ({ title }: { title: string }) => <div aria-label={`Thumbnail for ${title}`} />,
 }));
@@ -81,6 +88,8 @@ async function openActions(jobTitle = "Rear deck rebuild") {
 
 describe("Jobs list actions and filters", () => {
   beforeEach(() => {
+    route.search = "";
+    route.navigate.mockReset();
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (init?.method === "DELETE") return jsonResponse(null, 204);
@@ -97,6 +106,17 @@ describe("Jobs list actions and filters", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("shows only the selected client's jobs, scopes counts and can remove the client filter", async () => {
+    route.search = "clientId=client-2";
+    renderJobs();
+    expect(await screen.findByTestId("row-job-job-progress")).toBeInTheDocument();
+    expect(screen.queryByTestId("row-job-job-quoted")).not.toBeInTheDocument();
+    expect(screen.getByTestId("job-client-filter")).toHaveTextContent("Northline Market");
+    expect(screen.getByTestId("text-visible-job-count")).toHaveTextContent("Showing 1 of 1 jobs");
+    await userEvent.click(screen.getByTestId("button-clear-client-filter"));
+    expect(route.navigate).toHaveBeenCalledWith("/jobs");
   });
 
   it("shows the quoted filter count and filters by status and searchable fields", async () => {
