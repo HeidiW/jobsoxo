@@ -14,3 +14,9 @@ For mobile Chromium checks, compare both document scroll width and viewport widt
 **Why:** Mobile Chromium can expand its layout viewport to accommodate overflowing content. Equal document and viewport widths can therefore falsely suggest that the page fits the phone.
 
 **How to apply:** Assert that neither width exceeds the intended CSS-pixel width, and separately check that wide tables scroll inside their own container.
+
+Do not treat a fitting body or table wrapper as proof that a wide ledger is contained. Check the document root too, and give the scrolling region its own positioning context where necessary.
+
+**Why:** Chromium allowed wide table descendants to enlarge the document root even though the body and scroll wrapper fit the phone. Establishing a local positioning context contained that overflow without hiding content.
+
+**How to apply:** Keep horizontal scrolling local to the ledger, verify it actually scrolls, and check root width after resizing and opening dialogs. Do not mask the problem with global overflow suppression.

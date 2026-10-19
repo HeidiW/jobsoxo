@@ -3,6 +3,7 @@ import type { Job, JobMaterial } from "@shared/schema";
 import {
   filterMaterials,
   invalidateMaterialTotals,
+  monthlyMaterialSummary,
   totalMaterialPrice,
   type MaterialWithJob,
 } from "../materials-logic";
@@ -33,6 +34,42 @@ function material(
 }
 
 describe("Materials total", () => {
+  it("sums stored purchase totals rather than multiplying them by quantities", () => {
+    expect(totalMaterialPrice([
+      material("a", "10.25", jobA, { quantity: "4.00" }),
+      material("b", "20.50", jobB, { quantity: "3.00" }),
+    ])).toBe(30.75);
+  });
+
+  it("groups only the selected calendar month, including unassigned purchases", () => {
+    const summary = monthlyMaterialSummary([
+      material("a", "10.25", jobA, { purchaseDate: "2026-10-01", quantity: "4.00" }),
+      material("b", "20.50", jobB, { purchaseDate: "2026-10-31" }),
+      material("unassigned", "4.25", null, { purchaseDate: "2026-10-19" }),
+      material("prior", "80.00", jobA, { purchaseDate: "2026-09-30" }),
+      material("next", "90.00", jobB, { purchaseDate: "2026-11-01" }),
+      material("last-year", "100.00", jobA, { purchaseDate: "2025-10-19" }),
+    ], 2026, 9);
+    expect(summary.total).toBe(35);
+    expect(summary.jobs).toEqual([
+      { id: jobB.id, title: jobB.title, total: 20.5, count: 1 },
+      { id: jobA.id, title: jobA.title, total: 10.25, count: 1 },
+    ]);
+    expect(summary.unassigned).toEqual({ total: 4.25, count: 1 });
+    expect(summary.jobs.reduce((sum, job) => sum + job.total, summary.unassigned.total)).toBe(summary.total);
+  });
+
+  it("handles January independently of the preceding December and supports unassigned filtering", () => {
+    const materials = [
+      material("dec", "20.00", jobA, { purchaseDate: "2025-12-31" }),
+      material("jan", "3.25", null, { purchaseDate: "2026-01-01" }),
+    ];
+    expect(monthlyMaterialSummary(materials, 2026, 0)).toEqual({
+      total: 3.25, jobs: [], unassigned: { total: 3.25, count: 1 },
+    });
+    expect(filterMaterials(materials, "unassigned", "").map((item) => item.id)).toEqual(["jan"]);
+  });
+
   it("tracks all materials, including unassigned materials, and respects filters", () => {
     const materials = [
       material("a", "10.25", jobA, { vendor: "Paint Co" }),
