@@ -3,7 +3,7 @@
   --pr-ink-2: var(--jx-ink-2, #5a5f59);
   --pr-ink-3: var(--jx-ink-3, #8b908a);
   --pr-line: var(--jx-line, #e4e7e2);
-  --pr-green: var(--jx-green, #4e7d3a);
+  --pr-green: var(--jx-green);
   --pr-surface: var(--jx-surface, #f5f6f3);
   --pr-gold: var(--jx-gold, #c2a23a);
   --pr-gold-tint: var(--jx-gold-tint, #fdfbe4);
@@ -53,7 +53,7 @@
 }
 .payroll-redesign [data-testid="button-run-payroll"]:hover,
 .payroll-redesign [data-testid="button-run-first-payroll"]:hover {
-  background: var(--jx-green-hover, #426b31) !important;
+  background: var(--jx-green-hover) !important;
 }
 
 .payroll-summary { margin: 0 0 24px; }
@@ -161,7 +161,7 @@
   background: var(--pr-surface) !important;
 }
 .dark .payroll-redesign .payroll-table-shell .payroll-table-head { background: hsl(var(--secondary)) !important; }
-.payroll-redesign .payroll-table-shell .rowhover:hover { background: var(--jx-green-tint, #f0f5eb) !important; }
+.payroll-redesign .payroll-table-shell .rowhover:hover { background: var(--jx-green-tint) !important; }
 .dark .payroll-redesign .payroll-table-shell .rowhover:hover { background: var(--jx-green-tint) !important; }
 .payroll-redesign .payroll-inline-panel {
   position: relative;

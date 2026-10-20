@@ -188,13 +188,13 @@ export default function InvoicePayment() {
             </div>
             <div>
               <span className="text-muted-foreground">Amount Paid</span>
-              <p className="font-mono font-medium text-lg text-green-600 dark:text-green-400">
+              <p className="font-mono font-medium text-lg text-jx-green-ink">
                 {formatCurrency(invoice.amountPaid)}
               </p>
             </div>
             <div className="col-span-2">
               <span className="text-muted-foreground">Balance Due</span>
-              <p className={`font-mono font-bold text-2xl ${balance > 0 ? "text-destructive" : "text-green-600 dark:text-green-400"}`}>
+              <p className={`font-mono font-bold text-2xl ${balance > 0 ? "text-destructive" : "text-jx-green-ink"}`}>
                 {formatCurrency(balance)}
               </p>
             </div>

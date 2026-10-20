@@ -79,7 +79,7 @@ export default {
           border: "var(--sidebar-accent-border)"
         },
         status: {
-          online: "rgb(61 90 64)",
+          online: "var(--jx-green)",
           away: "rgb(139 103 64)",
           busy: "rgb(142 43 42)",
           offline: "rgb(174 184 176)",
@@ -95,6 +95,7 @@ export default {
             hover: "var(--jx-green-hover)",
             ink: "var(--jx-green-ink)",
             tint: "var(--jx-green-tint)",
+            "tint-2": "var(--jx-green-tint-2)",
           },
           blue: {
             DEFAULT: "var(--jx-blue)",

@@ -723,7 +723,7 @@ export default function InvoiceNew() {
               {clientsError && (
                 <div role="alert" data-testid="invoice-clients-error" style={{ padding: "15px 16px", borderRadius: "13px", background: "#fff7ed", border: "1px solid #f1d5b9", color: "#7a4b25" }}>
                   <strong>Clients didn’t load.</strong> Existing client records are unavailable right now.
-                  <button type="button" onClick={() => { void refetchClients(); }} disabled={clientsFetching} style={{ marginLeft: 10, border: 0, background: "transparent", color: "#3a5e2b", textDecoration: "underline", fontWeight: 700, cursor: "pointer" }} data-testid="button-retry-clients">
+                  <button type="button" onClick={() => { void refetchClients(); }} disabled={clientsFetching} style={{ marginLeft: 10, border: 0, background: "transparent", color: "var(--jx-green-ink)", textDecoration: "underline", fontWeight: 700, cursor: "pointer" }} data-testid="button-retry-clients">
                     {clientsFetching ? "Trying again…" : "Retry"}
                   </button>
                 </div>
@@ -731,13 +731,13 @@ export default function InvoiceNew() {
               {!clientsLoading && !clientsError && clients?.length === 0 && (
                 <div data-testid="invoice-clients-empty" style={{ padding: "15px 16px", borderRadius: "13px", background: "#fff", border: "1px solid #e1e7dc", color: "#626b61" }}>
                   <strong style={{ color: "#20251f" }}>Add a client before creating an invoice.</strong>
-                  <Link href="/clients" style={{ display: "inline-block", marginLeft: 10, color: "#3a5e2b", fontWeight: 700 }}>Go to clients</Link>
+                  <Link href="/clients" style={{ display: "inline-block", marginLeft: 10, color: "var(--jx-green-ink)", fontWeight: 700 }}>Go to clients</Link>
                 </div>
               )}
               {jobsError && (
                 <div role="alert" data-testid="invoice-jobs-error" style={{ padding: "15px 16px", borderRadius: "13px", background: "#fff7ed", border: "1px solid #f1d5b9", color: "#7a4b25" }}>
                   <strong>Projects didn’t load.</strong> You can continue without linking a project.
-                  <button type="button" onClick={() => { void refetchJobs(); }} disabled={jobsFetching} style={{ marginLeft: 10, border: 0, background: "transparent", color: "#3a5e2b", textDecoration: "underline", fontWeight: 700, cursor: "pointer" }} data-testid="button-retry-jobs">
+                  <button type="button" onClick={() => { void refetchJobs(); }} disabled={jobsFetching} style={{ marginLeft: 10, border: 0, background: "transparent", color: "var(--jx-green-ink)", textDecoration: "underline", fontWeight: 700, cursor: "pointer" }} data-testid="button-retry-jobs">
                     {jobsFetching ? "Trying again…" : "Retry"}
                   </button>
                 </div>

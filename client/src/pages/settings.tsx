@@ -344,7 +344,7 @@ function BusinessBankAccountCard({ canManage }: { canManage: boolean }) {
                     const isUnlinking = unlinkMutation.isPending;
                     return (
                       <div key={tx.id} className="flex items-center gap-3 px-4 py-2.5">
-                        <div className={`flex-shrink-0 rounded-full p-1 ${isCredit ? "bg-green-50 text-green-600" : "bg-slate-100 text-slate-500"}`}>
+                        <div className={`flex-shrink-0 rounded-full p-1 ${isCredit ? "bg-jx-green-tint text-jx-green-ink" : "bg-slate-100 text-slate-500"}`}>
                           {isCredit
                             ? <ArrowDownLeft className="h-3.5 w-3.5" />
                             : <ArrowUpRight className="h-3.5 w-3.5" />}
@@ -354,7 +354,7 @@ function BusinessBankAccountCard({ canManage }: { canManage: boolean }) {
                           <p className="text-xs text-muted-foreground">{fmtDate(tx.date)}</p>
                         </div>
                         <div className="text-right flex-shrink-0">
-                          <p className={`text-sm font-mono font-semibold ${isCredit ? "text-green-700" : ""}`}>
+                          <p className={`text-sm font-mono font-semibold ${isCredit ? "text-jx-green-ink" : ""}`}>
                             {isCredit ? "+" : ""}{fmtAmt(Math.abs(amt))}
                           </p>
                         </div>
@@ -365,7 +365,7 @@ function BusinessBankAccountCard({ canManage }: { canManage: boolean }) {
                               title="Click to unlink this match"
                               disabled={!canManage || isUnlinking}
                               onClick={() => unlinkMutation.mutate(tx.id)}
-                              className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 hover:bg-red-100 hover:text-red-700 transition-colors disabled:opacity-50"
+                              className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-jx-green-tint text-jx-green-ink hover:bg-red-100 hover:text-red-700 transition-colors disabled:opacity-50"
                               data-testid={`button-unlink-tx-${tx.id}`}
                             >
                               <Link2 className="h-3 w-3" />
@@ -453,7 +453,7 @@ function BusinessBankAccountCard({ canManage }: { canManage: boolean }) {
                                 {p.referenceNumber ? ` · Ref: ${p.referenceNumber}` : ""}
                               </p>
                             </div>
-                            <span className="text-sm font-mono font-semibold shrink-0 text-green-700">
+                            <span className="text-sm font-mono font-semibold shrink-0 text-jx-green-ink">
                               +{fmtAmt(Math.abs(Number(p.amount)))}
                             </span>
                           </button>
@@ -594,7 +594,7 @@ function InvitePanel() {
                     aria-label={`Copy invite code ${invite.code}`}
                     data-testid={`button-copy-invite-${invite.id}`}
                   >
-                    {copiedId === invite.id ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                    {copiedId === invite.id ? <Check className="h-4 w-4 text-jx-green-ink" /> : <Copy className="h-4 w-4" />}
                   </Button>
                   <Button
                     type="button"
@@ -1376,7 +1376,7 @@ export default function SettingsPage() {
                   aria-label="Copy SMS phone number"
                   data-testid="button-copy-sms-phone"
                 >
-                  {copiedPhone ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                  {copiedPhone ? <Check className="h-4 w-4 text-jx-green-ink" /> : <Copy className="h-4 w-4" />}
                 </Button>
               </div>
               <div className="rounded-md bg-muted/60 p-3 text-sm space-y-1 text-muted-foreground">

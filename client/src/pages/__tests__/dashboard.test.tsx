@@ -32,7 +32,7 @@ const dashboardData = {
     daysOverdue: 4,
   }],
   week: [
-    { date: "2025-01-06", weekday: "MON", dayNum: 6, isToday: true, jobs: [{ jobId: "job-1", label: "Maple Street", crewSize: 0, color: "#4E7D3A" }] },
+    { date: "2025-01-06", weekday: "MON", dayNum: 6, isToday: true, jobs: [{ jobId: "job-1", label: "Maple Street", crewSize: 0, color: "var(--jx-green)" }] },
     { date: "2025-01-07", weekday: "TUE", dayNum: 7, isToday: false, jobs: [] },
     { date: "2025-01-08", weekday: "WED", dayNum: 8, isToday: false, jobs: [] },
     { date: "2025-01-09", weekday: "THU", dayNum: 9, isToday: false, jobs: [] },

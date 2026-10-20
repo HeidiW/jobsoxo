@@ -154,13 +154,13 @@ export function ReconcileDialog({
                       <div className="flex items-center gap-2 text-sm font-medium"><span className="text-muted-foreground">{format(new Date(transaction.date + "T12:00:00"), "MMM d, yyyy")}</span><span>·</span><span className="truncate">{transaction.merchantName || transaction.name}</span></div>
                       <div className="truncate text-xs text-muted-foreground">{transaction.name}</div>
                     </div>
-                    <span className="shrink-0 font-mono font-semibold text-green-700 dark:text-green-400">${transaction.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
+                    <span className="shrink-0 font-mono font-semibold text-jx-green-ink">${transaction.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                   </div>
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm">
                     <span className="text-muted-foreground">Matches invoice</span><span className="font-mono font-medium">{invoice.invoiceNumber}</span><span className="text-muted-foreground">·</span><span>{invoice.client?.name}</span>
                     <span className="font-mono font-semibold">${Number(invoice.balance).toLocaleString("en-US", { minimumFractionDigits: 2 })}</span>
                   </div>
-                  <Button size="sm" className="w-full bg-green-600 text-white hover:bg-green-700" disabled={confirmPaymentMutation.isPending && confirming === transaction.transactionId}
+                  <Button size="sm" className="w-full bg-jx-green text-white hover:bg-jx-green-hover" disabled={confirmPaymentMutation.isPending && confirming === transaction.transactionId}
                     onClick={() => {
                       setConfirming(transaction.transactionId);
                       confirmPaymentMutation.mutate({ invoiceId: invoice.id, amount: transaction.amount, transactionId: transaction.transactionId, date: transaction.date });

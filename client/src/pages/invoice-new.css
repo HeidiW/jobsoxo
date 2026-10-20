@@ -135,7 +135,7 @@
   align-items: center;
   gap: 10px;
   padding: 9px 28px;
-  border-bottom: 1px solid #dbe6d2;
+  border-bottom: 1px solid var(--jx-green-tint-2);
   background: var(--jx-green-tint);
 }
 
@@ -154,7 +154,7 @@
 .invoice-import-actions button {
   min-height: 44px;
   padding: 7px 14px;
-  border: 1.5px solid #bdcfb1;
+  border: 1.5px solid var(--jx-green-tint-2);
   border-radius: 999px;
   background: hsl(var(--card));
   color: var(--jx-green-ink);
@@ -227,8 +227,8 @@
   --jx-ink-2: #5A5F59;
   --jx-ink-3: #8B908A;
   --jx-line: #E4E7E2;
-  --jx-green-ink: #3A5E2B;
-  --jx-green-tint: #F0F5EB;
+  --jx-green-ink: #31572C;
+  --jx-green-tint: #EEF3EC;
   width: 100%;
   max-width: 560px;
   min-height: 640px;
@@ -535,7 +535,7 @@
 .invoice-new select:focus,
 .invoice-new textarea:focus {
   border-color: var(--jx-green) !important;
-  box-shadow: 0 0 0 3px rgba(78, 125, 58, .12);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--jx-green) 12%, transparent);
 }
 
 .invoice-new .invoice-field-label,

@@ -48,7 +48,7 @@ type ResetValues = z.infer<typeof resetSchema>;
 function PasswordStrength({ password }: { password: string }) {
   if (!password) return null;
   const passed = passwordRules.filter((r) => r.test(password)).length;
-  const colors = ["bg-red-500", "bg-orange-500", "bg-yellow-500", "bg-blue-500", "bg-green-500"];
+  const colors = ["bg-red-500", "bg-orange-500", "bg-yellow-500", "bg-blue-500", "bg-jx-green"];
   const barColor = colors[passed - 1] ?? "bg-muted";
 
   return (
@@ -70,7 +70,7 @@ function PasswordStrength({ password }: { password: string }) {
             <li
               key={rule.label}
               className={`flex items-center gap-1.5 text-xs ${
-                ok ? "text-green-600 dark:text-green-400" : "text-muted-foreground"
+                ok ? "text-jx-green-ink" : "text-muted-foreground"
               }`}
             >
               {ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
@@ -189,7 +189,7 @@ export default function ResetPassword() {
           {/* Success */}
           {done && (
             <div className="flex flex-col items-center gap-4 py-4 text-center">
-              <CheckCircle2 className="h-10 w-10 text-green-500" />
+              <CheckCircle2 className="h-10 w-10 text-jx-green-ink" />
               <div className="space-y-1">
                 <p className="font-medium">Password updated!</p>
                 <p className="text-sm text-muted-foreground">

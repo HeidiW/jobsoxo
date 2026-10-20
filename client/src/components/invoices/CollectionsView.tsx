@@ -119,7 +119,7 @@ export function CollectionsView() {
                 <span className="flex w-[88px] shrink-0 justify-center">
                   {entry.remindersPaused
                     ? <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold text-[var(--faint)]"><BellOff className="h-[11px] w-[11px]" />Paused</span>
-                    : <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold text-green-700"><Bell className="h-[11px] w-[11px]" />Active</span>}
+                    : <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold text-jx-green-ink"><Bell className="h-[11px] w-[11px]" />Active</span>}
                 </span>
                 <span className="flex w-10 shrink-0 justify-center">
                   <button type="button" onClick={(event) => { event.stopPropagation(); toggleMutation.mutate({ id: entry.id, paused: !entry.remindersPaused }); }}
