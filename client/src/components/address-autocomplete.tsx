@@ -34,6 +34,12 @@ export const AddressAutocomplete = forwardRef<HTMLInputElement, AddressAutocompl
     const sessionToken = useRef(crypto.randomUUID());
     const blurTimer = useRef<ReturnType<typeof setTimeout>>();
     const skipNextLookup = useRef(false);
+    const focused = useRef(false);
+    const dismissed = useRef(false);
+
+    useEffect(() => () => {
+      if (blurTimer.current) clearTimeout(blurTimer.current);
+    }, []);
 
     useEffect(() => {
       const query = value.trim();
@@ -61,6 +67,7 @@ export const AddressAutocomplete = forwardRef<HTMLInputElement, AddressAutocompl
             credentials: "include",
             signal: controller.signal,
           });
+          if (controller.signal.aborted) return;
           if (response.status === 429) {
             setLookupNotice("Address suggestions are paused briefly. You can keep entering the address manually.");
             setSuggestions([]);
@@ -69,12 +76,13 @@ export const AddressAutocomplete = forwardRef<HTMLInputElement, AddressAutocompl
           }
           if (!response.ok) throw new Error("Address lookup failed");
           const results = await response.json() as Suggestion[];
+          if (controller.signal.aborted) return;
           setLookupNotice("");
           setSuggestions(results);
-          setOpen(results.length > 0);
+          setOpen(focused.current && !dismissed.current && results.length > 0);
           setActiveIndex(-1);
         } catch (error) {
-          if ((error as Error).name !== "AbortError") {
+          if (!controller.signal.aborted && (error as Error).name !== "AbortError") {
             setSuggestions([]);
             setOpen(false);
           }
@@ -90,6 +98,7 @@ export const AddressAutocomplete = forwardRef<HTMLInputElement, AddressAutocompl
     }, [value]);
 
     const choose = async (suggestion: Suggestion) => {
+      dismissed.current = true;
       skipNextLookup.current = true;
       onChange(suggestion.label);
       setOpen(false);
@@ -129,19 +138,32 @@ export const AddressAutocomplete = forwardRef<HTMLInputElement, AddressAutocompl
           aria-controls="address-suggestion-list"
           aria-activedescendant={activeIndex >= 0 ? `address-suggestion-${activeIndex}` : undefined}
           onChange={(event) => {
+            dismissed.current = false;
             skipNextLookup.current = false;
             onChange(event.target.value);
           }}
           onFocus={(event) => {
+            focused.current = true;
+            dismissed.current = false;
             if (blurTimer.current) clearTimeout(blurTimer.current);
             if (suggestions.length) setOpen(true);
             onFocus?.(event);
           }}
           onBlur={(event) => {
+            focused.current = false;
             blurTimer.current = setTimeout(() => setOpen(false), 150);
             onBlur?.(event);
           }}
           onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              dismissed.current = true;
+              if (open) {
+                event.preventDefault();
+                event.stopPropagation();
+              }
+              setOpen(false);
+              return;
+            }
             if (!open || suggestions.length === 0) return;
             if (event.key === "ArrowDown") {
               event.preventDefault();
@@ -152,8 +174,6 @@ export const AddressAutocomplete = forwardRef<HTMLInputElement, AddressAutocompl
             } else if (event.key === "Enter" && activeIndex >= 0) {
               event.preventDefault();
               void choose(suggestions[activeIndex]);
-            } else if (event.key === "Escape") {
-              setOpen(false);
             }
           }}
         />

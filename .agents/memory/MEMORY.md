@@ -5,7 +5,7 @@
 - [Post-merge schema safety](post-merge-schema-safety.md) — Schema pushes must reject destructive truncation prompts rather than auto-approving data loss.
 - [Google Places server key](google-places-server-key.md) — Address autocomplete calls Places server-side; use API-only restrictions, not browser-referrer restrictions.
 - [Design handoff scope](design-handoff-scope.md) — Redesign in reviewable stages; worksheet is a Payroll tab; visuals must preserve real financial and provider behavior.
-- [UI test environment](ui-test-environment.md) — New component tests need an explicit jsdom directive; legacy environmentMatchGlobs is not applied by the installed runner.
+- [UI test environment](ui-test-environment.md) — Explicit jsdom, real mobile-width checks, safe shared-setting tests, and headless focus emulation.
 - [Async required selects](async-required-selects.md) — Required Radix selects can emit empty values while options load; protect preselected values and test failed-load recovery.
 - [Job calendar dates](job-calendar-dates.md) — Scheduling dates are calendar days; UTC-midnight serialization must not move a job to the previous local day.
 - [Concurrent provider tests](concurrent-provider-tests.md) — Match concurrent provider mocks by URL and method; ordered one-shot responses can create false contract failures.

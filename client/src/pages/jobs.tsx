@@ -328,7 +328,7 @@ export default function Jobs() {
             aria-label="Jobs table"
             data-testid="jobs-table"
           >
-            <div className="overflow-x-auto">
+            <div className="relative min-w-0 overflow-x-auto" data-testid="jobs-table-scroll">
               <div className={isError || (!isLoading && visibleJobs.length === 0) ? "min-w-0" : "min-w-[1000px]"}>
                 {!isError && (isLoading || visibleJobs.length > 0) && (
                 <div

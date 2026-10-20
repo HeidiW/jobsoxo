@@ -123,6 +123,9 @@ describe("Jobs list actions and filters", () => {
     renderJobs();
     await screen.findByTestId("row-job-job-quoted");
     const header = screen.getByTestId("jobs-table").querySelector(".grid")!;
+    // Contain absolutely positioned accessible labels inside the wide ledger,
+    // so they cannot expand the document's mobile layout viewport.
+    expect(screen.getByTestId("jobs-table-scroll")).toHaveClass("relative", "min-w-0", "overflow-x-auto");
     expect(Array.from(header.children).map((cell) => cell.textContent)).toEqual([
       "Document", "Job", "Dates", "Status", "Estimate", "Progress", "Actions",
     ]);

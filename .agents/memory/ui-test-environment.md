@@ -1,6 +1,6 @@
 ---
 name: UI test environment
-description: Explicit jsdom selection is needed for client component tests under the installed test runner.
+description: Client test setup, mobile overflow checks, safe Settings verification, and headless focus behavior.
 ---
 
 Start new React component test files with `// @vitest-environment jsdom`.
@@ -26,3 +26,9 @@ Use view/draft-only browser checks for company settings and payment-reminder con
 **Why:** A temporary user does not isolate company settings. Changing reminder enablement or sync schedules during a UI check can affect real users or trigger external automation.
 
 **How to apply:** Browser-test admin/member visibility, draft editing, validation, and layout without submitting shared settings or triggering provider actions. A temporary user's own profile can be saved and verified independently, then removed with the test account.
+
+Enable focus emulation for interactive headless CDP checks instead of assuming the browser window has focus.
+
+**Why:** In this environment, `element.focus()` can change `document.activeElement` while `document.hasFocus()` stays false and React's focus handler does not run. This falsely suggested that address suggestions were broken even with deterministic mocked responses.
+
+**How to apply:** Call `Emulation.setFocusEmulationEnabled({ enabled: true })` for the test session, verify `document.hasFocus()`, and blur/refocus an already-active input before checking focus-dependent UI.
