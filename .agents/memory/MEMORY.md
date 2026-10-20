@@ -10,3 +10,4 @@
 - [Job calendar dates](job-calendar-dates.md) — Scheduling dates are calendar days; UTC-midnight serialization must not move a job to the previous local day.
 - [Concurrent provider tests](concurrent-provider-tests.md) — Match concurrent provider mocks by URL and method; ordered one-shot responses can create false contract failures.
 - [Inbox snooze timing](inbox-snooze-timing.md) — “Tomorrow” uses the user's next local midnight, not server midnight; snooze expiry remains an actual instant.
+- [Publishing ports](publishing-ports.md) — Autoscale permits one public port; design-preview services must not add another external mapping.
