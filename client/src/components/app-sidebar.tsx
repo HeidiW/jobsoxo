@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
-import { isToday } from "date-fns";
+import { partitionEmailTasks } from "@/components/inbox/email-state";
 import type { InboxTask, ChangeOrder } from "@shared/schema";
 import { isRouteActive } from "@/lib/app-shell";
 
@@ -79,10 +79,8 @@ export function AppSidebar() {
     refetchInterval: 60_000,
   });
 
-  // Keep the pre-existing Gmail badge meaning: today's unfinished messages.
-  const inboxBadge = inboxTasks
-    ? inboxTasks.filter((task) => !task.isDone && isToday(new Date(task.receivedAt))).length
-    : 0;
+  // Match Inbox's To do count, including older mail and expired snoozes.
+  const inboxBadge = partitionEmailTasks(inboxTasks ?? [], []).todo.length;
   const changeOrderBadge = changeOrders?.filter((order) => order.status === "pending").length ?? 0;
 
   return (

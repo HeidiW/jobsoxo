@@ -9,3 +9,4 @@
 - [Async required selects](async-required-selects.md) — Required Radix selects can emit empty values while options load; protect preselected values and test failed-load recovery.
 - [Job calendar dates](job-calendar-dates.md) — Scheduling dates are calendar days; UTC-midnight serialization must not move a job to the previous local day.
 - [Concurrent provider tests](concurrent-provider-tests.md) — Match concurrent provider mocks by URL and method; ordered one-shot responses can create false contract failures.
+- [Inbox snooze timing](inbox-snooze-timing.md) — “Tomorrow” uses the user's next local midnight, not server midnight; snooze expiry remains an actual instant.

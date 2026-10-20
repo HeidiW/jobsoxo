@@ -43,7 +43,7 @@ const TYPE_CONFIG: Record<TaskType, { bg: string; fg: string; glyph: string }> =
   invoice:  { bg: "var(--b-red-bg)",    fg: "var(--b-red-fg)",    glyph: "$" },
   change:   { bg: "var(--b-amber-bg)",  fg: "var(--b-amber-fg)",  glyph: "±" },
   schedule: { bg: "var(--b-blue-bg)",   fg: "var(--b-blue-fg)",   glyph: "◷" },
-  client:   { bg: "var(--b-purple-bg)", fg: "var(--b-purple-fg)", glyph: "☺" },
+  client:   { bg: "var(--b-purple-bg)", fg: "var(--b-purple-fg)", glyph: "C" },
 };
 
 const FILTER_LABELS: { key: TaskType | "all"; label: string }[] = [
@@ -81,12 +81,14 @@ function HiddenTaskRow({
   onDelete,
   isSelected,
   onToggleSelect,
+  isPending = false,
 }: {
   task: InboxTask;
   onRestore: (emailId: string) => void;
   onDelete: (emailId: string) => void;
   isSelected?: boolean;
   onToggleSelect?: (emailId: string) => void;
+  isPending?: boolean;
 }) {
   const ago = formatDistanceToNow(new Date(task.receivedAt), { addSuffix: true });
   return (
@@ -112,13 +114,15 @@ function HiddenTaskRow({
         </p>
       </div>
       <button
+        disabled={isPending}
         onClick={() => onRestore(task.emailId)}
         className="shrink-0 text-xs font-semibold px-2.5 py-1 rounded-md border border-border bg-background hover:bg-muted transition-colors"
         data-testid={`button-restore-${task.emailId}`}
       >
-        Restore
+        {isPending ? "Working…" : "Restore"}
       </button>
       <button
+        disabled={isPending}
         onClick={() => onDelete(task.emailId)}
         className="shrink-0 p-1 rounded text-muted-foreground/50 hover:text-destructive transition-colors"
         title="Delete permanently"
@@ -135,6 +139,7 @@ export default function InboxTasks({ embedded = false }: { embedded?: boolean })
   const { toast } = useToast();
   const [filter, setFilter] = useState<TaskType | "all">("all");
   const [dismissed, setDismissed] = useState<Set<string>>(loadDismissed);
+  const [pendingHiddenIds, setPendingHiddenIds] = useState<Set<string>>(new Set());
   const [showHidden, setShowHidden] = useState(false);
   const [selectedDismissedIds, setSelectedDismissedIds] = useState<Set<string>>(new Set());
   const [showDeleteSelectedDialog, setShowDeleteSelectedDialog] = useState(false);
@@ -154,16 +159,17 @@ export default function InboxTasks({ embedded = false }: { embedded?: boolean })
   useEffect(() => { saveDismissed(dismissed); }, [dismissed]);
 
   // ── Data fetches ──────────────────────────────────────────────────────────
-  const { data: invoices = [], isLoading: invLoading }
+  const { data: invoices = [], isLoading: invLoading, isError: invError }
     = useQuery<InvoiceWithRelations[]>({ queryKey: ["/api/invoices"] });
-  const { data: changeOrders = [], isLoading: coLoading }
+  const { data: changeOrders = [], isLoading: coLoading, isError: coError }
     = useQuery<ChangeOrderWithRelations[]>({ queryKey: ["/api/change-orders"] });
-  const { data: jobs = [], isLoading: jobsLoading }
+  const { data: jobs = [], isLoading: jobsLoading, isError: jobsError }
     = useQuery<JobWithRelations[]>({ queryKey: ["/api/jobs"] });
-  const { data: clients = [], isLoading: clientsLoading }
+  const { data: clients = [], isLoading: clientsLoading, isError: clientsError }
     = useQuery<Client[]>({ queryKey: ["/api/clients"] });
 
   const isLoading = invLoading || coLoading || jobsLoading || clientsLoading;
+  const hasDataError = invError || coError || jobsError || clientsError;
 
   // Gmail connection status
   const { data: gmailStatus } = useQuery<{ connected: boolean; email: string | null }>({
@@ -368,25 +374,53 @@ export default function InboxTasks({ embedded = false }: { embedded?: boolean })
   }
 
   // ── Hidden email handlers ─────────────────────────────────────────────────
-  function handleRestore(emailId: string) {
+  async function handleRestore(emailId: string) {
+    if (pendingHiddenIds.has(emailId)) return;
+    setPendingHiddenIds(previous => new Set(previous).add(emailId));
+    const hiddenCache = queryClient.getQueryData<InboxTask[]>(["/api/inbox/tasks/hidden"]) ?? [];
+    const taskToRestore = hiddenCache.find(task => task.emailId === emailId);
     queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
       old.filter(t => t.emailId !== emailId)
     );
-    queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
-    apiRequest("PATCH", `/api/inbox/tasks/${emailId}/restore`).catch(() => {
+    if (taskToRestore) {
+      queryClient.setQueryData(["/api/inbox/tasks"], (old: InboxTask[] = []) => [
+        { ...taskToRestore, dismissed: false, snoozedUntil: null },
+        ...old.filter(task => task.emailId !== emailId),
+      ]);
+    }
+    try {
+      await apiRequest("PATCH", `/api/inbox/tasks/${emailId}/restore`);
+    } catch {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks"] });
       toast({ title: "Couldn't restore email", variant: "destructive" });
-    });
+    } finally {
+      setPendingHiddenIds(previous => {
+        const next = new Set(previous);
+        next.delete(emailId);
+        return next;
+      });
+    }
   }
 
-  function handleDelete(emailId: string) {
+  async function handleDelete(emailId: string) {
+    if (pendingHiddenIds.has(emailId)) return;
+    setPendingHiddenIds(previous => new Set(previous).add(emailId));
     queryClient.setQueryData(["/api/inbox/tasks/hidden"], (old: InboxTask[] = []) =>
       old.filter(t => t.emailId !== emailId)
     );
-    apiRequest("DELETE", `/api/inbox/tasks/${emailId}`).catch(() => {
+    try {
+      await apiRequest("DELETE", `/api/inbox/tasks/${emailId}`);
+    } catch {
       queryClient.invalidateQueries({ queryKey: ["/api/inbox/tasks/hidden"] });
       toast({ title: "Couldn't delete email", variant: "destructive" });
-    });
+    } finally {
+      setPendingHiddenIds(previous => {
+        const next = new Set(previous);
+        next.delete(emailId);
+        return next;
+      });
+    }
   }
 
   function handleToggleSelectDismissed(emailId: string) {
@@ -424,14 +458,14 @@ export default function InboxTasks({ embedded = false }: { embedded?: boolean })
   }
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "24px 26px 40px" }}>
+    <div className="jx-business-workspace" style={{ flex: 1, overflowY: "auto", padding: "24px 26px 40px" }}>
       <div style={{ maxWidth: "920px", margin: "0 auto" }}>
 
         {/* Embedded in InboxShell; keep the existing action without repeating its page title. */}
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "16px", marginBottom: "20px" }}>
           <div>
             {!embedded && <h2 style={{ margin: 0, fontSize: "26px", fontWeight: 700, letterSpacing: "-.02em" }}>Inbox Tasks</h2>}
-            <p style={{ margin: embedded ? 0 : "5px 0 0", fontSize: "13.5px", color: "var(--muted)" }}>
+            <p style={{ margin: embedded ? 0 : "5px 0 0", fontSize: "13.5px", color: "var(--jx-ink-2)" }}>
               {isLoading
                 ? "Loading…"
                 : activeTasks.length === 0
@@ -442,9 +476,9 @@ export default function InboxTasks({ embedded = false }: { embedded?: boolean })
           <button
             onClick={markAllDone}
             disabled={activeTasks.length === 0}
-            style={{ background: "var(--panel)", color: "var(--muted)", border: "1px solid var(--panel-bd)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: activeTasks.length === 0 ? "default" : "pointer", fontFamily: "inherit", opacity: activeTasks.length === 0 ? 0.4 : 1 }}
+            style={{ background: "var(--panel)", color: "var(--jx-ink-2)", border: "1px solid var(--panel-bd)", borderRadius: "999px", padding: "9px 16px", fontSize: "13px", fontWeight: 650, cursor: activeTasks.length === 0 ? "default" : "pointer", fontFamily: "inherit", opacity: activeTasks.length === 0 ? 0.4 : 1 }}
             data-testid="button-mark-all-done">
-            Mark all done
+            Dismiss all tasks
           </button>
         </div>
 
@@ -455,7 +489,7 @@ export default function InboxTasks({ embedded = false }: { embedded?: boolean })
             const count = counts[f.key] ?? 0;
             return (
               <button key={f.key} onClick={() => setFilter(f.key)}
-                style={{ display: "inline-flex", alignItems: "center", gap: "7px", cursor: "pointer", fontFamily: "inherit", fontSize: "13px", fontWeight: 600, padding: "7px 13px", borderRadius: "8px", border: "1px solid " + (active ? "transparent" : "var(--panel-bd)"), background: active ? "var(--jox-primary)" : "var(--panel)", color: active ? "#fff" : "var(--muted)" }}
+                style={{ display: "inline-flex", alignItems: "center", gap: "7px", cursor: "pointer", fontFamily: "inherit", fontSize: "13px", fontWeight: 600, padding: "7px 13px", borderRadius: "999px", border: "2px solid " + (active ? "var(--jox-primary)" : "var(--jx-ink-3)"), background: active ? "var(--jox-primary)" : "var(--panel)", color: active ? "#fff" : "var(--jx-ink-2)" }}
                 data-testid={`filter-${f.key}`}>
                 {f.label}
                 {count > 0 && (
@@ -470,6 +504,24 @@ export default function InboxTasks({ embedded = false }: { embedded?: boolean })
 
         {/* ── Task list ── */}
         <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
+          {hasDataError && !isLoading && (
+            <div className="jx-inbox-error" role="alert">
+              <span>Business follow-ups couldn’t be loaded. Nothing has been dismissed.</span>
+              <button
+                type="button"
+                onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/change-orders"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+                }}
+                data-testid="button-retry-business-inbox"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
           {isLoading && (
             <>
               {[1,2,3,4].map(i => (
@@ -485,18 +537,19 @@ export default function InboxTasks({ embedded = false }: { embedded?: boolean })
             </>
           )}
 
-          {!isLoading && filtered.length === 0 && filter !== "all" && (
-            <div style={{ padding: "48px 24px", textAlign: "center", color: "var(--faint)", fontSize: "13px" }}>
-              No {FILTER_LABELS.find(f => f.key === filter)?.label.toLowerCase()} tasks right now.
+          {!isLoading && !hasDataError && filtered.length === 0 && (
+            <div className="jx-business-empty" style={{ padding: "48px 24px", textAlign: "center", color: "var(--faint)", fontSize: "13px" }}>
+              <strong>{activeTasks.length === 0 ? "Nothing here" : "No tasks in this view"}</strong>
+              <span>{activeTasks.length === 0 ? "You're all caught up." : `No ${FILTER_LABELS.find(f => f.key === filter)?.label.toLowerCase()} tasks right now.`}</span>
             </div>
           )}
 
-          {!isLoading && filtered.map((task, i) => {
+          {!isLoading && !hasDataError && filtered.map((task, i) => {
             const cfg = TYPE_CONFIG[task.type];
             const isLast = i === filtered.length - 1;
             const isPendingReminder = sendReminderMutation.isPending && sendReminderMutation.variables === task.invoiceId;
             return (
-              <div key={task.id} className="rowhover"
+              <div key={task.id} className="rowhover jx-business-row"
                 style={{ display: "flex", alignItems: "center", gap: "14px", padding: "14px 18px", borderBottom: isLast ? "none" : "1px solid var(--panel-bd)" }}
                 data-testid={`task-row-${task.id}`}>
 
@@ -506,7 +559,7 @@ export default function InboxTasks({ embedded = false }: { embedded?: boolean })
                 </div>
 
                 {/* Content */}
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="jx-business-content" style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     {task.high && (
                       <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#d23b1f", flexShrink: 0 }} />
@@ -528,12 +581,13 @@ export default function InboxTasks({ embedded = false }: { embedded?: boolean })
 
                 {/* Action button */}
                 {task.href && !task.invoiceId ? (
-                  <Link href={task.href}>
-                    <button onClick={() => dismissTask(task.id)}
-                      style={{ flexShrink: 0, background: task.actionPrimary ? "var(--jox-primary)" : "var(--panel)", color: task.actionPrimary ? "#fff" : "var(--fg)", border: task.actionPrimary ? "none" : "1px solid var(--panel-bd)", borderRadius: "8px", padding: "7px 14px", fontSize: "12.5px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
-                      data-testid={`action-${task.id}`}>
-                      {task.actionLabel}
-                    </button>
+                  <Link
+                    href={task.href}
+                    onClick={() => dismissTask(task.id)}
+                    className={`jx-business-action ${task.actionPrimary ? "is-primary" : ""}`}
+                    data-testid={`action-${task.id}`}
+                  >
+                    {task.actionLabel}
                   </Link>
                 ) : (
                   <button
@@ -549,7 +603,8 @@ export default function InboxTasks({ embedded = false }: { embedded?: boolean })
                 <button onClick={() => dismissTask(task.id)}
                   title="Dismiss"
                   style={{ flexShrink: 0, border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "4px", display: "flex", alignItems: "center", borderRadius: "6px", opacity: 0.6, lineHeight: 1 }}
-                  data-testid={`dismiss-${task.id}`}>
+                    aria-label={`Dismiss ${task.title}`}
+                    data-testid={`dismiss-${task.id}`}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
               </div>
@@ -718,6 +773,7 @@ export default function InboxTasks({ embedded = false }: { embedded?: boolean })
                                     task={t}
                                     onRestore={handleRestore}
                                     onDelete={handleDelete}
+                                    isPending={pendingHiddenIds.has(t.emailId)}
                                   />
                                 ))}
                               </div>
@@ -763,6 +819,7 @@ export default function InboxTasks({ embedded = false }: { embedded?: boolean })
                                     onDelete={handleDelete}
                                     isSelected={selectedDismissedIds.has(t.emailId)}
                                     onToggleSelect={handleToggleSelectDismissed}
+                                    isPending={pendingHiddenIds.has(t.emailId)}
                                   />
                                 ))}
                               </div>
