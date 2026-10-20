@@ -51,7 +51,7 @@ import {
   X,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import type { Settings, Invite } from "@shared/schema";
 import { usePlaidLink, type PlaidAccountMeta } from "@/hooks/use-plaid-link";
@@ -63,6 +63,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import "@/components/settings/settings.css";
 
 const settingsFormSchema = z.object({
   companyName: z.string().optional(),
@@ -118,7 +119,7 @@ type PaymentOption = {
   clientName?: string | null;
 };
 
-function BusinessBankAccountCard() {
+function BusinessBankAccountCard({ canManage }: { canManage: boolean }) {
   const { toast } = useToast();
   const [localAccount, setLocalAccount] = useState<PlaidAccountMeta | null | undefined>(undefined);
   const [linkDialogTx, setLinkDialogTx] = useState<PlaidTxRow | null>(null);
@@ -244,7 +245,7 @@ function BusinessBankAccountCard() {
     : "Not yet synced";
 
   return (
-    <Card>
+    <Card className="settings-card">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Landmark className="h-5 w-5" />
@@ -280,11 +281,12 @@ function BusinessBankAccountCard() {
                 </div>
               </div>
               <Button
+                type="button"
                 variant="ghost"
                 size="sm"
                 className="text-destructive hover:text-destructive"
                 onClick={() => disconnectMutation.mutate(account.id)}
-                disabled={disconnectMutation.isPending}
+                disabled={!canManage || disconnectMutation.isPending}
                 data-testid="button-disconnect-bank"
               >
                 <Unlink className="h-4 w-4 mr-1.5" />
@@ -318,10 +320,11 @@ function BusinessBankAccountCard() {
                   <p className="text-xs text-muted-foreground mt-0.5">{lastSyncedLabel}</p>
                 </div>
                 <Button
+                  type="button"
                   size="sm"
                   variant="outline"
                   onClick={() => syncMutation.mutate()}
-                  disabled={syncMutation.isPending}
+                  disabled={!canManage || syncMutation.isPending}
                   data-testid="button-sync-transactions"
                 >
                   <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
@@ -360,7 +363,7 @@ function BusinessBankAccountCard() {
                             <button
                               type="button"
                               title="Click to unlink this match"
-                              disabled={isUnlinking}
+                              disabled={!canManage || isUnlinking}
                               onClick={() => unlinkMutation.mutate(tx.id)}
                               className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-700 hover:bg-red-100 hover:text-red-700 transition-colors disabled:opacity-50"
                               data-testid={`button-unlink-tx-${tx.id}`}
@@ -376,6 +379,7 @@ function BusinessBankAccountCard() {
                               size="sm"
                               variant="ghost"
                               className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                              disabled={!canManage}
                               onClick={() => { setLinkDialogTx(tx); setPaymentSearch(""); }}
                               data-testid={`button-link-tx-${tx.id}`}
                             >
@@ -436,7 +440,7 @@ function BusinessBankAccountCard() {
                             key={p.id}
                             type="button"
                             className="w-full text-left px-4 py-2.5 hover:bg-muted/50 transition-colors flex items-center justify-between gap-3"
-                            disabled={linkMutation.isPending}
+                            disabled={!canManage || linkMutation.isPending}
                             onClick={() => linkDialogTx && linkMutation.mutate({ txId: linkDialogTx.id, paymentId: p.id })}
                             data-testid={`payment-option-${p.id}`}
                           >
@@ -468,7 +472,7 @@ function BusinessBankAccountCard() {
               type="button"
               variant="outline"
               onClick={open}
-              disabled={linkLoading}
+              disabled={!canManage || linkLoading}
               data-testid="button-connect-bank"
             >
               <Landmark className="h-4 w-4 mr-2" />
@@ -529,7 +533,7 @@ function InvitePanel() {
   const used = invites.filter((i) => i.usedAt);
 
   return (
-    <Card>
+    <Card className="settings-card">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Users className="h-5 w-5" />
@@ -587,6 +591,7 @@ function InvitePanel() {
                     variant="ghost"
                     className="h-7 w-7"
                     onClick={() => copyCode(invite)}
+                    aria-label={`Copy invite code ${invite.code}`}
                     data-testid={`button-copy-invite-${invite.id}`}
                   >
                     {copiedId === invite.id ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
@@ -598,6 +603,7 @@ function InvitePanel() {
                     className="h-7 w-7 text-destructive hover:text-destructive"
                     onClick={() => deleteMutation.mutate(invite.id)}
                     disabled={deleteMutation.isPending}
+                    aria-label={`Revoke invite code ${invite.code}`}
                     data-testid={`button-revoke-invite-${invite.id}`}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -642,16 +648,18 @@ const DEFAULT_BODIES = [
   "{{clientName}},\n\nThis is our final notice regarding invoice {{invoiceNumber}} for {{balance}}, now {{daysOverdue}} days past due.\n\nImmediate payment is required to avoid further action.\n\n{{companyName}}",
 ];
 
-function CollectionsAgentCard({ settings }: { settings: Settings | undefined }) {
+function CollectionsAgentCard({ settings, canManage }: { settings: Settings | undefined; canManage: boolean }) {
   const { toast } = useToast();
   const [enabled, setEnabled] = useState<boolean>(true);
   const [intervals, setIntervals] = useState<number[]>([7, 14, 30]);
   const [tones, setTones] = useState<{ stage: number; label: string; subject: string; body: string }[]>([]);
   const [expandedStage, setExpandedStage] = useState<number | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    if (!settings || initialized) return;
+    if (!settings || initializedRef.current) return;
+    initializedRef.current = true;
     setInitialized(true);
     setEnabled((settings as any).collectionsEnabled !== false);
     const savedIntervals = (settings?.reminderIntervals as number[] | null) || [7, 14, 30];
@@ -668,7 +676,7 @@ function CollectionsAgentCard({ settings }: { settings: Settings | undefined }) 
         };
       })
     );
-  }, [settings, initialized]);
+  }, [settings]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -693,7 +701,7 @@ function CollectionsAgentCard({ settings }: { settings: Settings | undefined }) 
   };
 
   return (
-    <Card>
+    <Card className="settings-card settings-collections">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Bell className="h-5 w-5" />
@@ -705,29 +713,61 @@ function CollectionsAgentCard({ settings }: { settings: Settings | undefined }) 
       </CardHeader>
       <CardContent className="space-y-5">
         {/* Global toggle */}
-        <div className="flex items-center justify-between p-3 rounded-md border">
-          <div>
-            <p className="font-medium text-sm">Agent enabled</p>
-            <p className="text-xs text-muted-foreground">When off, no automated reminders are sent</p>
+        {initialized ? (
+          <div className="flex items-center justify-between p-3 rounded-md border">
+            <div>
+              <p className="font-medium text-sm">Agent enabled</p>
+              <p className="text-xs text-muted-foreground">When off, no automated reminders are sent</p>
+            </div>
+            <Switch
+              checked={enabled}
+              onCheckedChange={setEnabled}
+              disabled={!canManage || !settings}
+              aria-label="Enable automated payment reminders"
+              data-testid="switch-collections-enabled"
+            />
           </div>
-          <Switch
-            checked={enabled}
-            onCheckedChange={setEnabled}
-            data-testid="switch-collections-enabled"
-          />
-        </div>
+        ) : <div className="h-14 rounded-xl bg-muted animate-pulse" aria-label="Loading reminder settings" />}
 
         {/* Reminder intervals */}
         <div className="space-y-2">
-          <p className="text-sm font-medium">Reminder intervals (days past due)</p>
-          <div className="grid grid-cols-3 gap-3">
-            {intervals.map((val, idx) => (
-              <div key={idx}>
-                <label className="text-xs text-muted-foreground mb-1 block">Stage {idx + 1}</label>
+          <p className="text-sm font-semibold">Payment reminders</p>
+          <p className="text-xs text-muted-foreground">Choose the days past due for each reminder stage.</p>
+          <div className="settings-reminder-chips" aria-label="Configured reminder stages">
+            {!initialized && <div className="h-10 w-48 rounded-full bg-muted animate-pulse" aria-label="Loading configured reminders" />}
+            {initialized && intervals.map((days, index) => {
+              const tone = tones[index];
+              const stage = tone?.stage ?? index + 1;
+              const templateId = `reminder-template-${stage}`;
+              return (
+                <button
+                  type="button"
+                  key={`${index}-${stage}`}
+                  className="settings-reminder-chip"
+                  disabled={!canManage || !settings}
+                  onClick={() => setExpandedStage(expandedStage === stage ? null : stage)}
+                  aria-expanded={expandedStage === stage}
+                  aria-controls={templateId}
+                  aria-label={`Edit reminder after ${days} days${tone?.label ? `, ${tone.label}` : ""}`}
+                  data-testid={`reminder-chip-${index + 1}`}
+                >
+                  <span className="settings-chip-days">{days} days</span>
+                  <span>{tone?.label || `Stage ${index + 1}`}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground">Choose a reminder to edit its timing and message.</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {initialized ? intervals.map((val, idx) => (
+              <div key={idx} className="settings-field">
+                <label htmlFor={`reminder-interval-${idx + 1}`} className="text-xs text-muted-foreground mb-1 block">{tones[idx]?.label || `Stage ${idx + 1}`}</label>
                 <Input
+                  id={`reminder-interval-${idx + 1}`}
                   type="number"
                   min={1}
                   value={val}
+                  disabled={!canManage || !settings}
                   onChange={(e) => {
                     const n = parseInt(e.target.value);
                     setIntervals((prev) => {
@@ -739,7 +779,7 @@ function CollectionsAgentCard({ settings }: { settings: Settings | undefined }) 
                   data-testid={`input-reminder-interval-${idx + 1}`}
                 />
               </div>
-            ))}
+            )) : [1, 2, 3].map((i) => <div key={i} className="h-16 rounded-xl bg-muted animate-pulse" />)}
           </div>
           <p className="text-xs text-muted-foreground">
             Available merge fields: <code className="rounded bg-muted px-1 text-xs">{"{{clientName}}"}</code>{" "}
@@ -757,51 +797,60 @@ function CollectionsAgentCard({ settings }: { settings: Settings | undefined }) 
         {/* Per-stage message templates */}
         <div className="space-y-2">
           <p className="text-sm font-medium">Message templates per stage</p>
-          {tones.map((tone, idx) => (
+          {initialized ? tones.map((tone) => (
             <div key={tone.stage} className="border rounded-md overflow-hidden">
               <button
                 type="button"
                 className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium hover:bg-muted/50 transition-colors"
                 onClick={() => setExpandedStage(expandedStage === tone.stage ? null : tone.stage)}
+                disabled={!canManage || !settings}
+                aria-expanded={expandedStage === tone.stage}
+                aria-controls={`reminder-template-${tone.stage}`}
                 data-testid={`button-expand-tone-${tone.stage}`}
               >
-                <span>Stage {tone.stage} — {STAGE_LABELS[idx]}</span>
+                <span>{tone.label || `Stage ${tone.stage}`}</span>
                 {expandedStage === tone.stage ? (
                   <ChevronUp className="h-4 w-4 text-muted-foreground" />
                 ) : (
                   <ChevronDown className="h-4 w-4 text-muted-foreground" />
                 )}
               </button>
-              {expandedStage === tone.stage && (
-                <div className="px-3 pb-3 space-y-2 border-t">
-                  <div className="mt-2">
-                    <label className="text-xs text-muted-foreground mb-1 block">Email subject</label>
-                    <Input
-                      value={tone.subject}
-                      onChange={(e) => updateTone(tone.stage, "subject", e.target.value)}
-                      data-testid={`input-tone-subject-${tone.stage}`}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Email body / SMS text</label>
-                    <Textarea
-                      value={tone.body}
-                      onChange={(e) => updateTone(tone.stage, "body", e.target.value)}
-                      className="min-h-28 font-mono text-xs"
-                      data-testid={`textarea-tone-body-${tone.stage}`}
-                    />
-                  </div>
+              <div
+                id={`reminder-template-${tone.stage}`}
+                hidden={expandedStage !== tone.stage}
+                className="px-3 pb-3 space-y-2 border-t"
+              >
+                <div className="settings-field mt-2">
+                  <label htmlFor={`tone-subject-${tone.stage}`} className="text-xs text-muted-foreground mb-1 block">Email subject</label>
+                  <Input
+                    id={`tone-subject-${tone.stage}`}
+                    value={tone.subject}
+                    disabled={!canManage || !settings}
+                    onChange={(e) => updateTone(tone.stage, "subject", e.target.value)}
+                    data-testid={`input-tone-subject-${tone.stage}`}
+                  />
                 </div>
-              )}
+                <div className="settings-field">
+                  <label htmlFor={`tone-body-${tone.stage}`} className="text-xs text-muted-foreground mb-1 block">Email body / SMS text</label>
+                  <Textarea
+                    id={`tone-body-${tone.stage}`}
+                    value={tone.body}
+                    disabled={!canManage || !settings}
+                    onChange={(e) => updateTone(tone.stage, "body", e.target.value)}
+                    className="min-h-28 font-mono text-xs"
+                    data-testid={`textarea-tone-body-${tone.stage}`}
+                  />
+                </div>
+              </div>
             </div>
-          ))}
+          )) : <div className="h-12 rounded-xl bg-muted animate-pulse" aria-label="Loading reminder templates" />}
         </div>
 
         <div className="flex justify-end">
           <Button
             type="button"
-            onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending}
+            onClick={() => { if (canManage && settings) saveMutation.mutate(); }}
+            disabled={!canManage || !settings || !initialized || saveMutation.isPending}
             data-testid="button-save-collections-settings"
           >
             <Save className="h-4 w-4 mr-2" />
@@ -843,7 +892,7 @@ export default function SettingsPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const { data: settings, isLoading } = useQuery<Settings & { nextInboxSync?: string; lastInboxSync?: string | null }>({
+  const { data: settings, isLoading, isError, refetch } = useQuery<Settings & { nextInboxSync?: string; lastInboxSync?: string | null }>({
     queryKey: ["/api/settings"],
   });
 
@@ -947,15 +996,18 @@ export default function SettingsPage() {
     return computeNextSyncTime(hour, now);
   })();
 
+  const canManageSettings = !!user?.isAdmin;
+
   const onSubmit = (data: SettingsFormValues) => {
+    if (!canManageSettings || isError) return;
     updateSettingsMutation.mutate(data);
   };
 
   if (isLoading) {
     return (
-      <div className="p-6 max-w-3xl mx-auto">
+      <div className="settings-page">
         <div className="mb-6">
-          <h1 className="text-3xl font-semibold">Settings</h1>
+          <h1 className="settings-heading">Settings</h1>
           <p className="text-muted-foreground mt-1">Manage your company information and preferences</p>
         </div>
         <SettingsSkeleton />
@@ -964,49 +1016,23 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <div className="settings-page">
       <div className="mb-6">
-        <h1 className="text-3xl font-semibold">Settings</h1>
+        <h1 className="settings-heading">Settings</h1>
         <p className="text-muted-foreground mt-1">Manage your company information and preferences</p>
       </div>
 
-      {/* Profile card */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="h-5 w-5" />
-            Your Profile
-          </CardTitle>
-          <CardDescription>How you'd like to be greeted on the dashboard</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-end gap-3 max-w-sm">
-            <div className="flex-1 space-y-1.5">
-              <label className="text-sm font-medium">Your name</label>
-              <Input
-                placeholder="e.g. Sarah"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); updateDisplayNameMutation.mutate(displayName); } }}
-              />
-              <p className="text-xs text-muted-foreground">Shown in "Good morning, …" on the dashboard</p>
-            </div>
-            <Button
-              type="button"
-              onClick={() => updateDisplayNameMutation.mutate(displayName)}
-              disabled={updateDisplayNameMutation.isPending}
-              variant={displayNameSaved ? "outline" : "default"}
-              className="shrink-0"
-            >
-              {displayNameSaved ? <><Check className="h-4 w-4 mr-1" />Saved</> : <><Save className="h-4 w-4 mr-1" />Save</>}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {isError && (
+        <div className="flex items-center justify-between gap-4 rounded-2xl border border-destructive/30 bg-destructive/5 p-4" role="alert">
+          <p className="text-sm">Settings could not be loaded. Check your connection and try again.</p>
+          <Button type="button" variant="outline" onClick={() => refetch()}>Retry</Button>
+        </div>
+      )}
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          <Card>
+        <form id="settings-company-form" onSubmit={form.handleSubmit(onSubmit)} className="settings-main-form">
+          <fieldset disabled={!canManageSettings} className="settings-form-fields space-y-6">
+          <Card className="settings-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Building2 className="h-5 w-5" />
@@ -1016,12 +1042,12 @@ export default function SettingsPage() {
                 This information will appear on your invoices
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
               <FormField
                 control={form.control}
                 name="companyName"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="settings-field">
                     <FormLabel>Company Name</FormLabel>
                     <FormControl>
                       <Input placeholder="Your Painting Company" {...field} data-testid="input-company-name" />
@@ -1030,19 +1056,18 @@ export default function SettingsPage() {
                   </FormItem>
                 )}
               />
-              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
                   name="companyEmail"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="settings-field">
                       <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                        <FormControl>
                           <Input type="email" placeholder="info@company.com" className="pl-9" {...field} data-testid="input-company-email" />
-                        </div>
-                      </FormControl>
+                        </FormControl>
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -1051,24 +1076,23 @@ export default function SettingsPage() {
                   control={form.control}
                   name="companyPhone"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="settings-field">
                       <FormLabel>Phone</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                        <FormControl>
                           <Input placeholder="(555) 123-4567" className="pl-9" {...field} onChange={e => field.onChange(formatPhone(e.target.value))} data-testid="input-company-phone" />
-                        </div>
-                      </FormControl>
+                        </FormControl>
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-              </div>
               <FormField
                 control={form.control}
                 name="companyAddress"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="settings-field">
                     <FormLabel>Address</FormLabel>
                     <FormControl>
                       <AddressAutocomplete
@@ -1087,8 +1111,14 @@ export default function SettingsPage() {
               />
             </CardContent>
           </Card>
+          </fieldset>
+        </form>
 
-          <Card>
+        {settings && <CollectionsAgentCard settings={settings} canManage={canManageSettings} />}
+
+        <fieldset disabled={!canManageSettings} className="settings-form-fields space-y-6">
+
+          <Card className="settings-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Receipt className="h-5 w-5" />
@@ -1104,10 +1134,10 @@ export default function SettingsPage() {
                   control={form.control}
                   name="invoicePrefix"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="settings-field">
                       <FormLabel>Invoice Number Prefix</FormLabel>
                       <FormControl>
-                        <Input placeholder="INV" {...field} data-testid="input-invoice-prefix" />
+                        <Input placeholder="INV" {...field} form="settings-company-form" data-testid="input-invoice-prefix" />
                       </FormControl>
                       <FormDescription>
                         Prefix for invoice numbers (e.g., INV-001)
@@ -1120,10 +1150,10 @@ export default function SettingsPage() {
                   control={form.control}
                   name="taxRate"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="settings-field">
                       <FormLabel>Default Tax Rate (%)</FormLabel>
                       <FormControl>
-                        <Input type="number" step="0.01" placeholder="0" {...field} data-testid="input-tax-rate" />
+                        <Input type="number" step="0.01" placeholder="0" {...field} form="settings-company-form" data-testid="input-tax-rate" />
                       </FormControl>
                       <FormDescription>
                         Applied to new invoices by default
@@ -1137,13 +1167,14 @@ export default function SettingsPage() {
                 control={form.control}
                 name="invoiceTerms"
                 render={({ field }) => (
-                  <FormItem>
+                  <FormItem className="settings-field">
                     <FormLabel>Default Terms & Conditions</FormLabel>
                     <FormControl>
                       <Textarea
                         placeholder="Payment is due within 30 days. Late payments may incur additional fees."
                         className="min-h-24"
                         {...field}
+                        form="settings-company-form"
                         data-testid="input-invoice-terms"
                       />
                     </FormControl>
@@ -1157,12 +1188,8 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          <BusinessBankAccountCard />
-
-          <CollectionsAgentCard settings={settings} />
-
           {user?.isAdmin && (
-            <Card>
+            <Card className="settings-card">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Clock className="h-5 w-5" />
@@ -1177,7 +1204,7 @@ export default function SettingsPage() {
                   control={form.control}
                   name="inboxSyncHour"
                   render={({ field }) => (
-                    <FormItem className="max-w-xs">
+                    <FormItem className="settings-field max-w-xs">
                       <FormLabel>Inbox sync hour (0–23)</FormLabel>
                       <FormControl>
                         <Input
@@ -1201,6 +1228,7 @@ export default function SettingsPage() {
                             form.trigger("inboxSyncHour");
                           }}
                           data-testid="input-inbox-sync-hour"
+                          form="settings-company-form"
                         />
                       </FormControl>
                       <FormDescription>
@@ -1268,16 +1296,58 @@ export default function SettingsPage() {
           )}
 
           <div className="flex justify-end">
-            <Button type="submit" disabled={updateSettingsMutation.isPending} data-testid="button-save-settings">
+            <Button
+              type="submit"
+              form="settings-company-form"
+              disabled={!canManageSettings || updateSettingsMutation.isPending || isError}
+              className="settings-primary"
+              data-testid="button-save-settings"
+            >
               <Save className="h-4 w-4 mr-2" />
               {updateSettingsMutation.isPending ? "Saving..." : "Save Settings"}
             </Button>
           </div>
-        </form>
+          </fieldset>
       </Form>
 
+      <Card className="settings-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5" />
+            Your Profile
+          </CardTitle>
+          <CardDescription>How you'd like to be greeted on the dashboard</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-end gap-3 max-w-sm">
+            <div className="flex-1 space-y-1.5">
+              <label htmlFor="settings-display-name" className="text-sm font-medium">Your name</label>
+              <Input
+                id="settings-display-name"
+                placeholder="e.g. Sarah"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); updateDisplayNameMutation.mutate(displayName); } }}
+              />
+              <p className="text-xs text-muted-foreground">Shown in "Good morning, …" on the dashboard</p>
+            </div>
+            <Button
+              type="button"
+              onClick={() => updateDisplayNameMutation.mutate(displayName)}
+              disabled={updateDisplayNameMutation.isPending}
+              variant={displayNameSaved ? "outline" : "default"}
+              className={`shrink-0 ${displayNameSaved ? "" : "settings-primary"}`}
+            >
+              {displayNameSaved ? <><Check className="h-4 w-4 mr-1" />Saved</> : <><Save className="h-4 w-4 mr-1" />Save</>}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <BusinessBankAccountCard canManage={canManageSettings} />
+
       {/* SMS Time Logging — shown to all users so they can share the number */}
-      <Card>
+      <Card className="settings-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5" />
@@ -1303,6 +1373,7 @@ export default function SettingsPage() {
                   size="icon"
                   onClick={copyPhone}
                   title="Copy number"
+                  aria-label="Copy SMS phone number"
                   data-testid="button-copy-sms-phone"
                 >
                   {copiedPhone ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}

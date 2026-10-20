@@ -1,0 +1,125 @@
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 2.25rem clamp(1rem, 4vw, 2.75rem) 3.5rem;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.settings-main-form { min-width: 0; }
+
+.settings-heading {
+  margin: 0 0 .25rem;
+  color: hsl(var(--foreground));
+  font-family: var(--font-display);
+  font-size: clamp(2.8rem, 6vw, 4rem);
+  font-weight: 800;
+  line-height: .98;
+  letter-spacing: -.055em;
+}
+
+.settings-page .settings-card {
+  /* Address suggestions must be able to extend beyond the rounded card. */
+  overflow: visible;
+  border: 0;
+  border-radius: 1.5rem;
+  background: hsl(var(--muted) / .46);
+  box-shadow: none;
+}
+
+.settings-page .settings-card > div:first-child {
+  padding: 1.65rem 1.75rem .75rem;
+}
+
+.settings-page .settings-card > div:last-child {
+  padding: .8rem 1.75rem 1.75rem;
+}
+
+.settings-page .settings-primary {
+  min-height: 2.8rem;
+  border: 0;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  padding-inline: 1.35rem;
+  font-weight: 700;
+}
+
+.settings-page .settings-primary:hover {
+  background: hsl(var(--primary) / .88);
+}
+
+.settings-page .settings-field input,
+.settings-page .settings-field textarea,
+.settings-page .settings-field [role="combobox"] {
+  min-height: 3.25rem;
+  border: 1.5px solid hsl(var(--border));
+  border-radius: .9rem;
+  background: hsl(var(--background));
+  padding-inline: 1rem;
+}
+
+.settings-page .settings-field input:focus-visible,
+.settings-page .settings-field textarea:focus-visible,
+.settings-page .settings-field [role="combobox"]:focus-visible {
+  border-color: hsl(var(--primary));
+  outline: 2px solid hsl(var(--primary) / .18);
+  outline-offset: 1px;
+}
+
+.settings-page .settings-field input.pl-9 { padding-left: 2.25rem; }
+.settings-page .settings-field textarea { padding-block: .8rem; }
+.settings-page .settings-field label { font-weight: 650; }
+.settings-page .settings-form-fields { min-width: 0; margin: 0; border: 0; padding: 0; }
+
+.settings-collections .settings-reminder-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .65rem;
+}
+
+.settings-reminder-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .55rem;
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  background: hsl(var(--background));
+  padding: .65rem .9rem;
+  color: hsl(var(--foreground));
+  font-size: .875rem;
+  font-weight: 650;
+  transition: transform .16s ease, opacity .16s ease;
+}
+
+.settings-reminder-chip:hover {
+  border-color: hsl(var(--primary));
+  background: hsl(var(--primary) / .08);
+  transform: translateY(-1px);
+}
+
+.settings-reminder-chip:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+.settings-reminder-chip .settings-chip-days {
+  border-radius: 999px;
+  background: hsl(var(--primary) / .12);
+  padding: .16rem .45rem;
+  color: hsl(var(--primary));
+  font-family: var(--font-mono, monospace);
+  font-size: .75rem;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .settings-page { padding-top: 1.5rem; }
+  .settings-page .settings-card > div:first-child { padding: 1.25rem 1.15rem .55rem; }
+  .settings-page .settings-card > div:last-child { padding: .65rem 1.15rem 1.25rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-reminder-chip { transition: none; }
+}

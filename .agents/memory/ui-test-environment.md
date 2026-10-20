@@ -20,3 +20,9 @@ Do not treat a fitting body or table wrapper as proof that a wide ledger is cont
 **Why:** Chromium allowed wide table descendants to enlarge the document root even though the body and scroll wrapper fit the phone. Establishing a local positioning context contained that overflow without hiding content.
 
 **How to apply:** Keep horizontal scrolling local to the ledger, verify it actually scrolls, and check root width after resizing and opening dialogs. Do not mask the problem with global overflow suppression.
+
+Use view/draft-only browser checks for company settings and payment-reminder configuration. Exercise their save/failure flows with mocked requests in component tests, not writes to the running application's shared configuration.
+
+**Why:** A temporary user does not isolate company settings. Changing reminder enablement or sync schedules during a UI check can affect real users or trigger external automation.
+
+**How to apply:** Browser-test admin/member visibility, draft editing, validation, and layout without submitting shared settings or triggering provider actions. A temporary user's own profile can be saved and verified independently, then removed with the test account.
