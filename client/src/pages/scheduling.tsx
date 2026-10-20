@@ -1,366 +1,242 @@
-import { useState, useMemo } from "react";
+import { useMemo, useState, type AnchorHTMLAttributes, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { useToast } from "@/hooks/use-toast";
+import { addMonths, addWeeks, differenceInCalendarDays, format, isToday, startOfWeek, subMonths, subWeeks } from "date-fns";
 import {
-  ChevronLeft, ChevronRight, Plus,
+  AlertCircle, ArrowUpRight, CalendarDays, ChevronLeft, ChevronRight, Clock3,
+  RotateCw, Users,
 } from "lucide-react";
+import { ScheduleJobDialog } from "@/components/scheduling/schedule-job-dialog";
+import { Button } from "@/components/ui/button";
 import {
-  format, startOfWeek, endOfWeek, eachDayOfInterval,
-  startOfMonth, endOfMonth, isSameMonth, isToday,
-  addDays, addMonths, subMonths, addWeeks, subWeeks,
-} from "date-fns";
-import type { Job, Client, Employee } from "@shared/schema";
+  filterScheduleJobs, formatScheduleDate, getBarPosition, getFortnightDays, getMonthDays,
+  getStableJobColorIndex, getWeekendOnlyJobs, isSameCalendarMonth, parseScheduleDate,
+  type ScheduleJob,
+} from "./scheduling-logic";
 
-interface JobWithRelations extends Job { client?: Client; assignedEmployees?: Employee[]; }
-
-// ── Block colour palette (cycles by stable job order) ─────────────────────────
-const BLOCK = [
-  { bg: "var(--bl-bg)", fg: "var(--bl-fg)", bd: "var(--bl-bd)" },
-  { bg: "var(--gr-bg)", fg: "var(--gr-fg)", bd: "var(--gr-bd)" },
-  { bg: "var(--pu-bg)", fg: "var(--pu-fg)", bd: "var(--pu-bd)" },
-  { bg: "var(--am-bg)", fg: "var(--am-fg)", bd: "var(--am-bd)" },
+const COLORS = [
+  { bg: "var(--jx-green-tint)", ink: "var(--jx-green-ink)", edge: "var(--jx-green)" },
+  { bg: "var(--jx-blue-tint)", ink: "var(--jx-blue-ink)", edge: "var(--jx-blue)" },
+  { bg: "var(--jx-gold-tint)", ink: "var(--jx-gold-ink)", edge: "var(--jx-gold)" },
+  { bg: "var(--pu-bg)", ink: "var(--pu-fg)", edge: "var(--pu-bd)" },
+  { bg: "var(--jx-orange-tint)", ink: "var(--jx-orange-ink)", edge: "var(--jx-orange)" },
+  { bg: "var(--jx-surface)", ink: "var(--jx-ink-2)", edge: "var(--jx-line)" },
 ];
-const AV_BG = ["--av1","--av2","--av3","--av4","--av5","--av6"];
-const AV_FG = ["--av1f","--av2f","--av3f","--av4f","--av5f","--av6f"];
 
-function initials(name: string) {
-  return name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
+function dateISO(date: Date) {
+  return format(date, "yyyy-MM-dd");
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
-function weekDays(anchor: Date): Date[] {
-  const mon = startOfWeek(anchor, { weekStartsOn: 1 });
-  return Array.from({ length: 6 }, (_, i) => addDays(mon, i)); // Mon–Sat
+function JobLink({ job, children, ...props }: { job: ScheduleJob } & AnchorHTMLAttributes<HTMLAnchorElement>) {
+  return <Link href={`/jobs/${job.id}`} {...props}>{children as ReactNode}</Link>;
 }
 
-function jobsForDay(jobs: JobWithRelations[], day: Date): { job: JobWithRelations; idx: number }[] {
-  const d = day.getTime();
-  return jobs.reduce<{ job: JobWithRelations; idx: number }[]>((acc, job, idx) => {
-    if (!job.startDate) return acc;
-    const s = new Date(job.startDate);
-    s.setHours(0, 0, 0, 0);
-    const e = job.endDate ? new Date(job.endDate) : new Date(s);
-    e.setHours(23, 59, 59, 0);
-    if (d >= s.getTime() && d <= e.getTime()) acc.push({ job, idx });
-    return acc;
-  }, []);
+function stableIndex(job: ScheduleJob) {
+  return getStableJobColorIndex(job.id);
 }
 
-// ── Crew overlap row ──────────────────────────────────────────────────────────
-function CrewPips({ employees, max = 4 }: { employees: Employee[]; max?: number }) {
-  const shown = employees.slice(0, max);
-  const extra = employees.length - shown.length;
-  return (
-    <div style={{ display: "flex", alignItems: "center" }}>
-      {shown.map((emp, i) => (
-        <div key={emp.id} style={{
-          width: "20px", height: "20px", borderRadius: "50%",
-          background: `var(${AV_BG[i % 6]})`, color: `var(${AV_FG[i % 6]})`,
-          border: "2px solid var(--panel)", marginLeft: i === 0 ? 0 : "-6px",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: "9px", fontWeight: 700, flexShrink: 0, zIndex: i,
-        }}>
-          {initials(emp.name)}
-        </div>
-      ))}
-      {extra > 0 && (
-        <div style={{
-          width: "20px", height: "20px", borderRadius: "50%",
-          background: "var(--track)", color: "var(--faint)",
-          border: "2px solid var(--panel)", marginLeft: "-6px",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: "9px", fontWeight: 700, flexShrink: 0, zIndex: shown.length,
-        }}>+{extra}</div>
-      )}
-    </div>
-  );
-}
-
-// ── Job block card ────────────────────────────────────────────────────────────
-function JobBlock({ job, colorIdx, employees }: { job: JobWithRelations; colorIdx: number; employees: Employee[] }) {
-  const col = BLOCK[colorIdx % 4];
-  return (
-    <Link href="/jobs">
-      <div data-testid={`job-block-${job.id}`} style={{
-        display: "block", textDecoration: "none",
-        border: `1px solid ${col.bd}`, background: col.bg,
-        borderRadius: "9px", padding: "9px 10px",
-        transition: "all .15s", cursor: "pointer",
-      }}
-        className="card">
-        <div style={{ fontSize: "12px", fontWeight: 700, color: col.fg, lineHeight: 1.25 }}>
-          {job.title}
-        </div>
-        <div style={{ fontSize: "11px", color: "var(--muted)", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {job.client?.name ?? "—"}
-        </div>
-        {employees.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "8px" }}>
-            <CrewPips employees={employees} />
-          </div>
-        )}
-      </div>
-    </Link>
-  );
-}
-
-// ── Month cell jobs ───────────────────────────────────────────────────────────
-function MonthJobPip({ job, colorIdx }: { job: JobWithRelations; colorIdx: number }) {
-  const col = BLOCK[colorIdx % 4];
-  return (
-    <Link href="/jobs">
-      <div style={{ fontSize: "10.5px", fontWeight: 600, color: col.fg, background: col.bg, border: `1px solid ${col.bd}`, borderRadius: "5px", padding: "1px 6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }} data-testid={`month-job-${job.id}`}>
-        {job.title}
-      </div>
-    </Link>
-  );
-}
-
-// ── Main page ─────────────────────────────────────────────────────────────────
 export default function Scheduling() {
-  const [anchor, setAnchor] = useState(new Date());
+  const [anchor, setAnchor] = useState(() => new Date());
   const [view, setView] = useState<"week" | "month">("week");
-  const { toast } = useToast();
+  const [selectedJob, setSelectedJob] = useState<ScheduleJob | null>(null);
+  const [chooserOpen, setChooserOpen] = useState(false);
+  const { data: jobs, isLoading, isError, isFetching, refetch } = useQuery<ScheduleJob[]>({ queryKey: ["/api/jobs"] });
 
-  const { data: jobs, isLoading: jobsLoading } = useQuery<JobWithRelations[]>({ queryKey: ["/api/jobs"] });
-  const { data: employees } = useQuery<Employee[]>({ queryKey: ["/api/employees"] });
-
-  const activeEmployees = useMemo(() => (employees ?? []).filter(e => e.status === "active"), [employees]);
-
-  // Scheduled jobs = have a startDate and not just "quoted"
-  const scheduledJobs = useMemo(() =>
-    (jobs ?? []).filter(j => j.startDate && j.status !== "quoted" && j.status !== "completed"),
-    [jobs]);
-
-  // Backlog = no startDate OR status="quoted"
-  const backlogJobs = useMemo(() =>
-    (jobs ?? []).filter(j => !j.startDate || j.status === "quoted"),
-    [jobs]);
-
-  // Stable color index by position in full jobs list
-  const colorMap = useMemo(() => {
-    const m = new Map<string, number>();
-    (jobs ?? []).forEach((j, i) => m.set(j.id, i));
-    return m;
-  }, [jobs]);
-
-  // ── Week view ────────────────────────────────────────────────────────────────
-  const days = useMemo(() => weekDays(anchor), [anchor]);
-  const weekStart = days[0];
-  const weekEnd = days[days.length - 1];
-
-  const isCurrentWeek = useMemo(() => {
-    const todayMon = startOfWeek(new Date(), { weekStartsOn: 1 });
-    return weekStart.getTime() === todayMon.getTime();
-  }, [weekStart]);
-
-  const crewsDeployed = useMemo(() => {
-    const seen = new Set<string>();
-    days.forEach(d => {
-      jobsForDay(scheduledJobs, d).forEach(({ job }) => {
-        (job.assignedEmployees ?? []).forEach(e => seen.add(e.id));
-      });
+  const safeJobs = jobs ?? [];
+  const { active: scheduledJobs, backlog: backlogJobs } = useMemo(() => filterScheduleJobs(safeJobs), [safeJobs]);
+  const days = useMemo(() => getFortnightDays(anchor), [anchor]);
+  const weekdayDays = useMemo(() => days.filter((day) => day.getDay() !== 0 && day.getDay() !== 6), [days]);
+  const monthDays = useMemo(() => getMonthDays(anchor), [anchor]);
+  const thisWeek = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const currentWindow = startOfWeek(anchor, { weekStartsOn: 1 }).getTime() === thisWeek.getTime();
+  const periodLabel = view === "week"
+    ? currentWindow ? "This week" : `${format(days[0], "MMM d")} – ${format(days[13], "MMM d, yyyy")}`
+    : format(anchor, "MMM yyyy");
+  const deployed = useMemo(() => {
+    const ids = new Set<string>();
+    scheduledJobs.forEach((job) => {
+      const range = getBarPosition(job, days[0], 14);
+      if (range) job.assignedEmployees?.forEach((person) => ids.add(person.id));
     });
-    return seen.size;
-  }, [days, scheduledJobs]);
+    return ids.size;
+  }, [scheduledJobs, days]);
+  const sortedActive = useMemo(() => scheduledJobs
+    .filter((job) => !!getBarPosition(job, days[0], 14))
+    .sort((a, b) => (parseScheduleDate(a.startDate)?.getTime() ?? 0) - (parseScheduleDate(b.startDate)?.getTime() ?? 0)), [scheduledJobs, days]);
+  const weekendOnlyJobs = useMemo(() => getWeekendOnlyJobs(sortedActive, days), [sortedActive, days]);
 
-  const weekLabel = useMemo(() => {
-    if (isCurrentWeek) return "This week";
-    return `${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`;
-  }, [isCurrentWeek, weekStart, weekEnd]);
-
-  // ── Month view ────────────────────────────────────────────────────────────────
-  const monthStart = startOfMonth(anchor);
-  const monthEnd = endOfMonth(anchor);
-  const calStart = startOfWeek(monthStart, { weekStartsOn: 0 });
-  const calEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
-  const calDays = eachDayOfInterval({ start: calStart, end: calEnd });
-
-  // Subtitle
-  const subtitle = view === "week"
-    ? `Week of ${format(weekStart, "MMMM d")} – ${format(weekEnd, "d, yyyy")}${crewsDeployed > 0 ? ` · ${crewsDeployed} crew${crewsDeployed !== 1 ? "s" : ""} deployed` : ""}`
-    : format(anchor, "MMMM yyyy");
-
-  // ── Nav ────────────────────────────────────────────────────────────────────
-  function prev() { view === "week" ? setAnchor(d => subWeeks(d, 1)) : setAnchor(d => subMonths(d, 1)); }
-  function next() { view === "week" ? setAnchor(d => addWeeks(d, 1)) : setAnchor(d => addMonths(d, 1)); }
+  function goPrevious() {
+    setAnchor((date) => view === "week" ? subWeeks(date, 2) : subMonths(date, 1));
+  }
+  function goNext() {
+    setAnchor((date) => view === "week" ? addWeeks(date, 2) : addMonths(date, 1));
+  }
   function goToday() { setAnchor(new Date()); }
+  function pickJob(job: ScheduleJob) {
+    setSelectedJob(job);
+    setChooserOpen(false);
+  }
+  function barColumns(job: ScheduleJob) {
+    const position = getBarPosition(job, days[0], 14);
+    if (!position) return null;
+    const covered = weekdayDays.map((day, index) => {
+      const offset = differenceInCalendarDays(day, days[0]);
+      return offset >= position.left && offset < position.left + position.span ? index : -1;
+    }).filter((index) => index >= 0);
+    if (!covered.length) return null;
+    return { start: covered[0] + 1, end: covered[covered.length - 1] + 2 };
+  }
 
-  return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "24px 26px 40px" }}>
-      <div style={{ maxWidth: "1320px", margin: "0 auto" }}>
-
-        {/* ── Title row ── */}
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "16px", marginBottom: "20px", flexWrap: "wrap" }}>
-          <div>
-            <h2 style={{ margin: 0, fontSize: "26px", fontWeight: 700, letterSpacing: "-.02em" }}>Scheduling</h2>
-            <p style={{ margin: "5px 0 0", fontSize: "13.5px", color: "var(--muted)" }}>{subtitle}</p>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            {/* Week / period nav */}
-            <div style={{ display: "flex", alignItems: "center", gap: "2px", background: "var(--track)", border: "1px solid var(--panel-bd)", borderRadius: "9px", padding: "3px" }}>
-              <button onClick={prev} style={{ border: "none", background: "none", cursor: "pointer", width: "30px", height: "28px", borderRadius: "7px", color: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center" }} data-testid="button-prev-period">
-                <ChevronLeft style={{ width: "16px", height: "16px" }} />
-              </button>
-              <button onClick={goToday} style={{ border: "none", background: "none", cursor: "pointer", fontSize: "12.5px", fontWeight: 600, padding: "0 8px", color: "var(--fg)", fontFamily: "inherit", borderRadius: "6px", height: "28px" }} data-testid="button-today">
-                {isCurrentWeek && view === "week" ? "This week" : view === "week" ? weekLabel : format(anchor, "MMM yyyy")}
-              </button>
-              <button onClick={next} style={{ border: "none", background: "none", cursor: "pointer", width: "30px", height: "28px", borderRadius: "7px", color: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center" }} data-testid="button-next-period">
-                <ChevronRight style={{ width: "16px", height: "16px" }} />
-              </button>
-            </div>
-            {/* Week / Month toggle */}
-            <div style={{ display: "flex", gap: "3px", background: "var(--track)", border: "1px solid var(--panel-bd)", borderRadius: "9px", padding: "3px" }}>
-              {(["week", "month"] as const).map(v => (
-                <button key={v} onClick={() => setView(v)} style={{
-                  border: "none", cursor: "pointer", padding: "6px 13px", borderRadius: "7px",
-                  fontSize: "12.5px", fontWeight: 700, fontFamily: "inherit",
-                  background: view === v ? "var(--panel)" : "none",
-                  color: view === v ? "var(--jox-primary)" : "var(--muted)",
-                  boxShadow: view === v ? "0 1px 2px rgba(15,23,41,.1)" : "none",
-                }} data-testid={`button-view-${v}`}>
-                  {v.charAt(0).toUpperCase() + v.slice(1)}
-                </button>
-              ))}
-            </div>
-            {/* Assign crew */}
-            <button onClick={() => toast({ title: "Crew assignment", description: "Drag jobs onto days or use the Jobs page to set dates and crew." })}
-              style={{ display: "flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "9px 15px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 1px 2px rgba(37,99,235,.3)" }}
-              data-testid="button-assign-crew">
-              <Plus style={{ width: "15px", height: "15px" }} /> Assign crew
-            </button>
-          </div>
+  return <main className="relative min-h-[100dvh] min-w-0 px-4 pb-12 pt-7 text-jx-ink sm:px-7 sm:pt-9 xl:px-10">
+    <div className="mx-auto flex w-full max-w-[1440px] min-w-0 flex-col gap-6 sm:gap-7">
+      <header className="flex min-w-0 flex-wrap items-end justify-between gap-5">
+        <div className="min-w-0">
+          <p className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.16em] text-jx-green-ink">
+            <span className="h-[2px] w-5 bg-jx-green" aria-hidden="true" /> Site plan
+          </p>
+          <h1 className="font-display text-[44px] !font-bold leading-[.94] tracking-[-.055em] sm:text-[62px]" data-testid="heading-scheduling">Scheduling</h1>
+          <p className="mt-3 max-w-2xl text-[14px] text-jx-ink-2 sm:text-[16px]">
+            {view === "week" ? `${format(days[0], "MMMM d")} – ${format(days[13], "MMMM d, yyyy")}${deployed ? ` · ${deployed} crew${deployed === 1 ? "" : "s"} on site` : ""}` : format(anchor, "MMMM yyyy")}
+          </p>
         </div>
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+          <div className="flex h-11 items-center rounded-full border border-jx-line bg-card p-1">
+            <Button type="button" variant="ghost" onClick={goPrevious} className="h-9 w-9 rounded-full p-0 text-jx-ink-2 hover:bg-jx-surface" aria-label="Previous period" data-testid="button-prev-period"><ChevronLeft className="h-4 w-4" /></Button>
+            <Button type="button" variant="ghost" onClick={goToday} className="h-9 min-w-[96px] rounded-full px-3 text-xs font-bold text-jx-ink" data-testid="button-today">{periodLabel}</Button>
+            <Button type="button" variant="ghost" onClick={goNext} className="h-9 w-9 rounded-full p-0 text-jx-ink-2 hover:bg-jx-surface" aria-label="Next period" data-testid="button-next-period"><ChevronRight className="h-4 w-4" /></Button>
+          </div>
+          <div className="flex h-11 items-center rounded-full border border-jx-line bg-jx-surface p-1">
+            {(["week", "month"] as const).map((mode) => <Button key={mode} type="button" variant="ghost" onClick={() => setView(mode)}
+              className={`h-9 rounded-full px-4 text-xs font-bold capitalize ${view === mode ? "bg-jx-green text-white hover:bg-jx-green-hover hover:text-white" : "text-jx-ink-2"}`}
+              aria-pressed={view === mode} data-testid={`button-view-${mode}`}>{mode === "week" ? "2 weeks" : "Month"}</Button>)}
+          </div>
+          <Button type="button" onClick={() => setChooserOpen(true)} className="min-h-11 rounded-full bg-jx-green px-5 text-xs font-bold tracking-[.04em] text-white hover:bg-jx-green-hover" data-testid="button-assign-crew">
+            <Users className="mr-2 h-4 w-4" aria-hidden="true" /> Assign crew
+          </Button>
+        </div>
+      </header>
 
-        {/* ════════════════════════════════════════════════════════════════════ */}
-        {/* ── WEEK BOARD ── */}
-        {/* ════════════════════════════════════════════════════════════════════ */}
-        {view === "week" && (
-          <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: "12px", marginBottom: "22px", alignItems: "start" }}>
-              {days.map(day => {
-                const today = isToday(day);
-                const dayBlocks = jobsForDay(scheduledJobs, day);
-                return (
-                  <div key={day.toISOString()} style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden", minHeight: "300px", display: "flex", flexDirection: "column" }}
-                    data-testid={`day-col-${format(day, "EEE").toLowerCase()}`}>
-                    {/* Day header */}
-                    <div style={{ padding: "11px 13px", borderBottom: "1px solid var(--panel-bd)", background: today ? "var(--bl-bg)" : "var(--colhead)" }}>
-                      <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase", color: today ? "var(--bl-fg)" : "var(--faint)" }}>
-                        {format(day, "EEE")}
-                      </div>
-                      <div className="font-mono" style={{ fontSize: "18px", fontWeight: 600, color: "var(--fg)", lineHeight: 1.1, marginTop: "2px" }}>
-                        {format(day, "d")}
-                      </div>
-                    </div>
-                    {/* Day body */}
-                    <div style={{ padding: "10px", display: "flex", flexDirection: "column", gap: "8px", flex: 1 }}>
-                      {dayBlocks.map(({ job, idx }) => (
-                        <JobBlock key={job.id} job={job} colorIdx={colorMap.get(job.id) ?? idx} employees={job.assignedEmployees ?? activeEmployees.slice(0, 0)} />
-                      ))}
-                      {dayBlocks.length === 0 && (
-                        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", border: "1.5px dashed var(--panel-bd)", borderRadius: "9px", color: "var(--faint)", fontSize: "11.5px", minHeight: "80px" }}>
-                          No crews
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+      {view === "week" ? <>
+        <section className="min-w-0 overflow-hidden rounded-[24px] border border-jx-line bg-card" aria-label="Two week job schedule">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-jx-line bg-jx-surface/70 px-5 py-4 sm:px-6">
+            <div>
+              <h2 className="font-display text-lg !font-bold tracking-[-.025em]">On the calendar</h2>
+              <p className="mt-0.5 text-xs text-jx-ink-2">Two weeks · Monday to Friday · dates stay attached to each job</p>
             </div>
-
-            {/* ── Unscheduled backlog ── */}
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", padding: "16px 18px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "9px", marginBottom: "13px" }}>
-                <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: "#e0a020", flexShrink: 0 }} />
-                <span style={{ fontSize: "14.5px", fontWeight: 600 }}>Unscheduled jobs</span>
-                {backlogJobs.length > 0 && (
-                  <span className="font-mono" style={{ fontSize: "11.5px", fontWeight: 600, padding: "1px 7px", borderRadius: "5px", background: "var(--am-bg)", color: "var(--am-fg)" }}>
-                    {backlogJobs.length}
-                  </span>
-                )}
-                <span style={{ fontSize: "12px", color: "var(--faint)" }}>Set a start date on the Jobs page to schedule</span>
+            <span className="inline-flex items-center gap-2 rounded-full bg-jx-green-tint px-3 py-1.5 text-[11px] font-bold text-jx-green-ink"><span className="h-2 w-2 rounded-full bg-jx-green" /> {sortedActive.length} active {sortedActive.length === 1 ? "job" : "jobs"}</span>
+          </div>
+          <div className="relative min-w-0 overflow-x-auto overscroll-x-contain" data-testid="scheduling-grid-scroll">
+            <div className="min-w-[1080px]">
+              <div className="grid border-b border-jx-line" style={{ gridTemplateColumns: "240px repeat(10, minmax(76px, 1fr))" }}>
+                <div className="flex items-center px-5 text-[10px] font-bold uppercase tracking-[.12em] text-jx-ink-3">Job / site</div>
+                {weekdayDays.map((day, index) => {
+                  const today = isToday(day);
+                  return <div key={dateISO(day)} data-testid={`scheduling-date-${dateISO(day)}`} aria-current={today ? "date" : undefined} className={`min-h-[72px] border-l border-jx-line px-2 py-3 ${today ? "bg-jx-green text-white" : index === 5 ? "border-l-2 border-l-jx-line" : ""}`}>
+                    <p className={`text-[9px] font-bold uppercase tracking-[.1em] ${today ? "text-white" : "text-jx-ink-3"}`}>{format(day, "EEE")}{index === 5 && <span className="ml-1.5">· next week</span>}</p>
+                    <p className={`mt-1 font-mono text-[18px] font-semibold tabular-nums ${today ? "text-white" : "text-jx-ink"}`}>{format(day, "d")}</p>
+                    <p className={`text-[9px] ${today ? "text-white/80" : "text-jx-ink-3"}`}>{format(day, "MMM")}</p>
+                  </div>;
+                })}
               </div>
-
-              {jobsLoading && (
-                <div style={{ display: "flex", gap: "12px" }}>
-                  {[1,2,3].map(i => <div key={i} style={{ width: "210px", height: "80px", background: "var(--track)", borderRadius: "10px", flexShrink: 0 }} />)}
-                </div>
-              )}
-
-              {!jobsLoading && backlogJobs.length === 0 && (
-                <div style={{ padding: "24px", textAlign: "center", color: "var(--faint)", fontSize: "13px" }}>
-                  All jobs are scheduled — 
-                </div>
-              )}
-
-              {!jobsLoading && backlogJobs.length > 0 && (
-                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                  {backlogJobs.map((job, i) => (
-                    <Link key={job.id} href="/jobs">
-                      <div className="card" style={{ textDecoration: "none", border: "1px solid var(--panel-bd)", background: "var(--track)", borderRadius: "10px", padding: "12px 14px", minWidth: "210px", maxWidth: "260px", transition: "all .15s", cursor: "pointer" }}
-                        data-testid={`backlog-job-${job.id}`}>
-                        <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--fg)" }}>{job.title}</div>
-                        <div style={{ fontSize: "11.5px", color: "var(--faint)", marginTop: "2px" }}>
-                          {job.client?.name ?? "—"} {job.address ? `· ${job.address}` : ""}
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "9px" }}>
-                          <span style={{ fontSize: "10.5px", fontWeight: 700, color: "var(--am-fg)", background: "var(--am-bg)", padding: "2px 8px", borderRadius: "6px" }}>Needs date</span>
-                          {job.status === "quoted" && (
-                            <span style={{ fontSize: "10.5px", fontWeight: 600, color: "var(--faint)", padding: "2px 8px", borderRadius: "6px", background: "var(--b-gray-bg)" }}>Quoted</span>
-                          )}
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          </>
-        )}
-
-        {/* ════════════════════════════════════════════════════════════════════ */}
-        {/* ── MONTH BOARD ── */}
-        {/* ════════════════════════════════════════════════════════════════════ */}
-        {view === "month" && (
-          <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
-            {/* Day-of-week header */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", borderBottom: "1px solid var(--panel-bd)", background: "var(--colhead)" }}>
-              {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d => (
-                <div key={d} style={{ padding: "10px 8px", textAlign: "center", fontSize: "10.5px", fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--faint)" }}>{d}</div>
-              ))}
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)" }}>
-              {calDays.map((day, idx) => {
-                const inMonth = isSameMonth(day, anchor);
-                const today = isToday(day);
-                const dayBlocks = jobsForDay(scheduledJobs, day);
-                return (
-                  <div key={idx} style={{
-                    minHeight: "96px", padding: "6px", borderRight: "1px solid var(--panel-bd)", borderBottom: "1px solid var(--panel-bd)",
-                    background: today ? "var(--bl-bg)" : !inMonth ? "var(--track)" : "var(--panel)",
-                    opacity: !inMonth ? 0.55 : 1,
-                  }} data-testid={`month-cell-${format(day, "yyyy-MM-dd")}`}>
-                    <div className="font-mono" style={{ fontSize: "12px", fontWeight: today ? 700 : 400, color: today ? "var(--bl-fg)" : "var(--fg)", marginBottom: "4px", padding: "1px 4px" }}>
-                      {format(day, "d")}
+              {isLoading ? <div className="space-y-2 p-4" data-testid="scheduling-loading" aria-label="Loading schedule">
+                {[0, 1, 2, 3].map((item) => <div key={item} className="grid h-[76px] animate-pulse rounded-xl bg-jx-surface" style={{ gridTemplateColumns: "240px 1fr" }}><div className="m-4 h-4 w-2/3 rounded bg-card" /><div className="m-4 h-8 rounded-lg bg-card" /></div>)}
+              </div> : isError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-4 px-6 py-12">
+                <div className="flex items-start gap-3"><AlertCircle className="mt-1 h-5 w-5 text-jx-orange-ink" /><div><h3 className="font-display text-xl !font-bold">Schedule unavailable</h3><p className="mt-1 text-sm text-jx-ink-2">Job dates and crews didn’t load. Try again.</p></div></div>
+                <Button type="button" variant="outline" onClick={() => void refetch()} disabled={isFetching} className="min-h-11 rounded-full border-2 border-jx-line px-5" data-testid="button-retry-schedule"><RotateCw className="mr-2 h-4 w-4" />{isFetching ? "Retrying…" : "Retry"}</Button>
+              </div> : sortedActive.length === 0 ? <div className="flex min-h-[250px] flex-col items-center justify-center px-5 text-center" data-testid="scheduling-empty">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-jx-green-tint text-jx-green-ink"><CalendarDays className="h-5 w-5" /></div>
+                <h3 className="mt-4 font-display text-xl !font-bold">No active jobs in this window</h3>
+                <p className="mt-1 max-w-sm text-sm text-jx-ink-2">Give a job dates and a scheduled status to place the crew on the calendar.</p>
+              </div> : <div>
+                {sortedActive.filter((job) => !weekendOnlyJobs.some((weekend) => weekend.id === job.id)).map((job) => {
+                  const column = barColumns(job);
+                  const color = COLORS[stableIndex(job)];
+                  return <div key={job.id} className="grid min-h-[86px] border-b border-jx-line last:border-b-0" style={{ gridTemplateColumns: "240px repeat(10, minmax(76px, 1fr))" }} data-testid={`schedule-row-${job.id}`}>
+                    <div className="flex min-w-0 flex-col justify-center px-5 py-3">
+                      <JobLink job={job} className="group flex min-w-0 items-center gap-1 text-sm font-bold text-jx-ink hover:text-jx-green-ink" data-testid={`link-schedule-job-${job.id}`}>
+                        <span className="truncate">{job.title}</span><ArrowUpRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+                      </JobLink>
+                      <p className="mt-1 truncate text-[11px] text-jx-ink-2">{job.client?.name ?? "Client not set"}{job.address ? ` · ${job.address}` : ""}</p>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-                      {dayBlocks.slice(0, 2).map(({ job }) => (
-                        <MonthJobPip key={job.id} job={job} colorIdx={colorMap.get(job.id) ?? 0} />
-                      ))}
-                      {dayBlocks.length > 2 && (
-                        <div style={{ fontSize: "10px", color: "var(--faint)", paddingLeft: "4px" }}>+{dayBlocks.length - 2} more</div>
-                      )}
+                    <div className="relative col-span-10 grid border-l border-jx-line" style={{ gridTemplateColumns: "repeat(10, minmax(76px, 1fr))" }}>
+                      {weekdayDays.map((day, index) => <div key={dateISO(day)} className={`border-r border-jx-line/70 ${isToday(day) ? "bg-jx-green-tint/45" : ""} ${index === 5 ? "border-l-2 border-l-jx-line" : ""}`} />)}
+                      {column && <JobLink job={job} data-testid={`job-block-${job.id}`} className="absolute top-1/2 z-10 flex min-h-[48px] -translate-y-1/2 flex-col justify-center overflow-hidden rounded-r-xl border border-l-[6px] px-3 py-1.5 transition-transform hover:-translate-y-[54%]"
+                        style={{ left: `calc(${(column.start - 1) * 10}% + 4px)`, width: `calc(${(column.end - column.start) * 10}% - 8px)`, background: color.bg, color: color.ink, borderColor: color.edge, borderLeftColor: color.ink }}>
+                        <span className="truncate text-[11px] font-bold">{job.title}</span>
+                        <span className="truncate text-[10px] opacity-85">{job.assignedEmployees?.length ? job.assignedEmployees.map((person) => person.name).join(", ") : "Crew not assigned"} · {formatScheduleDate(job.startDate)}{job.endDate ? ` – ${formatScheduleDate(job.endDate)}` : ""}</span>
+                      </JobLink>}
                     </div>
+                  </div>;
+                })}
+              </div>}
+            </div>
+          </div>
+          {!isLoading && !isError && weekendOnlyJobs.length > 0 && <div className="border-t border-jx-line bg-jx-surface/70 px-5 py-4 sm:px-6" data-testid="weekend-schedule-note">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.1em] text-jx-ink-2"><Clock3 className="h-4 w-4 text-jx-orange-ink" /> Weekend dates in this window</div>
+            <p className="mt-1 text-xs text-jx-ink-2">Weekend-only work stays visible here; use Month view for the full seven-day calendar.</p>
+            <div className="mt-3 flex flex-wrap gap-2">{weekendOnlyJobs.map((job) => {
+              const color = COLORS[stableIndex(job)];
+              return <JobLink key={job.id} job={job} data-testid={`weekend-job-${job.id}`} className="flex max-w-full items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold" style={{ background: color.bg, color: color.ink, borderColor: color.edge }}>
+                <span className="truncate">{job.title}</span><span className="shrink-0 font-normal">{formatScheduleDate(job.startDate)}{job.endDate ? ` – ${formatScheduleDate(job.endDate)}` : ""}</span>
+              </JobLink>;
+            })}</div>
+          </div>}
+        </section>
+
+        <section aria-label="Jobs needing dates" className="overflow-hidden rounded-[24px] border border-jx-gold/30 bg-jx-gold-tint text-jx-gold-ink">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-jx-gold/30 px-5 py-4 sm:px-6">
+            <div className="flex items-start gap-3">
+              <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-jx-gold" />
+              <div><h2 className="font-display text-lg !font-bold tracking-[-.025em]">Needs a start date</h2><p className="mt-0.5 text-xs">Set dates and a scheduled status to place a job on the calendar.</p></div>
+            </div>
+            <span className="rounded-full bg-jx-gold/15 px-3 py-1 font-mono text-xs font-bold tabular-nums">{isLoading || isError ? "—" : backlogJobs.length}</span>
+          </div>
+          {isLoading ? <div className="flex gap-3 overflow-hidden p-5" aria-hidden="true">{[0, 1, 2].map((item) => <div key={item} className="h-[90px] w-56 shrink-0 animate-pulse rounded-2xl bg-jx-gold/15" />)}</div>
+            : isError ? <p className="px-6 py-8 text-sm">Backlog is unavailable until jobs load successfully.</p>
+              : backlogJobs.length === 0 ? <div className="px-6 py-8 text-center text-sm" data-testid="schedule-backlog-empty">Every active job has dates and a schedule status.</div>
+                : <div className="relative flex gap-3 overflow-x-auto overscroll-x-contain p-4 sm:flex-wrap sm:px-5 sm:pb-5">{backlogJobs.map((job) => <article key={job.id} className="w-[245px] shrink-0 rounded-2xl border border-jx-gold/30 bg-card p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <JobLink job={job} data-testid={`backlog-job-${job.id}`} className="min-w-0 truncate text-sm font-bold text-jx-ink hover:text-jx-green-ink">{job.title}</JobLink>
+                    {job.status === "quoted" && <span className="shrink-0 rounded-full bg-jx-surface px-2 py-1 text-[9px] font-bold uppercase tracking-[.08em] text-jx-ink-2">Quoted</span>}
                   </div>
-                );
+                  <p className="mt-1 truncate text-[11px] text-jx-ink-2">{job.client?.name ?? "Client not set"}{job.address ? ` · ${job.address}` : ""}</p>
+                  <div className="mt-4 flex items-center justify-between gap-2">
+                    <span className="rounded-full bg-jx-gold-tint px-2.5 py-1 text-[10px] font-bold text-jx-gold-ink">{job.startDate ? "Needs scheduling" : "Needs a start date"}</span>
+                    <Button type="button" onClick={() => pickJob(job)} className="h-8 shrink-0 rounded-full bg-jx-green px-3 text-[10px] font-bold text-white hover:bg-jx-green-hover" data-testid={`button-pick-dates-${job.id}`}>Pick dates</Button>
+                  </div>
+                </article>)}</div>}
+        </section>
+      </> : <section aria-label="Monthly schedule" className="overflow-hidden rounded-[24px] border border-jx-line bg-card">
+        <div className="flex items-center justify-between border-b border-jx-line bg-jx-surface px-5 py-4">
+          <div><h2 className="font-display text-lg !font-bold">{format(anchor, "MMMM yyyy")}</h2><p className="text-xs text-jx-ink-2">Full week calendar, Sunday through Saturday</p></div>
+          <span className="rounded-full bg-card px-3 py-1 font-mono text-xs text-jx-ink-2">{scheduledJobs.length} active jobs</span>
+        </div>
+        {isLoading ? <p role="status" className="p-8 text-jx-ink-2">Loading schedule…</p> : isError ? <div role="alert" className="p-8">
+          <p className="text-jx-orange-ink">Job dates and crews didn’t load.</p>
+          <Button type="button" variant="outline" onClick={() => void refetch()} disabled={isFetching} className="mt-3 rounded-full" data-testid="button-retry-schedule">Retry</Button>
+        </div> : <div className="relative min-w-0 overflow-x-auto overscroll-x-contain" data-testid="scheduling-month-scroll">
+          <div className="min-w-[760px]">
+            <div className="grid grid-cols-7 border-b border-jx-line bg-jx-surface/70">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <div key={day} className="px-2 py-3 text-center text-[10px] font-bold uppercase tracking-[.1em] text-jx-ink-3">{day}</div>)}</div>
+            <div className="grid grid-cols-7">
+              {monthDays.map((day) => {
+                const inMonth = isSameCalendarMonth(day, anchor);
+                const blocks = scheduledJobs.filter((job) => {
+                  const pos = getBarPosition(job, day, 1);
+                  return !!pos;
+                });
+                return <div key={dateISO(day)} data-testid={`month-cell-${dateISO(day)}`} className={`min-h-[122px] border-b border-r border-jx-line p-2 ${isToday(day) ? "bg-jx-green-tint/60" : inMonth ? "bg-card" : "bg-jx-surface/50"}`}>
+                  <p className={`mb-2 font-mono text-xs font-semibold tabular-nums ${isToday(day) ? "text-jx-green-ink" : inMonth ? "text-jx-ink" : "text-jx-ink-3"}`}>{format(day, "d")}</p>
+                  <div className="flex flex-col gap-1">{blocks.slice(0, 3).map((job) => {
+                    const color = COLORS[stableIndex(job)];
+                    return <JobLink key={job.id} job={job} data-testid={`month-job-${job.id}`} title={job.title} className="truncate rounded-md border-l-[3px] px-1.5 py-1 text-[10px] font-semibold" style={{ background: color.bg, color: color.ink, borderColor: color.ink }}>{job.title}</JobLink>;
+                  })}{blocks.length > 3 && <span className="px-1 text-[9px] text-jx-ink-3">+{blocks.length - 3} more</span>}</div>
+                </div>;
               })}
             </div>
           </div>
-        )}
-
-      </div>
+        </div>}
+      </section>}
     </div>
-  );
+    <ScheduleJobDialog open={chooserOpen || !!selectedJob} job={selectedJob} jobs={safeJobs} isLoading={isLoading} isError={isError} onSelect={pickJob} onClose={() => { setSelectedJob(null); setChooserOpen(false); }} />
+  </main>;
 }

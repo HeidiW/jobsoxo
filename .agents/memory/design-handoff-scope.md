@@ -26,3 +26,9 @@ During staged page redesigns, resolve conflicting legacy visual defaults locally
 **Why:** The supplied design expects bold display headings and solid primary actions, but the existing display-font utility forces regular weight and the shared default button is outlined. Changing these globally would restyle pages before their review stage.
 
 **How to apply:** Explicitly set the redesigned page's heading weight and primary button fill, check their computed appearance in the browser, and leave shared defaults unchanged until a separately approved global cleanup.
+
+Do not describe an admin's change-order status update as a client's digital sign-off.
+
+**Why:** The handoff's sign-off wording assumes a client approval flow. The existing admin actions alone do not establish that a client received or approved the change; copying that wording would imply an audit trail that does not exist.
+
+**How to apply:** Preserve admin approval actions and make their invoice effect clear. Use pending-review wording until actual client approval is implemented, and keep client sign-off separate from an admin marking an order approved.

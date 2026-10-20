@@ -18,7 +18,7 @@ import { storage } from "./storage";
 import { sendDashboardReminder } from "./dashboard-reminders";
 import { db } from "./db";
 import { 
-  clients, jobs, invoices, lineItems, payments, employees, timeEntries, users, changeOrders, plaidTransactions,
+  clients, jobs, invoices, lineItems, payments, employees, employeeAssignments, timeEntries, users, changeOrders, plaidTransactions,
   insertClientSchema, insertJobSchema, insertLineItemSchema, updateLineItemSchema, insertInvoiceSchema,
   insertPaymentSchema, insertEmployeeSchema, insertTimeEntrySchema, insertSettingsSchema,
   insertPayrollRecordSchema, insertChangeOrderSchema, insertJobMaterialSchema,
@@ -955,10 +955,21 @@ export async function registerRoutes(
   app.get("/api/jobs", async (req, res) => {
     try {
       const allJobs = await storage.getJobs();
+      const assignments = await db.select({
+        jobId: employeeAssignments.jobId,
+        id: employees.id,
+        name: employees.name,
+      }).from(employeeAssignments).innerJoin(employees, eq(employeeAssignments.employeeId, employees.id));
+      const crews = new Map<string, { id: string; name: string }[]>();
+      for (const { jobId, id, name } of assignments) {
+        const crew = crews.get(jobId) ?? [];
+        crew.push({ id, name });
+        crews.set(jobId, crew);
+      }
       const jobsWithClients = await Promise.all(
         allJobs.map(async (job) => {
           const client = await storage.getClient(job.clientId);
-          return { ...job, client };
+          return { ...job, client, assignedEmployees: crews.get(job.id) ?? [] };
         })
       );
       res.json(jobsWithClients);

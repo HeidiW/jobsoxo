@@ -1,608 +1,256 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { format, isThisMonth } from "date-fns";
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, Check, Clock3, FileText, Plus, RotateCw, Trash2, X } from "lucide-react";
+import type { ChangeOrder } from "@shared/schema";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormMessage,
-} from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useToast } from "@/hooks/use-toast";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { ChangeOrderFormDialog } from "@/components/change-orders/change-order-form-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Plus, MoreVertical, Trash2, CheckCircle, Clock, XCircle } from "lucide-react";
-import { format, isThisMonth } from "date-fns";
-import type { ChangeOrder, Invoice } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
+import {
+  CHANGE_ORDER_FILTERS, changeOrderAmountText, filterChangeOrders, formatChangeOrderNumber,
+  formatMoney, formatSignedMoney, invalidateChangeOrderEffects, sumChangeOrderCents,
+  type ChangeOrderFilter, type ChangeOrderStatus, type EnrichedChangeOrder,
+} from "./change-orders-logic";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-interface EnrichedChangeOrder extends ChangeOrder {
-  invoice: Invoice | null;
-  job: { id: string; title: string } | null;
-  client: { id: string; name: string } | null;
-}
-
-type COStatus = "draft" | "pending" | "approved" | "rejected" | "invoiced";
-
-// ── Design tokens ─────────────────────────────────────────────────────────────
-const STATUS_BADGE: Record<COStatus, { bg: string; fg: string; label: string }> = {
-  draft:     { bg: "var(--b-gray-bg)",  fg: "var(--b-gray-fg)",  label: "Draft" },
-  pending:   { bg: "var(--b-amber-bg)", fg: "var(--b-amber-fg)", label: "Pending approval" },
-  approved:  { bg: "var(--b-green-bg)", fg: "var(--b-green-fg)", label: "Approved" },
-  rejected:  { bg: "var(--b-red-bg)",   fg: "var(--b-red-fg)",   label: "Rejected" },
-  invoiced:  { bg: "var(--b-blue-bg)",  fg: "var(--b-blue-fg)",  label: "Invoiced" },
+const STATUS_STYLE: Record<ChangeOrderStatus, string> = {
+  draft: "bg-jx-surface text-jx-ink-2",
+  pending: "bg-jx-orange-tint text-jx-orange-ink",
+  approved: "bg-jx-green-tint text-jx-green-ink",
+  rejected: "bg-[#f8e7e1] text-[#9b3f29]",
+  invoiced: "bg-jx-blue-tint text-jx-blue-ink",
 };
-
-const POS_COLOR = "#15a35a"; // green for positive delta (light)
-const NEG_COLOR = "#d23b1f"; // red for negative delta (light)
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function fmtCoNumber(id: string) {
-  return "CO-" + id.slice(-8, -2).toUpperCase();
-}
-
-function fmtDelta(amount: string | number): { text: string; color: string } {
-  const n = parseFloat(String(amount));
-  if (isNaN(n) || n === 0) return { text: "—", color: "var(--faint)" };
-  if (n > 0) return { text: "+$" + n.toLocaleString("en-US", { minimumFractionDigits: 0 }), color: POS_COLOR };
-  return { text: "−$" + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 0 }), color: NEG_COLOR };
-}
-
-function fmtDate(d: string | Date | null | undefined): string {
-  if (!d) return "—";
-  try { return format(new Date(d), "MMM d"); } catch { return "—"; }
-}
-
-// ── Form schema ───────────────────────────────────────────────────────────────
-const coFormSchema = z.object({
-  invoiceId: z.string().min(1, "Invoice is required"),
-  description: z.string().min(1, "Description is required"),
-  amountAbs: z.string().min(1, "Amount is required").refine(v => !isNaN(parseFloat(v)) && parseFloat(v) >= 0, "Must be a positive number"),
-  amountType: z.enum(["add", "credit"]),
-  reason: z.string().optional(),
-  status: z.enum(["draft", "pending", "approved", "rejected", "invoiced"]),
-});
-type COFormValues = z.infer<typeof coFormSchema>;
-
-// ── Label styles ──────────────────────────────────────────────────────────────
-const lbl: React.CSSProperties = {
-  display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b",
-  textTransform: "uppercase", letterSpacing: ".04em", marginBottom: "5px",
+const STATUS_LABEL: Record<ChangeOrderStatus, string> = {
+  draft: "Draft", pending: "Pending review", approved: "Approved", rejected: "Rejected", invoiced: "Invoiced",
 };
-const inp: React.CSSProperties = {
-  width: "100%", padding: "9px 11px", border: "1px solid #cbd5e1", borderRadius: "8px",
-  fontSize: "13.5px", color: "#0f172a", background: "#fff", fontFamily: "inherit",
-  outline: "none", boxSizing: "border-box",
-};
-
-// ── New CO Form ───────────────────────────────────────────────────────────────
-function ChangeOrderForm({ onClose }: { onClose: () => void }) {
-  const { toast } = useToast();
-
-  const { data: invoices } = useQuery<Invoice[]>({ queryKey: ["/api/invoices"] });
-
-  const form = useForm<COFormValues>({
-    resolver: zodResolver(coFormSchema),
-    defaultValues: { invoiceId: "", description: "", amountAbs: "", amountType: "add", reason: "", status: "pending" },
-  });
-
-  const mutation = useMutation({
-    mutationFn: async (data: COFormValues) => {
-      const amount = data.amountType === "credit"
-        ? (-parseFloat(data.amountAbs)).toString()
-        : parseFloat(data.amountAbs).toString();
-      const res = await apiRequest("POST", "/api/change-orders", {
-        invoiceId: data.invoiceId, description: data.description,
-        amount, reason: data.reason || null, status: data.status,
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/change-orders"] });
-      toast({ title: "Change order created" });
-      onClose();
-    },
-    onError: () => toast({ title: "Failed to create change order", variant: "destructive" }),
-  });
-
-  return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(d => mutation.mutate(d))} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-        <FormField control={form.control} name="invoiceId" render={({ field }) => (
-          <FormItem>
-            <label style={lbl}>Invoice *</label>
-            <Select value={field.value} onValueChange={field.onChange}>
-              <FormControl>
-                <SelectTrigger style={{ ...inp, height: "auto" }} data-testid="select-co-invoice">
-                  <SelectValue placeholder="Select invoice…" />
-                </SelectTrigger>
-              </FormControl>
-              <SelectContent>
-                {invoices?.map(inv => (
-                  <SelectItem key={inv.id} value={inv.id}>{inv.invoiceNumber}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <FormMessage />
-          </FormItem>
-        )} />
-
-        <FormField control={form.control} name="description" render={({ field }) => (
-          <FormItem>
-            <label style={lbl}>Description *</label>
-            <FormControl><input {...field} style={inp} placeholder="What changed?" data-testid="input-co-description" /></FormControl>
-            <FormMessage />
-          </FormItem>
-        )} />
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 120px", gap: "12px" }}>
-          <FormField control={form.control} name="amountAbs" render={({ field }) => (
-            <FormItem>
-              <label style={lbl}>Amount ($) *</label>
-              <FormControl><input {...field} type="number" min="0" step="0.01" style={inp} placeholder="0.00" data-testid="input-co-amount" /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="amountType" render={({ field }) => (
-            <FormItem>
-              <label style={lbl}>Type</label>
-              <Select value={field.value} onValueChange={field.onChange}>
-                <FormControl>
-                  <SelectTrigger style={{ ...inp, height: "auto" }} data-testid="select-co-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  <SelectItem value="add">Addition +</SelectItem>
-                  <SelectItem value="credit">Credit −</SelectItem>
-                </SelectContent>
-              </Select>
-            </FormItem>
-          )} />
-        </div>
-
-        <FormField control={form.control} name="reason" render={({ field }) => (
-          <FormItem>
-            <label style={lbl}>Reason <span style={{ color: "#94a3b8", fontWeight: 400, textTransform: "none" }}>(optional)</span></label>
-            <FormControl><input {...field} style={inp} placeholder="Why was this changed?" data-testid="input-co-reason" /></FormControl>
-          </FormItem>
-        )} />
-
-        <FormField control={form.control} name="status" render={({ field }) => (
-          <FormItem>
-            <label style={lbl}>Status</label>
-            <Select value={field.value} onValueChange={field.onChange}>
-              <FormControl>
-                <SelectTrigger style={{ ...inp, height: "auto" }} data-testid="select-co-status">
-                  <SelectValue />
-                </SelectTrigger>
-              </FormControl>
-              <SelectContent>
-                <SelectItem value="draft">Draft</SelectItem>
-                <SelectItem value="pending">Pending approval</SelectItem>
-                <SelectItem value="approved">Approved</SelectItem>
-                <SelectItem value="rejected">Rejected</SelectItem>
-                <SelectItem value="invoiced">Invoiced</SelectItem>
-              </SelectContent>
-            </Select>
-          </FormItem>
-        )} />
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "4px" }}>
-          <button type="button" onClick={onClose} style={{ padding: "9px 16px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "9px", fontSize: "13px", fontWeight: 600, color: "#475569", cursor: "pointer", fontFamily: "inherit" }}>
-            Cancel
-          </button>
-          <button type="submit" disabled={mutation.isPending} style={{ padding: "9px 18px", border: "none", background: "#2563eb", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit", opacity: mutation.isPending ? 0.7 : 1 }} data-testid="button-save-co">
-            {mutation.isPending ? "Creating…" : "Create change order"}
-          </button>
-        </div>
-      </form>
-    </Form>
-  );
+function formatDate(value: string | Date | null | undefined) {
+  if (!value) return "Date not recorded";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "Date not recorded" : format(date, "MMM d, yyyy");
 }
 
-// ── Filter tab helpers ────────────────────────────────────────────────────────
-type Filter = "all" | "pending" | "approved" | "invoiced";
-const FILTER_DEFS: { key: Filter; label: string }[] = [
-  { key: "all",      label: "All" },
-  { key: "pending",  label: "Pending" },
-  { key: "approved", label: "Approved" },
-  { key: "invoiced", label: "Invoiced" },
-];
+function SkeletonCard() {
+  return <div aria-hidden="true" className="min-h-[270px] animate-pulse rounded-[26px] bg-jx-surface p-6">
+    <div className="h-4 w-1/3 rounded bg-card/80" /><div className="mt-8 h-7 w-3/4 rounded bg-card/80" />
+    <div className="mt-3 h-4 w-1/2 rounded bg-card/70" /><div className="mt-8 h-16 rounded-2xl bg-card/70" />
+  </div>;
+}
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+function signedStyle(amount: string | number) {
+  const numeric = Number(amount);
+  return numeric > 0 ? "text-jx-green-ink" : numeric < 0 ? "text-jx-orange-ink" : "text-jx-ink-2";
+}
+
 export default function ChangeOrders() {
-  const [activeFilter, setActiveFilter] = useState<Filter>("all");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [deletingCO, setDeletingCO] = useState<EnrichedChangeOrder | null>(null);
   const { toast } = useToast();
-
-  const { data: orders, isLoading } = useQuery<EnrichedChangeOrder[]>({
+  const [activeFilter, setActiveFilter] = useState<ChangeOrderFilter>("all");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [deletingOrder, setDeletingOrder] = useState<EnrichedChangeOrder | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const { data: orders, isLoading, isError, isFetching, refetch } = useQuery<EnrichedChangeOrder[]>({
     queryKey: ["/api/change-orders"],
   });
-
-  const updateMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      const res = await apiRequest("PATCH", `/api/change-orders/${id}`, { status });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/change-orders"] });
-      toast({ title: "Status updated" });
-    },
-    onError: () => toast({ title: "Failed to update", variant: "destructive" }),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/change-orders/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/change-orders"] });
-      toast({ title: "Change order deleted" });
-      setDeletingCO(null);
-    },
-    onError: () => toast({ title: "Failed to delete", variant: "destructive" }),
-  });
-
-  // ── Computed stats ──────────────────────────────────────────────────────────
-  const pending   = (orders ?? []).filter(o => o.status === "pending").length;
-  const approved  = (orders ?? []).filter(o => o.status === "approved").length;
-  const netValue  = (orders ?? []).reduce((s, o) => s + parseFloat(String(o.amount)), 0);
-  const thisMonth = (orders ?? []).filter(o => o.createdAt && isThisMonth(new Date(o.createdAt))).length;
-
-  // ── Filtered list ───────────────────────────────────────────────────────────
-  const filtered = (orders ?? []).filter(o => {
-    if (activeFilter === "pending")  return o.status === "pending";
-    if (activeFilter === "approved") return o.status === "approved";
-    if (activeFilter === "invoiced") return o.status === "invoiced";
-    return true;
-  });
-
-  const counts: Record<Filter, number> = {
-    all:      (orders ?? []).length,
-    pending,
-    approved,
-    invoiced: (orders ?? []).filter(o => o.status === "invoiced").length,
+  const safeOrders = orders ?? [];
+  const filtered = useMemo(() => filterChangeOrders(safeOrders, activeFilter), [safeOrders, activeFilter]);
+  const pendingOrders = useMemo(() => safeOrders.filter((order) => order.status === "pending"), [safeOrders]);
+  const pendingTotal = sumChangeOrderCents(pendingOrders);
+  const filteredTotal = sumChangeOrderCents(filtered);
+  const allOrdersTotal = sumChangeOrderCents(safeOrders);
+  const approvedCount = safeOrders.filter((order) => order.status === "approved").length;
+  const thisMonthCount = safeOrders.filter((order) => !!order.createdAt && isThisMonth(new Date(order.createdAt))).length;
+  const counts: Record<ChangeOrderFilter, number> = {
+    all: safeOrders.length,
+    pending: pendingOrders.length,
+    approved: safeOrders.filter((order) => order.status === "approved").length,
+    invoiced: safeOrders.filter((order) => order.status === "invoiced").length,
   };
 
-  const netFmt = fmtDelta(netValue);
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: ChangeOrderStatus }) => {
+      const response = await apiRequest("PATCH", `/api/change-orders/${id}`, { status });
+      return response.json();
+    },
+    onSuccess: async (_data, variables) => {
+      await invalidateChangeOrderEffects(queryClient);
+      toast({ title: variables.status === "approved" ? "Change order marked approved" : `Status changed to ${STATUS_LABEL[variables.status].toLowerCase()}` });
+    },
+    onError: (error: Error) => toast({ title: "Could not update change order", description: error.message, variant: "destructive" }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/change-orders/${id}`); },
+    onSuccess: async () => {
+      await invalidateChangeOrderEffects(queryClient);
+      toast({ title: "Change order deleted" });
+      setDeletingOrder(null);
+      setDeleteError("");
+    },
+    onError: (error: Error) => {
+      setDeleteError(error.message || "Could not delete this change order. Try again.");
+      toast({ title: "Could not delete change order", description: error.message, variant: "destructive" });
+    },
+  });
 
-  return (
-    <>
-      {/* ── New CO Dialog ── */}
-      <Dialog open={isDialogOpen} onOpenChange={open => { if (!open) setIsDialogOpen(false); }}>
-        <DialogContent className="max-w-lg !flex flex-col max-h-[90dvh] overflow-hidden">
-          <DialogHeader className="shrink-0">
-            <DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>New change order</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto min-h-0">
-            <ChangeOrderForm onClose={() => setIsDialogOpen(false)} />
+  const setStatus = (order: EnrichedChangeOrder, status: ChangeOrderStatus) => {
+    if (!updateMutation.isPending) updateMutation.mutate({ id: order.id, status });
+  };
+  const openDelete = (order: EnrichedChangeOrder) => { setDeleteError(""); setDeletingOrder(order); };
+
+  return <main className="relative min-h-[100dvh] min-w-0 px-4 pb-12 pt-7 text-jx-ink sm:px-7 sm:pt-9 xl:px-10">
+    <div className="mx-auto flex w-full max-w-[1440px] min-w-0 flex-col gap-6 sm:gap-7">
+      <header className="flex flex-wrap items-end justify-between gap-5">
+        <div className="min-w-0">
+          <h1 className="font-display text-[46px] !font-bold leading-[.95] tracking-[-.055em] text-jx-ink sm:text-[64px]" data-testid="heading-change-orders">Change Orders</h1>
+          <p className="mt-3 max-w-2xl text-[15px] text-jx-ink-2 sm:text-[17px]">Keep every scope adjustment, credit and approval attached to the job it changes.</p>
+        </div>
+        <Button type="button" onClick={() => setDialogOpen(true)} className="min-h-12 rounded-full bg-jx-green px-6 text-xs font-bold tracking-[.08em] text-white hover:bg-jx-green-hover sm:px-7 sm:text-sm" data-testid="button-new-co">
+          <Plus className="mr-2 h-4 w-4" aria-hidden="true" /> NEW CHANGE ORDER
+        </Button>
+      </header>
+
+      {isLoading ? <section aria-label="Pending approvals loading" className="min-h-[178px] animate-pulse rounded-[26px] bg-jx-orange-tint p-6 sm:p-8" data-testid="co-pending-loading">
+        <div className="h-4 w-48 rounded bg-card/70" /><div className="mt-5 h-9 w-40 rounded bg-card/70" />
+      </section> : isError ? <section className="flex flex-wrap items-center justify-between gap-4 rounded-[26px] bg-jx-orange-tint p-5 text-jx-orange-ink sm:p-7" role="alert" data-testid="co-pending-error">
+        <div><h2 className="font-display text-xl !font-bold">Change orders didn’t load</h2><p className="mt-1 text-sm">Pending approvals and the order list are unavailable. Try again.</p></div>
+        <Button type="button" variant="outline" className="min-h-11 rounded-full border-2 border-current px-5 text-current" onClick={() => void refetch()} disabled={isFetching} data-testid="button-retry-change-orders"><RotateCw className="mr-2 h-4 w-4" aria-hidden="true" />{isFetching ? "Trying again…" : "Retry"}</Button>
+      </section> : <section aria-label="Pending change orders" className="relative overflow-hidden rounded-[26px] bg-jx-orange-tint p-5 text-jx-orange-ink sm:p-8" data-testid="co-pending-banner">
+        <div className="pointer-events-none absolute -right-10 -top-12 h-48 w-48 rounded-full border-[24px] border-card/25" aria-hidden="true" />
+        <div className="relative flex min-w-0 flex-col justify-between gap-5 sm:flex-row sm:items-center">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.14em]"><Clock3 className="h-4 w-4" aria-hidden="true" /> Needs a decision</div>
+            <h2 className="mt-3 font-display text-[25px] !font-bold leading-tight tracking-[-.04em] sm:text-[32px]" data-testid="text-co-pending-count"><span data-testid="stat-pending">{pendingOrders.length}</span> {pendingOrders.length === 1 ? "change order" : "change orders"} pending review</h2>
+            <p className="mt-2 max-w-xl text-sm text-jx-orange-ink/85">Don’t start the extra work until it’s approved. Marking approved here updates the invoice; it doesn’t record a client sign-off.</p>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Delete confirm ── */}
-      <AlertDialog open={!!deletingCO} onOpenChange={o => { if (!o) setDeletingCO(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete change order?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete <strong>"{deletingCO?.description}"</strong>. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deletingCO && deleteMutation.mutate(deletingCO.id)}
-              disabled={deleteMutation.isPending}
-              data-testid="button-confirm-delete-co"
-            >
-              {deleteMutation.isPending ? "Deleting…" : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* ── Page body ── */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "24px 26px 40px" }}>
-        <div style={{ maxWidth: "1280px", margin: "0 auto" }}>
-
-          {/* ── Title row ── */}
-          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "16px", marginBottom: "20px" }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: "26px", fontWeight: 700, letterSpacing: "-.02em" }}>Change Orders</h2>
-              <p style={{ margin: "5px 0 0", fontSize: "13.5px", color: "var(--muted)" }}>
-                Mid-job scope changes — approved orders update the job and can be invoiced.
-              </p>
-            </div>
-            <button
-              onClick={() => setIsDialogOpen(true)}
-              style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 16px", fontSize: "13.5px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 1px 2px rgba(37,99,235,.3)" }}
-              data-testid="button-new-co"
-            >
-              <Plus style={{ width: "16px", height: "16px" }} />
-              New change order
-            </button>
+          <div className="relative shrink-0 border-t border-jx-orange-ink/20 pt-4 sm:border-l sm:border-t-0 sm:pl-8 sm:pt-0 sm:text-right">
+            <p className="text-[11px] font-bold uppercase tracking-[.12em]">Pending total</p>
+            <p className="mt-1 font-mono text-[36px] leading-none tracking-[-.055em] tabular-nums sm:text-[40px]" data-testid="stat-co-pending-total">{formatSignedMoney(pendingTotal)}</p>
+            <p className="mt-2 text-xs">Signed change across pending orders</p>
           </div>
+        </div>
+      </section>}
 
-          {/* ── 4-stat strip ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "14px", marginBottom: "20px" }}>
-            {/* Pending */}
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>Pending approval</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px", color: isLoading ? "var(--faint)" : (pending > 0 ? "#b6731a" : "var(--fg)") }} data-testid="stat-pending">
-                {isLoading ? "—" : pending}
-              </div>
-            </div>
-            {/* Approved */}
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>Approved (not invoiced)</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px" }} data-testid="stat-approved">
-                {isLoading ? "—" : approved}
-              </div>
-            </div>
-            {/* Net value */}
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>Net value change</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px", color: isLoading ? "var(--faint)" : netFmt.color }} data-testid="stat-net-value">
-                {isLoading ? "—" : netFmt.text}
-              </div>
-            </div>
-            {/* This month */}
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>This month</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px" }} data-testid="stat-this-month">
-                {isLoading ? "—" : thisMonth}
-              </div>
-            </div>
+      {!isLoading && !isError && <section aria-label="Change order overview" className="grid min-w-0 grid-cols-1 divide-y divide-jx-line rounded-[20px] border border-jx-line bg-card px-5 sm:grid-cols-3 sm:divide-x sm:divide-y-0" data-testid="change-order-overview">
+        <div className="flex items-center justify-between gap-4 py-4 sm:justify-start sm:gap-5 sm:px-5 sm:first:pl-0">
+          <span className="text-xs font-semibold text-jx-ink-2">Approved change orders</span>
+          <span className="font-mono text-lg font-semibold tabular-nums text-jx-ink" data-testid="stat-approved">{approvedCount}</span>
+        </div>
+        <div className="flex items-center justify-between gap-4 py-4 sm:justify-start sm:gap-5 sm:px-5">
+          <span className="text-xs font-semibold text-jx-ink-2">Net change orders</span>
+          <span className="font-mono text-lg font-semibold tabular-nums text-jx-ink" data-testid="stat-net-value">{formatSignedMoney(allOrdersTotal)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-4 py-4 sm:justify-start sm:gap-5 sm:px-5 sm:last:pr-0">
+          <span className="text-xs font-semibold text-jx-ink-2">Created this month</span>
+          <span className="font-mono text-lg font-semibold tabular-nums text-jx-ink" data-testid="stat-this-month">{thisMonthCount}</span>
+        </div>
+      </section>}
+
+      <section aria-label="Change order filters" className="flex min-w-0 flex-wrap items-center gap-2">
+        {CHANGE_ORDER_FILTERS.map((filter) => {
+          const selected = activeFilter === filter.key;
+          return <Button key={filter.key} type="button" variant="outline" onClick={() => setActiveFilter(filter.key)}
+            className={`min-h-11 rounded-full border-2 px-4 text-sm ${selected ? "border-jx-green bg-jx-green text-white hover:bg-jx-green-hover hover:text-white" : "border-jx-line bg-card text-jx-ink-2 hover:border-jx-green hover:bg-jx-green-tint hover:text-jx-ink"}`}
+            aria-pressed={selected} data-testid={`filter-co-${filter.key}`}>
+            <span className="inline-flex items-center" data-testid={`filter-tab-${filter.key}`}>{filter.label}<span className={`ml-2 rounded-full px-2 py-0.5 font-mono text-[11px] tabular-nums ${selected ? "bg-white/20 text-white" : "bg-jx-surface text-jx-ink-2"}`}>{isLoading || isError ? "—" : counts[filter.key]}</span></span>
+          </Button>;
+        })}
+        <p className="ml-auto text-xs text-jx-ink-3">{isLoading || isError ? "—" : `${filtered.length} ${filtered.length === 1 ? "order" : "orders"}`}</p>
+      </section>
+
+      <section className="min-w-0" aria-label="Change order cards">
+        {isLoading ? <div className="grid min-w-0 gap-4 lg:grid-cols-2" data-testid="change-orders-loading">{[0, 1, 2, 3].map((item) => <SkeletonCard key={item} />)}</div>
+          : isError ? <div className="flex min-h-64 flex-col items-center justify-center rounded-[26px] border border-jx-line bg-card px-6 text-center" data-testid="change-orders-error">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-jx-orange-tint text-jx-orange-ink"><AlertTriangle className="h-6 w-6" aria-hidden="true" /></div>
+            <h2 className="font-display text-2xl !font-bold">The change order list is unavailable</h2>
+            <p className="mt-2 max-w-sm text-sm text-jx-ink-2">Your records are still safe. Retry to reload them.</p>
+            <Button type="button" variant="outline" className="mt-4 min-h-11 rounded-full border-2 border-jx-ink px-5" onClick={() => void refetch()} disabled={isFetching}>Retry list</Button>
           </div>
-
-          {/* ── Filter tabs ── */}
-          <div style={{ display: "flex", gap: "4px", marginBottom: "16px" }}>
-            {FILTER_DEFS.map(f => {
-              const active = activeFilter === f.key;
-              return (
-                <button
-                  key={f.key}
-                  onClick={() => setActiveFilter(f.key)}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: "7px", cursor: "pointer",
-                    fontFamily: "inherit", fontSize: "13px", fontWeight: 600, padding: "7px 13px", borderRadius: "8px",
-                    border: "1px solid " + (active ? "transparent" : "var(--panel-bd)"),
-                    background: active ? "var(--jox-primary)" : "var(--panel)",
-                    color: active ? "#fff" : "var(--muted)",
-                  }}
-                  data-testid={`filter-tab-${f.key}`}
-                >
-                  {f.label}
-                  <span
-                    className="font-mono"
-                    style={{
-                      fontSize: "11px", fontWeight: 600, padding: "0px 6px", borderRadius: "5px",
-                      background: active ? "rgba(255,255,255,.22)" : "var(--track)",
-                      color: active ? "#fff" : "var(--faint)",
-                    }}
-                  >
-                    {counts[f.key]}
-                  </span>
-                </button>
-              );
-            })}
+          : filtered.length === 0 ? <div className="flex min-h-[300px] flex-col items-center justify-center rounded-[26px] border border-jx-line bg-card px-6 py-12 text-center" data-testid={safeOrders.length ? "change-orders-no-matches" : "change-orders-empty"}>
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-jx-green-tint text-jx-green-ink"><FileText className="h-6 w-6" aria-hidden="true" /></div>
+            <h2 className="font-display text-2xl !font-bold">{safeOrders.length ? `No ${activeFilter} change orders` : "No change orders yet"}</h2>
+            <p className="mt-2 max-w-sm text-sm text-jx-ink-2">{safeOrders.length ? "Choose another status filter to see more orders." : "Record a scope adjustment to keep its cost and reason with the job."}</p>
+            {safeOrders.length ? <Button type="button" variant="outline" className="mt-4 min-h-11 rounded-full border-2 border-jx-ink px-5" onClick={() => setActiveFilter("all")}>Show all orders</Button>
+              : <Button type="button" onClick={() => setDialogOpen(true)} className="mt-4 min-h-11 rounded-full bg-jx-green px-5 font-bold text-white hover:bg-jx-green-hover"><Plus className="mr-2 h-4 w-4" aria-hidden="true" /> New change order</Button>}
           </div>
-
-          {/* ── Table card ── */}
-          <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
-
-            {/* Header */}
-            <div style={{ display: "flex", alignItems: "center", fontSize: "10.5px", fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" as const, color: "var(--faint)", padding: "11px 18px", background: "var(--track)", borderBottom: "1px solid var(--panel-bd)" }}>
-              <span style={{ width: "116px", flexShrink: 0 }}>CO #</span>
-              <span style={{ flex: 1, minWidth: 0 }}>Job / change</span>
-              <span style={{ width: "96px", flexShrink: 0 }}>Date</span>
-              <span style={{ width: "104px", flexShrink: 0, textAlign: "right" as const }}>Amount Δ</span>
-              <span style={{ width: "128px", flexShrink: 0, textAlign: "center" as const }}>Status</span>
-              <span style={{ width: "28px", flexShrink: 0 }}></span>
-            </div>
-
-            {/* Loading */}
-            {isLoading && (
-              <div style={{ padding: "40px", textAlign: "center" as const, color: "var(--faint)", fontSize: "13px" }}>
-                Loading change orders…
-              </div>
-            )}
-
-            {/* Empty */}
-            {!isLoading && filtered.length === 0 && (
-              <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
-                <div style={{ fontSize: "32px", marginBottom: "10px" }}>📋</div>
-                <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--fg)", marginBottom: "4px" }}>
-                  {activeFilter === "all" ? "No change orders yet" : `No ${activeFilter} change orders`}
-                </div>
-                <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>
-                  {activeFilter === "all"
-                    ? "Change orders track mid-job scope changes."
-                    : "Try a different filter."}
-                </div>
-                {activeFilter === "all" && (
-                  <button
-                    onClick={() => setIsDialogOpen(true)}
-                    style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 18px", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-                    data-testid="button-add-first-co"
-                  >
-                    <Plus style={{ width: "15px", height: "15px" }} /> New change order
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Rows */}
-            {!isLoading && filtered.map(order => {
-              const status = (order.status ?? "draft") as COStatus;
-              const badge = STATUS_BADGE[status] ?? STATUS_BADGE.draft;
-              const delta = fmtDelta(order.amount);
-              return (
-                <div
-                  key={order.id}
-                  className="rowhover"
-                  style={{ display: "flex", alignItems: "center", padding: "13px 18px", borderBottom: "1px solid var(--panel-bd)" }}
-                  data-testid={`row-co-${order.id}`}
-                >
-                  {/* CO # */}
-                  <span
-                    className="font-mono"
-                    style={{ width: "116px", flexShrink: 0, fontSize: "12.5px", fontWeight: 600, color: "var(--jox-primary)" }}
-                  >
-                    {fmtCoNumber(order.id)}
-                  </span>
-
-                  {/* Job / change */}
-                  <div style={{ flex: 1, minWidth: 0, paddingRight: "12px" }}>
-                    <div style={{ fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {order.description}
-                    </div>
-                    <div style={{ fontSize: "11.5px", color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {order.job?.title
-                        ? <Link href={`/jobs/${order.job.id}`} style={{ color: "inherit", textDecoration: "none" }}>{order.job.title}</Link>
-                        : (order.invoice
-                          ? <Link href={`/invoices/${order.invoice.id}`} style={{ color: "inherit", textDecoration: "none" }}>Invoice {order.invoice.invoiceNumber}</Link>
-                          : "—")}
-                    </div>
-                    {order.reason && (
-                      <div style={{ fontSize: "11px", color: "var(--faint)", fontStyle: "italic", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {order.reason}
-                      </div>
-                    )}
+          : <div className="grid min-w-0 gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 380px), 1fr))" }} data-testid="change-orders-grid">
+            {filtered.map((order) => {
+              const status = (order.status ?? "draft") as ChangeOrderStatus;
+              const isPending = status === "pending";
+              const amount = Number(order.amount);
+              const amountIcon = amount > 0 ? <ArrowUpRight className="h-4 w-4" aria-hidden="true" /> : amount < 0 ? <ArrowDownRight className="h-4 w-4" aria-hidden="true" /> : null;
+              return <article key={order.id} className="min-w-0 rounded-[26px] border border-jx-line bg-jx-surface p-5 transition-transform duration-200 hover:-translate-y-0.5 sm:p-6" data-testid={`row-co-${order.id}`}>
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-mono text-xs font-semibold tracking-[.04em] text-jx-ink-3">{formatChangeOrderNumber(order.id)}</p>
+                    <span className={`mt-2 inline-flex rounded-full px-3 py-1 text-[11px] font-bold ${STATUS_STYLE[status] ?? STATUS_STYLE.draft}`} data-testid={`status-co-${order.id}`}>{STATUS_LABEL[status] ?? STATUS_LABEL.draft}</span>
                   </div>
-
-                  {/* Date */}
-                  <span
-                    className="font-mono"
-                    style={{ width: "96px", flexShrink: 0, fontSize: "12px", color: "var(--muted)" }}
-                  >
-                    {fmtDate(order.createdAt)}
-                  </span>
-
-                  {/* Amount Δ */}
-                  <span
-                    className="font-mono"
-                    style={{ width: "104px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 600, color: delta.color }}
-                    data-testid={`amount-co-${order.id}`}
-                  >
-                    {delta.text}
-                  </span>
-
-                  {/* Status badge */}
-                  <span style={{ width: "128px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
-                    <span style={{ background: badge.bg, color: badge.fg, fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px", textTransform: "capitalize", whiteSpace: "nowrap" }}>
-                      {badge.label}
-                    </span>
-                  </span>
-
-                  {/* Actions */}
-                  <span style={{ width: "28px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
+                  <div className={`flex shrink-0 items-center gap-1 font-mono text-[22px] font-semibold tracking-[-.04em] tabular-nums ${signedStyle(order.amount)}`} data-testid={`amount-co-${order.id}`}>
+                    {amountIcon}{changeOrderAmountText(order.amount)}
+                  </div>
+                </div>
+                <h2 className="mt-5 break-words font-display text-[20px] !font-bold leading-snug tracking-[-.035em] text-jx-ink" data-testid={`description-co-${order.id}`}>{order.description}</h2>
+                <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-jx-ink-2">
+                  {order.job ? <Link href={`/jobs/${order.job.id}`} className="max-w-full truncate font-semibold text-jx-green-ink underline decoration-jx-green-ink/30 underline-offset-4 hover:decoration-current" data-testid={`link-job-co-${order.id}`}>{order.job.title}</Link> : <span>Job not linked</span>}
+                  {order.job && order.invoice && <span aria-hidden="true" className="text-jx-ink-3">·</span>}
+                  {order.invoice ? <Link href={`/invoices/${order.invoice.id}`} className="max-w-full truncate text-jx-ink-2 underline decoration-jx-ink-3/40 underline-offset-4 hover:text-jx-ink" data-testid={`link-invoice-co-${order.id}`}>Invoice {order.invoice.invoiceNumber}</Link> : <span>Invoice not available</span>}
+                </div>
+                <div className="mt-5 min-h-[78px] rounded-2xl bg-card p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-[.12em] text-jx-ink-3">Reason for change</p>
+                  <p className="mt-1 break-words text-sm leading-relaxed text-jx-ink" data-testid={`reason-co-${order.id}`}>{order.reason?.trim() || "No reason provided."}</p>
+                </div>
+                <div className="mt-5 flex min-w-0 flex-wrap items-center justify-between gap-3 border-t border-jx-line pt-4">
+                  <div className="text-xs text-jx-ink-3"><span className="font-medium text-jx-ink-2">{formatDate(order.createdAt)}</span>{order.client?.name ? <span> · {order.client.name}</span> : null}</div>
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    {isPending && <Button type="button" onClick={() => setStatus(order, "approved")} disabled={updateMutation.isPending} className="min-h-10 rounded-full bg-jx-green px-4 text-xs font-bold text-white hover:bg-jx-green-hover" data-testid={`button-mark-approved-co-${order.id}`}><Check className="mr-1.5 h-4 w-4" aria-hidden="true" />Mark approved</Button>}
+                    {isPending && <Button type="button" variant="outline" onClick={() => setStatus(order, "rejected")} disabled={updateMutation.isPending} className="min-h-10 rounded-full border-2 border-jx-line px-4 text-xs font-semibold text-jx-ink-2 hover:border-jx-orange hover:bg-jx-orange-tint hover:text-jx-orange-ink" data-testid={`button-decline-co-${order.id}`}><X className="mr-1.5 h-4 w-4" aria-hidden="true" />Declined</Button>}
                     <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          style={{ border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "2px 0", display: "flex", alignItems: "center" }}
-                          data-testid={`button-co-actions-${order.id}`}
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" sideOffset={4}>
-                        {status !== "approved" && (
-                          <DropdownMenuItem onClick={() => updateMutation.mutate({ id: order.id, status: "approved" })} data-testid={`button-approve-co-${order.id}`}>
-                            <CheckCircle className="h-4 w-4 mr-2 text-green-600" />Approve
-                          </DropdownMenuItem>
-                        )}
-                        {status !== "pending" && (
-                          <DropdownMenuItem onClick={() => updateMutation.mutate({ id: order.id, status: "pending" })} data-testid={`button-pending-co-${order.id}`}>
-                            <Clock className="h-4 w-4 mr-2 text-amber-600" />Mark pending
-                          </DropdownMenuItem>
-                        )}
-                        {status !== "rejected" && (
-                          <DropdownMenuItem onClick={() => updateMutation.mutate({ id: order.id, status: "rejected" })} data-testid={`button-reject-co-${order.id}`}>
-                            <XCircle className="h-4 w-4 mr-2 text-red-600" />Reject
-                          </DropdownMenuItem>
-                        )}
-                        {order.invoice && (
-                          <DropdownMenuItem asChild>
-                            <Link href={`/invoices/${order.invoice.id}`} data-testid={`button-view-invoice-co-${order.id}`}>
-                              View invoice →
-                            </Link>
-                          </DropdownMenuItem>
-                        )}
+                      <DropdownMenuTrigger asChild><Button type="button" variant="outline" disabled={updateMutation.isPending || deleteMutation.isPending} className="min-h-10 rounded-full border-jx-line px-3 text-xs" aria-label={`More actions for ${formatChangeOrderNumber(order.id)}`} data-testid={`button-co-actions-${order.id}`}>More</Button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="rounded-xl">
+                        {status !== "approved" && <DropdownMenuItem disabled={updateMutation.isPending} onClick={() => setStatus(order, "approved")} data-testid={`button-approve-co-${order.id}`}><Check className="mr-2 h-4 w-4 text-jx-green-ink" />Mark approved</DropdownMenuItem>}
+                        {status !== "pending" && <DropdownMenuItem disabled={updateMutation.isPending} onClick={() => setStatus(order, "pending")} data-testid={`button-pending-co-${order.id}`}><Clock3 className="mr-2 h-4 w-4 text-jx-orange-ink" />Mark pending</DropdownMenuItem>}
+                        {status !== "rejected" && <DropdownMenuItem disabled={updateMutation.isPending} onClick={() => setStatus(order, "rejected")} data-testid={`button-reject-co-${order.id}`}><X className="mr-2 h-4 w-4 text-jx-orange-ink" />Decline</DropdownMenuItem>}
+                        {order.invoice && <DropdownMenuItem asChild><Link href={`/invoices/${order.invoice.id}`} data-testid={`button-view-invoice-co-${order.id}`}>View invoice</Link></DropdownMenuItem>}
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => setDeletingCO(order)}
-                          data-testid={`button-delete-co-${order.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />Delete
-                        </DropdownMenuItem>
+                        <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => openDelete(order)} data-testid={`button-delete-co-${order.id}`}><Trash2 className="mr-2 h-4 w-4" />Delete</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
-                  </span>
+                  </div>
                 </div>
-              );
+              </article>;
             })}
+          </div>}
+      </section>
 
-            {/* Footer */}
-            {!isLoading && filtered.length > 0 && (
-              <div style={{ padding: "13px 18px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: "12.5px", color: "var(--faint)" }}>
-                  {filtered.length} change order{filtered.length !== 1 ? "s" : ""}
-                  {activeFilter !== "all" ? ` · ${activeFilter}` : ""}
-                  {" · "}
-                  <span style={{ fontWeight: 600, color: netFmt.color }} className="font-mono">{netFmt.text}</span>
-                  {" net"}
-                </span>
-                <button
-                  onClick={() => setIsDialogOpen(true)}
-                  style={{ display: "inline-flex", alignItems: "center", gap: "6px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--jox-primary)", borderRadius: "8px", padding: "6px 14px", fontSize: "12.5px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-                  data-testid="button-new-co-footer"
-                >
-                  <Plus style={{ width: "13px", height: "13px" }} />New change order
-                </button>
-              </div>
-            )}
-          </div>
+      {!isLoading && !isError && filtered.length > 0 && <footer className="flex min-w-0 flex-wrap items-center justify-between gap-4 rounded-[20px] bg-jx-surface px-5 py-4" data-testid="change-orders-filtered-summary">
+        <p className="text-sm text-jx-ink-2">{filtered.length} {filtered.length === 1 ? "change order" : "change orders"}<span className="mx-2 text-jx-ink-3">·</span><span className="font-mono font-semibold tabular-nums text-jx-ink" data-testid="text-co-filtered-total">{formatMoney(filteredTotal)}</span><span className="ml-1">net in this view</span></p>
+        <Button type="button" variant="ghost" onClick={() => setDialogOpen(true)} className="min-h-11 rounded-full px-4 font-bold text-jx-green-ink hover:bg-jx-green-tint" data-testid="button-new-co-footer"><Plus className="mr-1.5 h-4 w-4" aria-hidden="true" /> New change order</Button>
+      </footer>}
+    </div>
 
-        </div>
-      </div>
-    </>
-  );
+    <ChangeOrderFormDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+    <AlertDialog open={!!deletingOrder} onOpenChange={(open) => { if (!open && !deleteMutation.isPending) { setDeletingOrder(null); setDeleteError(""); } }}>
+      <AlertDialogContent className="rounded-[26px] border-jx-line bg-card text-jx-ink">
+        <AlertDialogHeader>
+          <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-jx-orange-tint text-jx-orange-ink"><Trash2 className="h-5 w-5" aria-hidden="true" /></div>
+          <AlertDialogTitle className="font-display text-2xl !font-bold">Delete this change order?</AlertDialogTitle>
+          <AlertDialogDescription className="text-jx-ink-2">Permanently remove <strong className="text-jx-ink">{deletingOrder?.description}</strong>. This cannot be undone.</AlertDialogDescription>
+        </AlertDialogHeader>
+        {deleteError && <p className="rounded-xl bg-jx-orange-tint px-4 py-3 text-sm text-jx-orange-ink" role="alert" data-testid="delete-co-error">{deleteError}</p>}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deleteMutation.isPending} className="min-h-11 rounded-full" data-testid="button-cancel-delete-co">Cancel</AlertDialogCancel>
+          <AlertDialogAction className="min-h-11 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={deleteMutation.isPending} onClick={(event) => {
+            event.preventDefault();
+            if (deletingOrder && !deleteMutation.isPending) { setDeleteError(""); deleteMutation.mutate(deletingOrder.id); }
+          }} data-testid="button-confirm-delete-co">{deleteMutation.isPending ? "Deleting…" : "Delete change order"}</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </main>;
 }
