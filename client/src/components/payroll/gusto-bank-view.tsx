@@ -77,8 +77,8 @@ export default function GustoBankView() {
           </button>
         </div>
       </div>
-      {isError && <p role="alert" style={{ color: "#b91c1c", fontSize: "12px", margin: "10px 0 0" }}>The read-only bank view could not load. Gusto payroll remains available independently.</p>}
-      {bank?.error && <p role="status" style={{ color: "#9a3412", fontSize: "12px", margin: "10px 0 0" }}>{bank.error}</p>}
+      {isError && <p role="alert" style={{ color: "var(--jx-orange-ink)", fontSize: "12px", margin: "10px 0 0" }}>The read-only bank view could not load. Gusto payroll remains available independently.</p>}
+      {bank?.error && <p role="status" style={{ color: "var(--jx-orange-ink)", fontSize: "12px", margin: "10px 0 0" }}>{bank.error}</p>}
       {bank?.connected && !transactions.length && !isLoading && !isError && <p style={{ color: "var(--muted)", fontSize: "12px", margin: "12px 0 0" }}>No recent transactions in this read-only view.</p>}
       {transactions.length > 0 && (
         <div style={{ border: "1px solid var(--panel-bd)", borderRadius: "8px", overflow: "hidden", marginTop: "12px" }}>

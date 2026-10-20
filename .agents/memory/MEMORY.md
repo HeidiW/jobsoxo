@@ -8,3 +8,4 @@
 - [UI test environment](ui-test-environment.md) — New component tests need an explicit jsdom directive; legacy environmentMatchGlobs is not applied by the installed runner.
 - [Async required selects](async-required-selects.md) — Required Radix selects can emit empty values while options load; protect preselected values and test failed-load recovery.
 - [Job calendar dates](job-calendar-dates.md) — Scheduling dates are calendar days; UTC-midnight serialization must not move a job to the previous local day.
+- [Concurrent provider tests](concurrent-provider-tests.md) — Match concurrent provider mocks by URL and method; ordered one-shot responses can create false contract failures.

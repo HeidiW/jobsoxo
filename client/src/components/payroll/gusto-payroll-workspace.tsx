@@ -242,7 +242,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
       </div>
 
       {statusQuery.isLoading ? <div style={{ ...panel, color: "var(--muted)", fontSize: "13px" }}>Loading Gusto workspace…</div> : null}
-      {statusQuery.isError && <div role="alert" style={{ ...panel, color: "#9a3412", background: "#fff7ed" }}>Gusto status is unavailable. The independent bank view and local payroll history remain available. <button type="button" style={buttonStyle} onClick={() => void statusQuery.refetch()}>Retry</button></div>}
+      {statusQuery.isError && <div role="alert" style={{ ...panel, color: "var(--jx-orange-ink)", background: "var(--jx-orange-tint)" }}>Gusto status is unavailable. The independent bank view and local payroll history remain available. <button type="button" style={buttonStyle} onClick={() => void statusQuery.refetch()}>Retry</button></div>}
 
       {!statusQuery.isLoading && status && (
         <>
@@ -259,8 +259,8 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                     Funding: {status.fundingAccount?.name || "Not configured"}{status.fundingAccount?.accountMask ? ` · ••••${status.fundingAccount.accountMask}` : ""}{status.fundingAccount?.status ? ` · ${status.fundingAccount.status}` : ""}
                   </div>
                   {status.fundingAccount?.status === "verified" && <p role="note" style={{ color: "var(--muted)", fontSize: "11px", margin: "5px 0 0" }}>Gusto currently reports this funding account as verified. This status is read-only here; any verification steps or changes take place in Gusto.</p>}
-                  {status.error && <div role="status" style={{ color: "#9a3412", fontSize: "12px", marginTop: "5px" }}>{status.error}</div>}
-                  {status.blockers?.map((blocker, index) => <div key={`${blocker}-${index}`} style={{ color: "#9a3412", fontSize: "12px", marginTop: "4px" }}><AlertTriangle aria-hidden="true" style={{ width: "12px", height: "12px", verticalAlign: "middle", marginRight: "5px" }} />{blocker}</div>)}
+                  {status.error && <div role="status" style={{ color: "var(--jx-orange-ink)", fontSize: "12px", marginTop: "5px" }}>{status.error}</div>}
+                  {status.blockers?.map((blocker, index) => <div key={`${blocker}-${index}`} style={{ color: "var(--jx-orange-ink)", fontSize: "12px", marginTop: "4px" }}><AlertTriangle aria-hidden="true" style={{ width: "12px", height: "12px", verticalAlign: "middle", marginRight: "5px" }} />{blocker}</div>)}
                 </div>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
@@ -269,7 +269,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                 <button type="button" style={buttonStyle} disabled={busy || !status.configured} onClick={() => void openFlow("add_bank_info", "Set up Gusto funding")}>Funding setup</button>
               </div>
             </div>
-            {!status.configured && <p style={{ color: "#9a3412", fontSize: "12px", margin: "10px 0 0" }}>Gusto credentials are not configured. Payroll submission is unavailable; no manual payment route is offered.</p>}
+            {!status.configured && <p style={{ color: "var(--jx-orange-ink)", fontSize: "12px", margin: "10px 0 0" }}>Gusto credentials are not configured. Payroll submission is unavailable; no manual payment route is offered.</p>}
           </div>
 
           <div style={panel}>
@@ -288,19 +288,19 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
               </div>
             </div>
             {readinessQuery.isLoading ? <p style={{ color: "var(--muted)", fontSize: "12px" }}>Checking Gusto employee setup…</p>
-              : readinessQuery.isError ? <p role="alert" style={{ color: "#9a3412", fontSize: "12px" }}>Gusto employee readiness could not load. Retry after syncing the company.</p>
+              : readinessQuery.isError ? <p role="alert" style={{ color: "var(--jx-orange-ink)", fontSize: "12px" }}>Gusto employee readiness could not load. Retry after syncing the company.</p>
                 : readyEmployees.length === 0 ? <p style={{ color: "var(--muted)", fontSize: "12px", marginBottom: 0 }}>No Gusto employees are linked yet.</p>
                   : readyEmployees.map(employee => <div key={employee.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", padding: "8px 0", borderTop: "1px solid var(--panel-bd)", fontSize: "12px" }}>
                     <span>{employee.name || "Employee"}{employee.gustoEmployeeId ? <span style={{ color: "var(--muted)" }}> · Gusto linked</span> : ""}</span>
-                    <span style={{ color: employee.ready ? "#15803d" : "#9a3412", textAlign: "right" }}>{employee.ready ? "Gusto payment method ready" : (employee.blockers?.join(", ") || "Gusto setup needed")}</span>
+                    <span style={{ color: employee.ready ? "var(--jx-green-ink)" : "var(--jx-orange-ink)", textAlign: "right" }}>{employee.ready ? "Gusto payment method ready" : (employee.blockers?.join(", ") || "Gusto setup needed")}</span>
                   </div>)}
           </div>
 
-          {reviewMismatches.length > 0 && <div role="alert" style={{ ...panel, borderColor: "#fcd34d", color: "#92400e", fontSize: "12px" }}>
+          {reviewMismatches.length > 0 && <div role="alert" style={{ ...panel, borderColor: "var(--jx-gold)", color: "var(--jx-gold-ink)", fontSize: "12px" }}>
             Daily-pay employees need an explicit worked-day count before Gusto review: {reviewMismatches.map(item => item.name).join(", ")}. Saved hours are not converted using an assumed eight-hour day, and gross is not submitted as bonus pay.
           </div>}
-          {employeeBlockers.length > 0 && <div role="alert" style={{ ...panel, borderColor: "#fcd34d", color: "#92400e", fontSize: "12px" }}>Gusto employee setup blocks this review: {employeeBlockers.join(" · ")}</div>}
-          {samePeriodRun && !run && <div role="alert" style={{ ...panel, borderColor: "#fcd34d", color: "#92400e", fontSize: "12px" }}>
+          {employeeBlockers.length > 0 && <div role="alert" style={{ ...panel, borderColor: "var(--jx-gold)", color: "var(--jx-gold-ink)", fontSize: "12px" }}>Gusto employee setup blocks this review: {employeeBlockers.join(" · ")}</div>}
+          {samePeriodRun && !run && <div role="alert" style={{ ...panel, borderColor: "var(--jx-gold)", color: "var(--jx-gold-ink)", fontSize: "12px" }}>
             A Gusto run for this period is unresolved ({samePeriodRun.status}). Open it to reconcile or continue; a second review cannot be created for this period.
             <button type="button" style={{ ...buttonStyle, marginLeft: "10px" }} onClick={() => setRunId(samePeriodRun.id)}>Open existing Gusto run</button>
           </div>}
@@ -314,7 +314,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
               {reviewItems.length === 0 ? <p style={{ color: "var(--muted)", fontSize: "12px", marginBottom: 0 }}>No local payroll source records for this period. The local worksheet and history remain available.</p>
                 : <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
                   <thead><tr>{["Employee", "Source hours", "Local gross estimate", "Gusto setup"].map(label => <th key={label} style={{ textAlign: label === "Employee" ? "left" : "right", padding: "8px", color: "var(--muted)", borderBottom: "1px solid var(--panel-bd)" }}>{label}</th>)}</tr></thead>
-                  <tbody>{reviewItems.map(item => <tr key={item.employeeId}><td style={{ padding: "8px", borderBottom: "1px solid var(--panel-bd)" }}>{item.name}</td><td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid var(--panel-bd)" }}>{item.hours.toFixed(2)}h</td><td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid var(--panel-bd)" }}>{money(item.grossEstimate)}</td><td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid var(--panel-bd)", color: readinessById.get(item.employeeId)?.ready ? "#15803d" : "#9a3412" }}>{readinessById.get(item.employeeId)?.ready ? "Ready" : "Needs setup"}</td></tr>)}</tbody>
+                  <tbody>{reviewItems.map(item => <tr key={item.employeeId}><td style={{ padding: "8px", borderBottom: "1px solid var(--panel-bd)" }}>{item.name}</td><td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid var(--panel-bd)" }}>{item.hours.toFixed(2)}h</td><td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid var(--panel-bd)" }}>{money(item.grossEstimate)}</td><td style={{ padding: "8px", textAlign: "right", borderBottom: "1px solid var(--panel-bd)", color: readinessById.get(item.employeeId)?.ready ? "var(--jx-green-ink)" : "var(--jx-orange-ink)" }}>{readinessById.get(item.employeeId)?.ready ? "Ready" : "Needs setup"}</td></tr>)}</tbody>
                 </table></div>}
               <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "12px" }}><button type="button" style={{ ...buttonStyle, background: "var(--jox-primary)", color: "#fff", border: 0 }} disabled={!canCreate} onClick={() => void createRun()}>{busy ? "Creating…" : "Create Gusto payroll review"}</button></div>
             </div>
@@ -325,9 +325,9 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
               <strong>Gusto run {run.id.slice(0, 8)} · {run.status}</strong>
               <span style={{ color: "var(--muted)", fontSize: "11px" }}>{run.periodStart} – {run.periodEnd}{run.payDate ? ` · Pay date ${run.payDate}` : ""}</span>
             </div>
-            {pending && <p role="status" style={{ padding: "9px", background: "#fffbeb", color: "#92400e", fontSize: "12px" }}>Gusto has not reached a final status for this run. Do not submit again or create another run. Reconcile its status to continue.</p>}
-            {run.error && <p role="alert" style={{ color: "#b91c1c", fontSize: "12px" }}>{run.error}</p>}
-            {run.blockers?.map((blocker, index) => <p key={`${blocker}-${index}`} style={{ color: "#9a3412", fontSize: "12px" }}><AlertTriangle aria-hidden="true" style={{ width: "12px", height: "12px", verticalAlign: "middle", marginRight: "5px" }} />{blocker}</p>)}
+            {pending && <p role="status" style={{ padding: "9px", background: "var(--jx-gold-tint)", color: "var(--jx-gold-ink)", fontSize: "12px" }}>Gusto has not reached a final status for this run. Do not submit again or create another run. Reconcile its status to continue.</p>}
+            {run.error && <p role="alert" style={{ color: "var(--jx-orange-ink)", fontSize: "12px" }}>{run.error}</p>}
+            {run.blockers?.map((blocker, index) => <p key={`${blocker}-${index}`} style={{ color: "var(--jx-orange-ink)", fontSize: "12px" }}><AlertTriangle aria-hidden="true" style={{ width: "12px", height: "12px", verticalAlign: "middle", marginRight: "5px" }} />{blocker}</p>)}
             {run.employees && <div style={{ overflowX: "auto", marginTop: "10px" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}><tbody>
               {run.employees.map((employee, index) => <tr key={employee.id || index}><td style={{ padding: "8px", borderTop: "1px solid var(--panel-bd)" }}>{employee.name || reviewItems.find(item => item.employeeId === employee.id)?.name || "Employee"}</td><td style={{ padding: "8px", textAlign: "right", borderTop: "1px solid var(--panel-bd)" }}>{employee.hours == null ? "—" : `${employee.hours}h`}{typeof employee.days === "number" ? ` / ${employee.days}d` : ""}</td><td style={{ padding: "8px", textAlign: "right", borderTop: "1px solid var(--panel-bd)" }}>Gusto earnings {money(employee.earnings)}</td><td style={{ padding: "8px", textAlign: "right", borderTop: "1px solid var(--panel-bd)" }}>Gusto taxes {money(employee.taxes)} · Net {money(employee.netPay)}</td></tr>)}
             </tbody></table></div>}
@@ -351,7 +351,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
       )}
 
       {runsQuery.isLoading && <div style={{ ...panel, color: "var(--muted)", fontSize: "12px" }}>Loading Gusto payroll history…</div>}
-      {runsQuery.isError && <div role="alert" style={{ ...panel, color: "#9a3412", fontSize: "12px" }}>Gusto payroll history could not load. <button type="button" style={buttonStyle} onClick={() => void runsQuery.refetch()}>Retry</button></div>}
+      {runsQuery.isError && <div role="alert" style={{ ...panel, color: "var(--jx-orange-ink)", fontSize: "12px" }}>Gusto payroll history could not load. <button type="button" style={buttonStyle} onClick={() => void runsQuery.refetch()}>Retry</button></div>}
       {runList.length > 0 && <details style={panel} data-testid="gusto-payroll-history">
         <summary style={{ cursor: "pointer", fontSize: "12px", fontWeight: 700 }}>Gusto payroll history ({runList.length})</summary>
         <div style={{ marginTop: "8px" }}>{runList.map(item => <button key={item.id} type="button" onClick={() => setRunId(item.id)} style={{ display: "flex", justifyContent: "space-between", width: "100%", textAlign: "left", border: 0, borderTop: "1px solid var(--panel-bd)", padding: "9px 0", background: "transparent", color: "var(--fg)", cursor: "pointer", fontFamily: "inherit", fontSize: "12px" }}>

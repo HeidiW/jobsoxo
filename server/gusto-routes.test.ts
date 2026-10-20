@@ -298,10 +298,17 @@ describe("Gusto-only payroll", () => {
   });
   it("blocks unverified Gusto funding and incomplete employee methods but never checks a balance", async () => {
     const run = await readyRun();
-    fetchMock.mockImplementationOnce(async () => response({ uuid: companyId, name: "Test Company" }))
-      .mockImplementationOnce(async () => response({ onboarding_completed: true, onboarding_steps: [] }))
-      .mockImplementationOnce(async () => response([{ uuid: "funding-test", verification_status: "awaiting_deposits" }]));
-    await post(`/api/gusto/payroll-runs/${run.id}/submit`).send({ reviewedUpdatedAt: run.updatedAt }).expect(409);
+    const defaultFetch = fetchMock.getMockImplementation()!;
+    // Company, onboarding and account requests run concurrently, with async
+    // token lookups. Their arrival order is not guaranteed.
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (new URL(url).pathname.endsWith("/bank_accounts")) {
+        return response([{ uuid: "funding-test", verification_status: "awaiting_deposits" }]);
+      }
+      return defaultFetch(url, init);
+    });
+    const blocked = await post(`/api/gusto/payroll-runs/${run.id}/submit`).send({ reviewedUpdatedAt: run.updatedAt }).expect(409);
+    expect(blocked.body.error).toContain("Gusto funding account is not verified");
     expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/submit"))).toHaveLength(0);
   });
   it("keeps asynchronous submission failures immutable instead of retryable", async () => {

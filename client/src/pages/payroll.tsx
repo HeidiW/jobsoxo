@@ -31,6 +31,8 @@ import { format, startOfMonth, endOfMonth, subMonths } from "date-fns";
 import type { Employee, TimeEntry, PayrollRecord, Job, SmsAttempt } from "@shared/schema";
 import GustoBankView from "@/components/payroll/gusto-bank-view";
 import GustoOnlyWorkspace from "@/components/payroll/gusto-payroll-workspace";
+import { PayrollSummary } from "@/components/payroll/payroll-summary";
+import "@/components/payroll/payroll-redesign.css";
 export { default as GustoPayrollWorkspace } from "@/components/payroll/gusto-payroll-workspace";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -100,12 +102,12 @@ function periodLabel(start: string | Date, end: string | Date) {
 
 // ── Shared input style ────────────────────────────────────────────────────────
 const inp: React.CSSProperties = {
-  width: "100%", padding: "9px 11px", border: "1px solid #cbd5e1", borderRadius: "8px",
-  fontSize: "13.5px", color: "#0f172a", background: "#fff", fontFamily: "inherit",
+  width: "100%", padding: "9px 11px", border: "1px solid var(--panel-bd)", borderRadius: "8px",
+  fontSize: "13.5px", color: "var(--fg)", background: "var(--panel)", fontFamily: "inherit",
   outline: "none", boxSizing: "border-box",
 };
 const lbl: React.CSSProperties = {
-  display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b",
+  display: "block", fontSize: "11px", fontWeight: 700, color: "var(--muted)",
   textTransform: "uppercase", letterSpacing: ".04em", marginBottom: "5px",
 };
 
@@ -1354,12 +1356,23 @@ export default function Payroll() {
   const [rangeExportPeriod, setRangeExportPeriod] = useState<{ start: string; end: string }>({ start: "", end: "" });
   const { toast } = useToast();
 
-  const { data: employees, isLoading: empLoading } = useQuery<EmployeeWithStats[]>({ queryKey: ["/api/employees"] });
-  const { data: timeEntries, isLoading: timeLoading } = useQuery<TimeEntryWithRelations[]>({ queryKey: ["/api/time-entries"] });
-  const { data: payrollRecords, isLoading: payrollLoading } = useQuery<PayrollRecordWithEmployee[]>({ queryKey: ["/api/payroll-records"] });
+  const employeeQuery = useQuery<EmployeeWithStats[]>({ queryKey: ["/api/employees"] });
+  const { data: employees, isLoading: empLoading } = employeeQuery;
+  const timeQuery = useQuery<TimeEntryWithRelations[]>({ queryKey: ["/api/time-entries"] });
+  const { data: timeEntries, isLoading: timeLoading } = timeQuery;
+  const payrollQuery = useQuery<PayrollRecordWithEmployee[]>({ queryKey: ["/api/payroll-records"] });
+  const { data: payrollRecords, isLoading: payrollLoading } = payrollQuery;
   const { data: appSettings } = useQuery<{ companyName?: string }>({ queryKey: ["/api/settings"] });
   const companyName = appSettings?.companyName || "JobsOxo";
-  const { data: smsAttempts = [], isLoading: smsLoading } = useQuery<SmsAttempt[]>({ queryKey: ["/api/sms/attempts"] });
+  const smsQuery = useQuery<SmsAttempt[]>({ queryKey: ["/api/sms/attempts"] });
+  const { data: smsAttempts = [], isLoading: smsLoading } = smsQuery;
+  const sectionData = {
+    payroll: { query: payrollQuery, label: "local payroll history" },
+    employees: { query: employeeQuery, label: "employees" },
+    time: { query: timeQuery, label: "time entries" },
+    smslog: { query: smsQuery, label: "SMS log" },
+    settings: null,
+  }[activeSection];
 
   // ── Period grouping ────────────────────────────────────────────────────────
   const periods = useMemo(() => {
@@ -1694,18 +1707,18 @@ export default function Payroll() {
       </AlertDialog>
 
       {/* ── Page body ── */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "24px 26px 40px" }}>
-        <div style={{ maxWidth: "1280px", margin: "0 auto" }}>
+      <div className="payroll-redesign payroll-page-scroll" style={{ flex: 1, overflowY: "auto", padding: "24px 26px 40px" }}>
+        <div className="payroll-page-content" style={{ maxWidth: "1280px", margin: "0 auto" }}>
 
           {/* ── Title row ── */}
-          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "16px", marginBottom: "20px", flexWrap: "wrap" }}>
+          <div className="payroll-page-header" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "16px", marginBottom: "20px", flexWrap: "wrap" }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: "26px", fontWeight: 700, letterSpacing: "-.02em" }}>Payroll</h2>
+              <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 700, letterSpacing: "-.02em" }}>Payroll</h1>
               <p style={{ margin: "5px 0 0", fontSize: "13.5px", color: "var(--muted)" }}>
                 {currentPeriod ? `Pay period · ${periodLabel(currentPeriod.start, currentPeriod.end)}` : "Employees, time tracking, and pay runs"}
               </p>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div className="payroll-page-header-actions" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <button onClick={() => setIsTimeEntryDialogOpen(true)} style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-log-hours">
                 Log hours</button>
               <button onClick={() => { setEditingEmployee(null); setIsEmployeeDialogOpen(true); }} style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-add-employee">
@@ -1754,28 +1767,33 @@ export default function Payroll() {
             </div>
           </div>
 
+          {sectionData?.query.isError && (
+            <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-jx-orange-tint p-5 text-jx-orange-ink">
+              <p className="text-sm">
+                Could not load or refresh {sectionData.label}. Any previously loaded values are not updated.
+                {activeSection === "payroll" && " Gusto payroll remains independent of this local history."}
+              </p>
+              <Button type="button" variant="outline" className="rounded-full" onClick={() => void sectionData.query.refetch()} disabled={sectionData.query.isFetching}>
+                Retry loading {sectionData.label}
+              </Button>
+            </div>
+          )}
+
           {/* ── 5-stat strip ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: "12px", marginBottom: "20px" }}>
-            {[
-              { label: "Gross this period", value: fmt(gross), testid: "stat-gross" },
-              { label: "Net pay (take-home)", value: fmt(netTotal), testid: "stat-net", highlight: true },
-              { label: "Tax withheld", value: fmt(taxTotal), testid: "stat-tax" },
-              { label: "Overtime hours", value: otHrs > 0 ? otHrs.toFixed(0) + " hrs" : "0", testid: "stat-ot", warn: otHrs > 0 },
-              { label: "Crew on payroll", value: String(crewCount), testid: "stat-crew" },
-            ].map(s => (
-              <div key={s.label} style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-                <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>{s.label}</div>
-                <div className="font-mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "6px", color: s.warn ? "#b6731a" : s.highlight ? "#15803d" : "var(--fg)" }} data-testid={s.testid}>{payrollLoading ? "—" : s.value}</div>
-              </div>
-            ))}
-          </div>
+          <PayrollSummary loading={payrollLoading} items={[
+            { label: "Local net estimate", value: currentPeriod ? fmt(netTotal) : "—", testId: "stat-net", tone: "gold", detail: "Historical reference · not provider totals" },
+            { label: "Gross this period", value: currentPeriod ? fmt(gross) : "—", testId: "stat-gross" },
+            { label: "Tax withheld", value: currentPeriod ? fmt(taxTotal) : "—", testId: "stat-tax", detail: "Local record only" },
+            { label: "Overtime hours", value: currentPeriod ? (otHrs > 0 ? `${otHrs.toFixed(0)} hrs` : "0 hrs") : "—", testId: "stat-ot", tone: otHrs > 0 ? "amber" : undefined },
+            { label: "Crew on payroll", value: currentPeriod ? String(crewCount) : "—", testId: "stat-crew" },
+          ]} />
 
           {/* ── Section tabs ── */}
-          <div style={{ display: "flex", gap: "4px", marginBottom: "16px" }}>
+          <div className="payroll-section-tabs" style={{ display: "flex", gap: "4px", marginBottom: "16px" }}>
             {SECTION_TABS.map(s => {
               const active = activeSection === s.key;
               return (
-                <button key={s.key} onClick={() => setActiveSection(s.key)}
+                <button key={s.key} aria-pressed={active} onClick={() => setActiveSection(s.key)}
                   style={{ display: "inline-flex", alignItems: "center", gap: "7px", cursor: "pointer", fontFamily: "inherit", fontSize: "13px", fontWeight: 600, padding: "7px 13px", borderRadius: "8px", border: "1px solid " + (active ? "transparent" : "var(--panel-bd)"), background: active ? "var(--jox-primary)" : "var(--panel)", color: active ? "#fff" : "var(--muted)" }}
                   data-testid={`tab-${s.key}`}>
                   {s.key === "smslog" && <MessageSquare style={{ width: "12px", height: "12px" }} />}
@@ -1801,9 +1819,9 @@ export default function Payroll() {
             <>
             <GustoBankView />
             <GustoOnlyWorkspace records={currentRecords} period={currentPeriod} />
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
-              <div style={{ ...TH }}>
-                <span style={{ flex: 1, minWidth: 0 }}>Painter</span>
+            <div className="payroll-table-shell payroll-inline-panel" style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
+              <div className="payroll-table-head" data-payroll-wide="true" style={{ ...TH }}>
+                <span style={{ flex: 1, minWidth: 0 }}>Employee</span>
                 <span style={{ width: "90px", flexShrink: 0 }}>Type</span>
                 <span style={{ width: "80px", flexShrink: 0, textAlign: "right" }}>Reg hrs</span>
                 <span style={{ width: "72px", flexShrink: 0, textAlign: "right" }}>OT hrs</span>
@@ -1817,9 +1835,8 @@ export default function Payroll() {
 
               {payrollLoading && <div style={{ padding: "40px", textAlign: "center" as const, color: "var(--faint)", fontSize: "13px" }}>Loading pay records…</div>}
 
-              {!payrollLoading && periods.length === 0 && (
+              {!payrollLoading && !payrollQuery.isError && periods.length === 0 && (
                 <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
-                  <div style={{ fontSize: "32px", marginBottom: "10px" }}>💰</div>
                     <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>No local payroll records yet</div>
                     <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>Prepare local source records here, then use the Gusto workspace for provider payroll.</div>
                   <button onClick={() => setIsRunPayrollOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 18px", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-run-first-payroll">
@@ -1837,7 +1854,7 @@ export default function Payroll() {
                 const dedW = Number(r.deductions ?? 0);
                 const is1099 = (r.employee as any).employmentType === "1099";
                 return (
-                  <div key={r.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "11px 18px", borderBottom: "1px solid var(--panel-bd)", cursor: "pointer" }}
+                  <div key={r.id} data-payroll-wide="true" className="rowhover" style={{ display: "flex", alignItems: "center", padding: "11px 18px", borderBottom: "1px solid var(--panel-bd)", cursor: "pointer" }}
                     onClick={() => setPayStubRecord(r as PayrollRecordWithEmployee)} data-testid={`row-payroll-${r.id}`}>
                     {/* Painter */}
                     <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "10px", paddingRight: "10px" }}>
@@ -1901,7 +1918,7 @@ export default function Payroll() {
 
               {/* Footer totals */}
               {crewRows.length > 0 && (
-                <div style={{ display: "flex", alignItems: "center", padding: "12px 18px", background: "var(--track)", borderTop: "1px solid var(--panel-bd)" }}>
+                <div data-payroll-wide="true" style={{ display: "flex", alignItems: "center", padding: "12px 18px", background: "var(--track)", borderTop: "1px solid var(--panel-bd)" }}>
                   <span style={{ flex: 1, fontSize: "12.5px", fontWeight: 700 }}>Total</span>
                   <span style={{ width: "90px", flexShrink: 0 }}></span>
                   <span className="font-mono" style={{ width: "80px", flexShrink: 0, textAlign: "right", fontSize: "12px", color: "var(--muted)" }}>{totalHrs.toFixed(0)} hrs</span>
@@ -1923,7 +1940,7 @@ export default function Payroll() {
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* ── EMPLOYEES TABLE ── */}
           {activeSection === "employees" && (
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
+            <div className="payroll-table-shell payroll-inline-panel" style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)", background: "var(--track)" }}>
                 <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "7px", background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "6px 11px" }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -1934,7 +1951,7 @@ export default function Payroll() {
                 </button>
               </div>
 
-              <div style={{ ...TH }}>
+              <div className="payroll-table-head" data-payroll-wide="true" style={{ ...TH }}>
                 <span style={{ flex: 1, minWidth: 0 }}>Employee</span>
                 <span style={{ width: "80px", flexShrink: 0 }}>Type</span>
                 <span style={{ width: "100px", flexShrink: 0 }}>Position</span>
@@ -1950,7 +1967,6 @@ export default function Payroll() {
 
               {!empLoading && filteredEmployees.length === 0 && (
                 <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
-                  <div style={{ fontSize: "32px", marginBottom: "10px" }}>👷</div>
                   <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>{empSearch ? "No employees found" : "No employees yet"}</div>
                   <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>{empSearch ? `No results for "${empSearch}"` : "Add your first employee to get started."}</div>
                   {!empSearch && <button onClick={() => setIsEmployeeDialogOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 18px", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-add-first-employee"><Plus style={{ width: "15px", height: "15px" }} />Add employee</button>}
@@ -1963,7 +1979,7 @@ export default function Payroll() {
                 const avFg = `var(${AV_FG[i % 6]})`;
                 const is1099 = (emp as any).employmentType === "1099";
                 return (
-                  <div key={emp.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-employee-${emp.id}`}>
+                  <div key={emp.id} data-payroll-wide="true" className="rowhover" style={{ display: "flex", alignItems: "center", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-employee-${emp.id}`}>
                     <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "12px", paddingRight: "12px" }}>
                       <div style={{ width: "34px", height: "34px", borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "11.5px", background: avBg, color: avFg }}>
                         {initials(emp.name)}
@@ -2040,7 +2056,7 @@ export default function Payroll() {
               })}
 
               {!empLoading && filteredEmployees.length > 0 && (
-                <div style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
+                <div data-payroll-wide="true" style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
                   {filteredEmployees.length} employee{filteredEmployees.length !== 1 ? "s" : ""} · {filteredEmployees.filter(e => e.status === "active").length} active
                   · {filteredEmployees.filter(e => (e as any).employmentType === "1099").length} contractors
                 </div>
@@ -2051,7 +2067,7 @@ export default function Payroll() {
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* ── TIME ENTRIES TABLE ── */}
           {activeSection === "time" && (
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
+            <div className="payroll-table-shell payroll-inline-panel" style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)", background: "var(--track)", flexWrap: "wrap" }}>
                 {(["all","this_month","last_month","last_7"] as const).map(f => {
                   const labels: Record<string, string> = { all: "All time", this_month: "This month", last_month: "Last month", last_7: "Last 7 days" };
@@ -2080,7 +2096,7 @@ export default function Payroll() {
                 </button>
               </div>
 
-              <div style={{ ...TH }}>
+              <div className="payroll-table-head" data-payroll-wide="true" style={{ ...TH }}>
                 <span style={{ width: "96px", flexShrink: 0 }}>Date</span>
                 <span style={{ width: "150px", flexShrink: 0 }}>Employee</span>
                 <span style={{ flex: 1, minWidth: 0 }}>Job</span>
@@ -2095,7 +2111,6 @@ export default function Payroll() {
 
               {!timeLoading && filteredTimeEntries.length === 0 && (
                 <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
-                  <div style={{ fontSize: "32px", marginBottom: "10px" }}>⏱️</div>
                   <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>No time entries</div>
                   <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>Log hours to track time worked by your crew.</div>
                   <button onClick={() => setIsTimeEntryDialogOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 18px", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-add-first-time-entry">
@@ -2107,7 +2122,7 @@ export default function Payroll() {
               {filteredTimeEntries.map((entry) => {
                 const isSms = entry.source === "sms";
                 return (
-                  <div key={entry.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "11px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-time-${entry.id}`}>
+                  <div key={entry.id} data-payroll-wide="true" className="rowhover" style={{ display: "flex", alignItems: "center", padding: "11px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-time-${entry.id}`}>
                     <span style={{ width: "96px", flexShrink: 0, fontSize: "12.5px", color: "var(--muted)" }}>
                       {format(new Date(entry.date), "MMM d, yyyy")}
                     </span>
@@ -2135,7 +2150,7 @@ export default function Payroll() {
               })}
 
               {!timeLoading && filteredTimeEntries.length > 0 && (
-                <div style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
+                <div data-payroll-wide="true" style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
                   {filteredTimeEntries.length} entr{filteredTimeEntries.length !== 1 ? "ies" : "y"} · {filteredTimeEntries.reduce((s, e) => s + Number(e.hoursWorked), 0).toFixed(1)} total hours
                   {smsEntryCount > 0 && <> · <span style={{ color: "var(--b-blue-fg, #1d4ed8)", fontWeight: 600 }}>{smsEntryCount} via SMS</span></>}
                 </div>
@@ -2146,7 +2161,7 @@ export default function Payroll() {
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* ── SMS LOG ── */}
           {activeSection === "smslog" && (
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
+            <div className="payroll-table-shell payroll-inline-panel" style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "14px 18px", borderBottom: "1px solid var(--panel-bd)", background: "var(--track)" }}>
                 <MessageSquare style={{ width: "15px", height: "15px", color: "var(--jox-primary)" }} />
                 <div>
@@ -2160,7 +2175,7 @@ export default function Payroll() {
                 )}
               </div>
 
-              <div style={{ ...TH }}>
+              <div className="payroll-table-head" data-payroll-wide="true" style={{ ...TH }}>
                 <span style={{ width: "148px", flexShrink: 0 }}>Time</span>
                 <span style={{ width: "130px", flexShrink: 0 }}>From</span>
                 <span style={{ width: "140px", flexShrink: 0 }}>Employee</span>
@@ -2173,7 +2188,6 @@ export default function Payroll() {
 
               {!smsLoading && smsAttempts.length === 0 && (
                 <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
-                  <div style={{ fontSize: "32px", marginBottom: "10px" }}>📱</div>
                   <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>No SMS activity yet</div>
                   <div style={{ fontSize: "13px", color: "var(--faint)" }}>When employees text in their hours, all attempts will appear here.</div>
                 </div>
@@ -2183,7 +2197,7 @@ export default function Payroll() {
                 const badge = SMS_STATUS[attempt.status] ?? { bg: "var(--b-gray-bg)", fg: "var(--b-gray-fg)", label: attempt.status };
                 const isRejected = !["ok", "help"].includes(attempt.status);
                 return (
-                  <div key={attempt.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "10px 18px", borderBottom: "1px solid var(--panel-bd)", background: isRejected ? "rgba(254,226,226,0.18)" : undefined }} data-testid={`row-sms-${attempt.id}`}>
+                  <div key={attempt.id} data-payroll-wide="true" className="rowhover" style={{ display: "flex", alignItems: "center", padding: "10px 18px", borderBottom: "1px solid var(--panel-bd)", background: isRejected ? "rgba(254,226,226,0.18)" : undefined }} data-testid={`row-sms-${attempt.id}`}>
                     <span style={{ width: "148px", flexShrink: 0, fontSize: "12px", color: "var(--muted)" }}>
                       {format(new Date(attempt.createdAt), "MMM d, h:mm a")}
                     </span>
@@ -2209,7 +2223,7 @@ export default function Payroll() {
               })}
 
               {!smsLoading && smsAttempts.length > 0 && (
-                <div style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
+                <div data-payroll-wide="true" style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
                   {smsAttempts.length} message{smsAttempts.length !== 1 ? "s" : ""}
                   {" · "}{smsAttempts.filter(a => a.status === "ok").length} logged
                   {smsRejectedCount > 0 && <> · <span style={{ color: "#b91c1c", fontWeight: 600 }}>{smsRejectedCount} rejected</span></>}
