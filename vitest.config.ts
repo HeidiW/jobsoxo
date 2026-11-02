@@ -13,7 +13,7 @@ export default defineConfig({
     globals: true,
     testTimeout: 15000,
     fileParallelism: false,
-    setupFiles: ["./client/src/test-setup.ts"],
+    setupFiles: ["./client/src/test-setup.ts", "./server/test-database-setup.ts"],
   },
   resolve: {
     alias: {

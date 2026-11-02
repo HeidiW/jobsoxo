@@ -11,3 +11,4 @@
 - [Concurrent provider tests](concurrent-provider-tests.md) — Match concurrent provider mocks by URL and method; ordered one-shot responses can create false contract failures.
 - [Inbox snooze timing](inbox-snooze-timing.md) — “Tomorrow” uses the user's next local midnight, not server midnight; snooze expiry remains an actual instant.
 - [Publishing ports](publishing-ports.md) — Autoscale permits one public port; design-preview services must not add another external mapping.
+- [Test fixture isolation](test-fixture-isolation.md) — Rollback normal fixtures; concurrency tests need independent connections and owned-ID cleanup. Historical samples require approval.

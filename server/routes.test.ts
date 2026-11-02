@@ -1220,6 +1220,8 @@ describe("PATCH /api/inbox/tasks/:emailId/restore — restore dismissed email", 
   });
 
   it("makes the restored email appear in the active task list", async () => {
+    // Each test owns its changes; do not depend on a preceding test's restore.
+    await request(adminApp).patch(`/api/inbox/tasks/${emailId}/restore`).expect(200);
     const activeTasks = await request(adminApp)
       .get("/api/inbox/tasks")
       .expect(200);

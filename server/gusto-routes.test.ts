@@ -11,6 +11,10 @@ import { employees, gustoEmployeeMappings, gustoIntegrations, gustoPayrollItems,
 import { registerGustoRoutes } from "./gusto-routes";
 import { gustoRequest } from "./gusto-client";
 
+// Concurrency/locking tests need independent committed connections, not the
+// default rollback-only connection. Cleanup below is scoped to owned IDs.
+vi.unmock("./db");
+
 vi.mock("./plaid", () => ({
   getBalance: vi.fn(async () => { throw new Error("Plaid disabled"); }),
 }));
@@ -110,6 +114,11 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // Capture even runs whose HTTP assertion failed before createRun returned.
+  const ownedRuns = userIds.length
+    ? await db.select({ id: gustoPayrollRuns.id }).from(gustoPayrollRuns).where(inArray(gustoPayrollRuns.userId, userIds))
+    : [];
+  runIds.push(...ownedRuns.map(run => run.id));
   if (runIds.length) {
     await db.delete(gustoPayrollItems).where(inArray(gustoPayrollItems.runId, runIds));
     await db.delete(gustoPayrollRuns).where(inArray(gustoPayrollRuns.id, runIds));
