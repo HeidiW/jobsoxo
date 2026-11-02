@@ -20,3 +20,9 @@ The user chose to start with a new demo company. Do not change to live company c
 **Why:** Demo onboarding verifies the integration without affecting existing payroll or moving real funds.
 
 **How to apply:** Treat application authentication, company creation, onboarding readiness, and payroll submission as separate actions. Persist a creation reservation before a remote company-creation request; ambiguous responses must not enable a duplicate creation attempt.
+
+Company removal is **JobsOxo-only**, as explicitly chosen by the user. It must not delete, disassociate, or revoke the company in Gusto.
+
+**Why:** The user chose local removal over provider-side deletion. Existing payroll history must remain protected.
+
+**How to apply:** Keep provider-side changes out of the removal action; preserve local employees and source records, and require separate authorization before expanding removal beyond demo connections.

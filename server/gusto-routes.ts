@@ -1,5 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db } from "./db";
 import { employees, gustoIntegrations, gustoPayrollItems, gustoPayrollRuns, gustoWebhookEvents } from "@shared/schema";
@@ -9,6 +9,7 @@ import { calculatePayroll, cancelPayroll, PayrollConflict, pendingPayrollStates,
 import { derivePayrollInputs, payrollDate } from "./gusto-inputs";
 import { registerPayrollBankView } from "./payroll-bank-view";
 import { demoCompanySetup, registerGustoDemoRoutes } from "./gusto-demo-company";
+import { registerGustoRemovalRoutes } from "./gusto-remove-company";
 
 declare module "http" { interface IncomingMessage { rawBody: unknown } }
 
@@ -55,6 +56,7 @@ export function registerGustoRoutes(app: Express, requireAdmin: (req: Request, r
   };
   registerPayrollBankView(app, requireAdmin);
   registerGustoDemoRoutes(app, requireAdmin);
+  registerGustoRemovalRoutes(app, requireAdmin);
   app.get("/api/gusto/status", requireAdmin, async (req, res) => {
     try {
       const setup = await demoCompanySetup(req.session.userId!);
@@ -109,6 +111,12 @@ export function registerGustoRoutes(app: Express, requireAdmin: (req: Request, r
       try { inputs = await derivePayrollInputs(periodStart, periodEnd, req.body.items ?? [], integration.companyId!, integration.environment); }
       catch (error) { return res.status(400).json({ error: error instanceof Error && !(error as any).code ? error.message : "Invalid payroll inputs." }); }
       const id = await db.transaction(async tx => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('gusto-company-connect'))`);
+        const [current] = await tx.select().from(gustoIntegrations).where(eq(gustoIntegrations.userId, userId));
+        if (!current?.encryptedAccessToken || current.id !== integration.id ||
+            current.companyId !== integration.companyId || current.environment !== integration.environment) {
+          throw new PayrollConflict("The company connection changed. Refresh before creating payroll.");
+        }
         const [inserted] = await tx.insert(gustoPayrollRuns).values({
           userId, companyId: integration.companyId, environment: integration.environment,
           periodStart, periodEnd, payDate, idempotencyKey: key,

@@ -101,7 +101,8 @@ export async function syncEmployees(userId: string) {
     db.select().from(employees).where(eq(employees.status, "active")),
     db.select().from(gustoEmployeeMappings),
   ]);
-  const synced = [];
+  const synced: Array<{ employeeId: string; gustoEmployeeId: string; onboardingStatus: string; paymentMethodStatus: string }> = [];
+  const staleMappingIds: string[] = [];
   for (const employee of localEmployees) {
     const old = mappings.find(row => row.employeeId === employee.id && row.companyId === integration.companyId && row.environment === integration.environment);
     const matches = old ? providerEmployees.filter(row => row.uuid === old.gustoEmployeeId)
@@ -110,21 +111,31 @@ export async function syncEmployees(userId: string) {
     const match = matches.length === 1 && (old || !localDuplicate) ? matches[0] : null;
     if (!match?.uuid || match.terminated === true) {
       // Invalidate stale readiness if an employee disappeared from the company.
-      if (old) await db.update(gustoEmployeeMappings).set({ onboardingStatus: "unknown", paymentMethodStatus: "unknown", lastSyncedAt: new Date() }).where(eq(gustoEmployeeMappings.id, old.id));
+      if (old) staleMappingIds.push(old.id);
       continue;
     }
     const method = await gustoRequest<any>(`/v1/employees/${encodeURIComponent(match.uuid)}/payment_method`, { userId });
     const paymentMethodStatus = method?.type === "Direct Deposit" && Array.isArray(method.splits) && method.splits.length > 0 ? "complete" : "incomplete";
     const onboardingStatus = match.onboarding_status === "onboarding_completed" || match.onboarding_status === "complete" ? "complete" : String(match.onboarding_status ?? "unknown");
-    await db.insert(gustoEmployeeMappings).values({
-      employeeId: employee.id, gustoEmployeeId: match.uuid, companyId: integration.companyId, environment: integration.environment,
-      onboardingStatus, paymentMethodStatus, lastSyncedAt: new Date(),
-    }).onConflictDoUpdate({ target: gustoEmployeeMappings.employeeId, set: {
-      gustoEmployeeId: match.uuid, companyId: integration.companyId, environment: integration.environment,
-      onboardingStatus, paymentMethodStatus, lastSyncedAt: new Date(), updatedAt: new Date(),
-    } });
     synced.push({ employeeId: employee.id, gustoEmployeeId: match.uuid, onboardingStatus, paymentMethodStatus });
   }
+  await db.transaction(async tx => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('gusto-company-connect'))`);
+    const [current] = await tx.select().from(gustoIntegrations).where(eq(gustoIntegrations.userId, userId));
+    if (!current?.encryptedAccessToken || current.id !== integration.id ||
+        current.companyId !== integration.companyId || current.environment !== integration.environment) {
+      throw new GustoConfigurationError("The company connection changed. Refresh before syncing employees.");
+    }
+    for (const id of staleMappingIds) {
+      await tx.update(gustoEmployeeMappings).set({ onboardingStatus: "unknown", paymentMethodStatus: "unknown", lastSyncedAt: new Date() }).where(eq(gustoEmployeeMappings.id, id));
+    }
+    for (const item of synced) {
+      const values = { ...item, companyId: integration.companyId, environment: integration.environment, lastSyncedAt: new Date() };
+      await tx.insert(gustoEmployeeMappings).values(values).onConflictDoUpdate({
+        target: gustoEmployeeMappings.employeeId, set: { ...values, updatedAt: new Date() },
+      });
+    }
+  });
   return synced;
 }
 

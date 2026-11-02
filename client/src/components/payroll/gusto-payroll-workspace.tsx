@@ -67,6 +67,8 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
   const [fundingWarning, setFundingWarning] = useState(false);
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [submitConfirm, setSubmitConfirm] = useState(false);
+  const [removeCompanyId, setRemoveCompanyId] = useState("");
+  const removingCompany = useRef(false);
   const idempotencyKey = useRef<string | null>(null);
   const demoSetupRef = useRef<HTMLDivElement>(null);
 
@@ -159,6 +161,23 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
     } finally {
       setBusy(false);
     }
+  }
+
+  async function removeCompany() {
+    if (!removeCompanyId || removingCompany.current || busy) return;
+    removingCompany.current = true;
+    try {
+      const result = await perform<{ removed: boolean }>("DELETE", "/api/gusto/company", {
+        companyId: removeCompanyId, confirmRemove: true,
+      });
+      if (result?.removed) {
+        setRemoveCompanyId("");
+        setRunId("");
+        setFlowUrl("");
+        idempotencyKey.current = null;
+        toast({ title: "Demo company removed from JobsOxo", description: "The company still exists in Gusto. Local employees and timesheets were kept." });
+      }
+    } finally { removingCompany.current = false; }
   }
 
   async function startFlow(flowType: FlowType, label: string) {
@@ -280,6 +299,11 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                   <button type="button" style={buttonStyle} disabled={busy} onClick={() => void perform("POST", "/api/gusto/sync")}>Sync readiness</button>
                   <button type="button" style={buttonStyle} disabled={busy} onClick={() => void openFlow("add_bank_info", "Set up Gusto funding")}>Funding setup</button>
                 </>}
+                {status.companyId && status.environment === "demo" && <button
+                  type="button" style={{ ...buttonStyle, color: "var(--jx-orange-ink)" }}
+                  disabled={busy || !!flowUrl}
+                  onClick={() => setRemoveCompanyId(status.companyId!)}
+                >Remove demo company</button>}
               </div>
             </div>
             {!status.configured && <p style={{ color: "var(--jx-orange-ink)", fontSize: "12px", margin: "10px 0 0" }}>{status.setup?.clientConfigured
@@ -388,6 +412,27 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
           {flowUrl && <iframe key={flowUrl} title={flowTitle} src={flowUrl} className="min-h-0 flex-1 w-full rounded border border-border" referrerPolicy="strict-origin-when-cross-origin" sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" />}
         </DialogContent>
       </Dialog>
+      <AlertDialog open={!!removeCompanyId} onOpenChange={open => { if (!open && !busy) setRemoveCompanyId(""); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove demo company from JobsOxo?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the saved connection and employee links for {status?.companyName || "this demo company"} from JobsOxo.
+              The company and its data will remain in Gusto. Your JobsOxo employees, timesheets, and worksheets will be kept.
+              Removal is blocked if any payroll history exists, including draft or pending runs.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {runList.length > 0 && <p role="alert" className="text-sm text-destructive">This company has saved payroll history and cannot be removed.</p>}
+          {runsQuery.isError && <p role="alert" className="text-sm text-destructive">Payroll history could not be checked. Refresh history before removing this company.</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Keep company</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy || runsQuery.isLoading || runsQuery.isFetching || runsQuery.isError || runList.length > 0}
+              onClick={event => { event.preventDefault(); void removeCompany(); }}
+            >{busy ? "Removing…" : "Remove from JobsOxo"}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={cancelConfirm} onOpenChange={setCancelConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader><AlertDialogTitle>Cancel this Gusto payroll run?</AlertDialogTitle><AlertDialogDescription>Gusto cancellation reopens an unprocessed payroll. It does not reverse an ACH payment. Continue only if Gusto says this run can be cancelled.</AlertDialogDescription></AlertDialogHeader>
