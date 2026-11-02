@@ -57,6 +57,31 @@ describe("Gusto demo company setup in the payroll workspace", () => {
   }
   const requests = () => fetchMock.mock.calls.filter(([url]) => url === "/api/gusto/demo-company");
 
+  it("takes the demo setup action to the form without calling the old connect endpoint", () => {
+    const scroll = vi.fn();
+    const previous = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scroll;
+    try {
+      mount();
+      expect(screen.queryByRole("button", { name: "Connect Gusto company" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Funding setup" })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Set up demo company" }));
+      expect(scroll).toHaveBeenCalledOnce();
+      expect(screen.getByLabelText("Company name")).toHaveFocus();
+      expect(fetchMock.mock.calls.some(([url]) => url === "/api/gusto/connect" || url === "/api/gusto/demo-company")).toBe(false);
+    } finally {
+      HTMLElement.prototype.scrollIntoView = previous;
+    }
+  });
+
+  it("does not offer the demo action when creation is blocked", () => {
+    status = { ...status, setup: { clientConfigured: true, canCreateDemoCompany: false, creationState: "demo_creation_unknown" } };
+    mount();
+    expect(screen.queryByRole("button", { name: "Set up demo company" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect Gusto company" })).not.toBeInTheDocument();
+    expect(screen.getByText(/creation is blocked/)).toBeInTheDocument();
+  });
+
   it("starts blank, explains administrator contact, and requires valid fields and explicit confirmation", () => {
     mount();
     expect(screen.getByLabelText("Administrator email")).toHaveValue("");

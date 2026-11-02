@@ -68,6 +68,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [submitConfirm, setSubmitConfirm] = useState(false);
   const idempotencyKey = useRef<string | null>(null);
+  const demoSetupRef = useRef<HTMLDivElement>(null);
 
   const statusQuery = useQuery<GustoStatus>({ queryKey: ["/api/gusto/status"], staleTime: 30_000, retry: false });
   const runsQuery = useQuery<RunList>({
@@ -265,9 +266,20 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                 </div>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
-                {!status.companyId && <button type="button" style={buttonStyle} disabled={busy || !status.configured} onClick={() => void perform("POST", "/api/gusto/connect")}>Connect Gusto company</button>}
-                <button type="button" style={buttonStyle} disabled={busy || !status.configured} onClick={() => void perform("POST", "/api/gusto/sync")}>Sync readiness</button>
-                <button type="button" style={buttonStyle} disabled={busy || !status.configured} onClick={() => void openFlow("add_bank_info", "Set up Gusto funding")}>Funding setup</button>
+                {!status.companyId && status.configured && <button type="button" style={buttonStyle} disabled={busy} onClick={() => void perform("POST", "/api/gusto/connect")}>Connect Gusto company</button>}
+                {!status.companyId && !status.configured && status.environment === "demo" && status.setup?.canCreateDemoCompany
+                  && !["demo_creating", "demo_creation_unknown"].includes(status.setup.creationState ?? "")
+                  && <button type="button" style={buttonStyle} onClick={() => {
+                    const setup = demoSetupRef.current;
+                    setup?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    const input = setup?.querySelector<HTMLInputElement>("input:not(:disabled)");
+                    if (input) input.focus({ preventScroll: true });
+                    else setup?.focus({ preventScroll: true });
+                  }}>Set up demo company</button>}
+                {status.configured && <>
+                  <button type="button" style={buttonStyle} disabled={busy} onClick={() => void perform("POST", "/api/gusto/sync")}>Sync readiness</button>
+                  <button type="button" style={buttonStyle} disabled={busy} onClick={() => void openFlow("add_bank_info", "Set up Gusto funding")}>Funding setup</button>
+                </>}
               </div>
             </div>
             {!status.configured && <p style={{ color: "var(--jx-orange-ink)", fontSize: "12px", margin: "10px 0 0" }}>{status.setup?.clientConfigured
@@ -275,7 +287,9 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
               : "Gusto application credentials are not configured."} Payroll submission is unavailable; no manual payment route is offered.</p>}
           </div>
 
-          <GustoDemoCompanySetup status={status} statusReady={statusQuery.isSuccess && !statusQuery.isFetching} />
+          <div ref={demoSetupRef} tabIndex={-1}>
+            <GustoDemoCompanySetup status={status} statusReady={statusQuery.isSuccess && !statusQuery.isFetching} />
+          </div>
 
           <div style={panel}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
