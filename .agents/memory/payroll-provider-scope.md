@@ -14,3 +14,9 @@ The user confirmed their Gusto developer application is **Embedded Payroll**, no
 **Why:** Embedded company creation and migration have different authorization requirements. Gusto documents OAuth for connecting an existing Gusto company as part of migration to Embedded Payroll; a new partner-managed company receives company tokens during creation.
 
 **How to apply:** Establish whether the target is a new demo company or an existing company before choosing onboarding. Never automatically migrate an existing company or accept its terms of service on the user's behalf. Do not equate successful OAuth authorization with completed migration or payroll readiness.
+
+The user chose to start with a new demo company. Do not change to live company creation or migration without explicit approval.
+
+**Why:** Demo onboarding verifies the integration without affecting existing payroll or moving real funds.
+
+**How to apply:** Treat application authentication, company creation, onboarding readiness, and payroll submission as separate actions. Persist a creation reservation before a remote company-creation request; ambiguous responses must not enable a duplicate creation attempt.

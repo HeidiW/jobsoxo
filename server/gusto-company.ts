@@ -32,6 +32,9 @@ export async function connectCompany(userId: string) {
       throw new GustoConfigurationError("This Gusto company is already connected to another administrator.");
     }
     const previous = all.find(row => row.userId === userId);
+    if (all.some(row => ["demo_creating", "demo_creation_unknown"].includes(row.state))) {
+      throw new GustoConfigurationError("Resolve the pending demo company creation before connecting company credentials.");
+    }
     if (previous?.companyId && (previous.companyId !== companyId || previous.environment !== gustoEnvironment())) {
       throw new GustoConfigurationError("A different Gusto company or environment is already connected. Existing payroll history must not be reassigned.");
     }

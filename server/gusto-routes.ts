@@ -8,6 +8,7 @@ import { companyIntegration, connectCompany, createFlow, employeeReadiness, sync
 import { calculatePayroll, cancelPayroll, PayrollConflict, pendingPayrollStates, reconcilePayroll, runForUser, submitPayroll } from "./gusto-payroll";
 import { derivePayrollInputs, payrollDate } from "./gusto-inputs";
 import { registerPayrollBankView } from "./payroll-bank-view";
+import { demoCompanySetup, registerGustoDemoRoutes } from "./gusto-demo-company";
 
 declare module "http" { interface IncomingMessage { rawBody: unknown } }
 
@@ -53,14 +54,19 @@ export function registerGustoRoutes(app: Express, requireAdmin: (req: Request, r
     baseRequireAdmin(req, res, next);
   };
   registerPayrollBankView(app, requireAdmin);
+  registerGustoDemoRoutes(app, requireAdmin);
   app.get("/api/gusto/status", requireAdmin, async (req, res) => {
     try {
+      const setup = await demoCompanySetup(req.session.userId!);
       const integration = await db.query.gustoIntegrations.findFirst({ where: eq(gustoIntegrations.userId, req.session.userId!) });
       if (!integration?.encryptedAccessToken) return res.json({
+        setup,
         configured: gustoConfigured(), available: false, state: "not_connected", environment: gustoEnvironment(),
-        error: gustoConfigured() ? "Connect the configured Gusto Embedded company to enable payroll." : "Gusto Embedded company credentials are not configured.",
+        error: setup.error || (gustoConfigured() ? "Connect the configured Gusto Embedded company to enable payroll."
+          : setup.clientConfigured ? "Gusto application credentials are saved. Set up a demo company to continue."
+          : "Gusto Embedded company credentials are not configured."),
       });
-      res.json(await syncCompany(req.session.userId!));
+      res.json({ ...await syncCompany(req.session.userId!), setup });
     } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/connect", requireAdmin, async (req, res) => {

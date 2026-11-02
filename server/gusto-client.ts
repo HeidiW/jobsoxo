@@ -32,6 +32,49 @@ export function gustoConfigured() {
   return !!(process.env.GUSTO_ACCESS_TOKEN && process.env.GUSTO_COMPANY_ID);
 }
 
+export function gustoApplicationConfigured() {
+  return !!(process.env.GUSTO_CLIENT_ID && process.env.GUSTO_CLIENT_SECRET);
+}
+
+export async function gustoDemoSystemToken(): Promise<string> {
+  if (gustoEnvironment() !== "demo") throw new GustoConfigurationError("Demo company creation is disabled in production.");
+  if (!gustoApplicationConfigured()) throw new GustoConfigurationError("Gusto developer client ID and secret are not configured.");
+  const result = await send<any>("/oauth/token", undefined, {
+    method: "POST",
+    body: { client_id: process.env.GUSTO_CLIENT_ID, client_secret: process.env.GUSTO_CLIENT_SECRET, grant_type: "system_access" },
+  });
+  if (typeof result?.access_token !== "string" || !result.access_token) {
+    throw new GustoProviderError("Gusto returned an invalid system authorization.", 502, "invalid_response");
+  }
+  return result.access_token;
+}
+
+export async function provisionGustoDemoCompany(systemToken: string, input: {
+  companyName: string; firstName: string; lastName: string; email: string;
+}) {
+  if (gustoEnvironment() !== "demo") throw new GustoConfigurationError("Demo company creation is disabled in production.");
+  const result = await send<any>("/v1/partner_managed_companies", systemToken, {
+    method: "POST",
+    body: {
+      user: { first_name: input.firstName, last_name: input.lastName, email: input.email },
+      company: { name: input.companyName },
+    },
+  });
+  if (typeof result?.access_token !== "string" || !result.access_token ||
+      typeof result?.refresh_token !== "string" || !result.refresh_token ||
+      typeof result?.company_uuid !== "string" || !/^[0-9a-f-]{36}$/i.test(result.company_uuid) ||
+      !Number.isFinite(result?.expires_in) || result.expires_in <= 0) {
+    throw new GustoProviderError("Gusto returned incomplete company authorization. Do not create another company.", 502, "invalid_response");
+  }
+  return {
+    companyId: result.company_uuid as string,
+    encryptedAccessToken: encrypt(JSON.stringify({
+      accessToken: result.access_token, refreshToken: result.refresh_token,
+      expiresAt: Date.now() + result.expires_in * 1000,
+    } satisfies Credentials)),
+  };
+}
+
 type Credentials = { accessToken: string; refreshToken?: string; expiresAt?: number };
 
 function parseCredentials(encrypted: string): Credentials {

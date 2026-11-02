@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Building2, RefreshCw, Users } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import GustoDemoCompanySetup, { type GustoDemoSetupStatus } from "./gusto-demo-company-setup";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
@@ -18,7 +19,7 @@ type PayrollRecordRow = {
   totalHours: string;
   employee: Employee;
 };
-type GustoStatus = {
+type GustoStatus = GustoDemoSetupStatus & {
   configured: boolean; available: boolean; state?: string; companyId?: string; companyName?: string;
   fundingAccount?: { id: string; status: string; accountMask?: string; name?: string } | null;
   onboardingComplete?: boolean; blockers?: string[]; error?: string; environment?: string;
@@ -269,8 +270,12 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                 <button type="button" style={buttonStyle} disabled={busy || !status.configured} onClick={() => void openFlow("add_bank_info", "Set up Gusto funding")}>Funding setup</button>
               </div>
             </div>
-            {!status.configured && <p style={{ color: "var(--jx-orange-ink)", fontSize: "12px", margin: "10px 0 0" }}>Gusto credentials are not configured. Payroll submission is unavailable; no manual payment route is offered.</p>}
+            {!status.configured && <p style={{ color: "var(--jx-orange-ink)", fontSize: "12px", margin: "10px 0 0" }}>{status.setup?.clientConfigured
+              ? "The Gusto application is configured, but company credentials are not ready. A company must be created or connected before payroll is available."
+              : "Gusto application credentials are not configured."} Payroll submission is unavailable; no manual payment route is offered.</p>}
           </div>
+
+          <GustoDemoCompanySetup status={status} statusReady={statusQuery.isSuccess && !statusQuery.isFetching} />
 
           <div style={panel}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
