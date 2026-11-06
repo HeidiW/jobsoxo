@@ -35,6 +35,7 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import { format } from "date-fns";
+import { parseScheduleDate } from "./scheduling-logic";
 import type {
   Invoice, Client, LineItem, Payment, Job, Settings, ChangeOrder,
 } from "@shared/schema";
@@ -190,10 +191,10 @@ function InvoiceDocument({
           <div style={{ fontSize: "26px", fontWeight: 800, letterSpacing: ".06em", color: "#2563eb" }}>INVOICE</div>
           <div style={{ fontSize: "13px", ...mono, color: "#0f172a", marginTop: "6px" }}>{invoice.invoiceNumber}</div>
           <div style={{ fontSize: "11.5px", color: "#64748b", marginTop: "8px" }}>
-            Issued&nbsp;&nbsp;<span style={{ color: "#0f172a", fontWeight: 600 }}>{format(new Date(invoice.issueDate), "MMMM d, yyyy")}</span>
+            Issued&nbsp;&nbsp;<span style={{ color: "#0f172a", fontWeight: 600 }}>{format(parseScheduleDate(invoice.issueDate)!, "MMMM d, yyyy")}</span>
           </div>
           <div style={{ fontSize: "11.5px", color: "#64748b" }}>
-            Due&nbsp;&nbsp;<span style={{ color: "#0f172a", fontWeight: 600 }}>{format(new Date(invoice.dueDate), "MMMM d, yyyy")}</span>
+            Due&nbsp;&nbsp;<span style={{ color: "#0f172a", fontWeight: 600 }}>{format(parseScheduleDate(invoice.dueDate)!, "MMMM d, yyyy")}</span>
           </div>
         </div>
       </div>
@@ -1063,8 +1064,8 @@ export default function InvoiceDetail() {
       editForm.reset({
         clientId: invoice.clientId || "",
         jobId: invoice.jobId || "",
-        issueDate: invoice.issueDate ? format(invoice.issueDate, "yyyy-MM-dd") : "",
-        dueDate: invoice.dueDate ? format(invoice.dueDate, "yyyy-MM-dd") : "",
+        issueDate: invoice.issueDate ? format(parseScheduleDate(invoice.issueDate)!, "yyyy-MM-dd") : "",
+        dueDate: invoice.dueDate ? format(parseScheduleDate(invoice.dueDate)!, "yyyy-MM-dd") : "",
         taxRate: String(invoice.taxRate || "0"),
         notes: invoice.notes || "",
         termsAndConditions: invoice.termsAndConditions || "",
@@ -1645,7 +1646,7 @@ export default function InvoiceDetail() {
                                     <div className="flex justify-between gap-2">
                                       <span className="text-muted-foreground text-xs">Date</span>
                                       <span className="text-xs font-medium">
-                                        {format(new Date(payment.plaidTransaction.date), "MMM d, yyyy")}
+                                        {format(parseScheduleDate(payment.plaidTransaction.date)!, "MMM d, yyyy")}
                                       </span>
                                     </div>
                                     <div className="flex justify-between gap-2">

@@ -27,6 +27,7 @@ import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
 import { trackEvent } from "@/lib/analytics";
 import { Users, Plus, Trash2, Tag } from "lucide-react";
 import { format } from "date-fns";
+import { parseScheduleDate } from "@/pages/scheduling-logic";
 import type { Job, Client, Employee, EmployeeAssignment } from "@shared/schema";
 
 const jobFormSchema = z.object({
@@ -81,8 +82,8 @@ export default function JobForm({
       address: job?.address || "",
       status: (job?.status as JobFormValues["status"]) || "quoted",
       squareFootage: job?.squareFootage?.toString() || "",
-      startDate: job?.startDate ? format(new Date(job.startDate), "yyyy-MM-dd") : "",
-      endDate: job?.endDate ? format(new Date(job.endDate), "yyyy-MM-dd") : "",
+      startDate: job?.startDate ? format(parseScheduleDate(job.startDate)!, "yyyy-MM-dd") : "",
+      endDate: job?.endDate ? format(parseScheduleDate(job.endDate)!, "yyyy-MM-dd") : "",
       estimatedTotal: job?.estimatedTotal?.toString() || "",
       employeeIds: [],
       referenceCodes: existingCodes,

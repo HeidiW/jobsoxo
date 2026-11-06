@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { trackEvent } from "@/lib/analytics";
 import { differenceInDays, formatDistanceToNow } from "date-fns";
+import { parseScheduleDate } from "./scheduling-logic";
 import type { Invoice, ChangeOrder, Job, Client, InboxTask } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -216,7 +217,7 @@ export default function InboxTasks({ embedded = false }: { embedded?: boolean })
 
     // ── Invoice tasks ────────────────────────────────────────────────────────
     for (const inv of invoices) {
-      const due = inv.dueDate ? new Date(inv.dueDate) : null;
+      const due = parseScheduleDate(inv.dueDate);
       const ageDays = due ? differenceInDays(today, due) : 0;
       const clientName = inv.client?.name ?? inv.clientId ?? "Client";
       const num = inv.invoiceNumber ?? inv.id.slice(0, 8).toUpperCase();

@@ -28,6 +28,7 @@ import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
 import { Plus, Play, AlertTriangle, PhoneOff, Edit, Trash2, ChevronLeft, ChevronRight, FileText, X, Settings2, Download, ClipboardList, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { format, startOfMonth, endOfMonth, subMonths } from "date-fns";
+import { parseScheduleDate } from "./scheduling-logic";
 import type { Employee, TimeEntry, PayrollRecord, Job, SmsAttempt } from "@shared/schema";
 import GustoBankView from "@/components/payroll/gusto-bank-view";
 import GustoOnlyWorkspace from "@/components/payroll/gusto-payroll-workspace";
@@ -1516,7 +1517,7 @@ export default function Payroll() {
   const filteredTimeEntries = (timeEntries ?? []).filter(entry => {
     if (sourceFilter !== "all" && entry.source !== sourceFilter) return false;
     if (timeFilter === "all") return true;
-    const d = new Date(entry.date);
+    const d = parseScheduleDate(entry.date)!;
     if (timeFilter === "this_month") return d >= startOfMonth(now) && d <= endOfMonth(now);
     if (timeFilter === "last_month") return d >= startOfMonth(subMonths(now,1)) && d <= endOfMonth(subMonths(now,1));
     if (timeFilter === "last_7") return d >= new Date(now.getTime() - 7*864e5);
@@ -2124,7 +2125,7 @@ export default function Payroll() {
                 return (
                   <div key={entry.id} data-payroll-wide="true" className="rowhover" style={{ display: "flex", alignItems: "center", padding: "11px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-time-${entry.id}`}>
                     <span style={{ width: "96px", flexShrink: 0, fontSize: "12.5px", color: "var(--muted)" }}>
-                      {format(new Date(entry.date), "MMM d, yyyy")}
+                      {format(parseScheduleDate(entry.date)!, "MMM d, yyyy")}
                     </span>
                     <span style={{ width: "150px", flexShrink: 0, fontSize: "13px", fontWeight: 500 }}>{entry.employee?.name ?? "—"}</span>
                     <span style={{ flex: 1, minWidth: 0, fontSize: "12.5px", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{(entry as any).job?.title ?? "—"}</span>

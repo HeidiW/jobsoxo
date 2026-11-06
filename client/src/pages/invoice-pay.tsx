@@ -4,6 +4,7 @@ import { Loader2, CheckCircle, AlertCircle, CreditCard, Building2, Phone, Mail, 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { parseScheduleDate } from "./scheduling-logic";
 
 interface PayInvoiceData {
   invoiceNumber: string;
@@ -144,7 +145,7 @@ export default function InvoicePay() {
                     </span>
                   </div>
                   <p className="text-xs text-gray-500">
-                    Due: {new Date(data.dueDate).toLocaleDateString()}
+                    Due: {parseScheduleDate(data.dueDate)?.toLocaleDateString()}
                   </p>
                 </div>
 
