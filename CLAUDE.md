@@ -13,7 +13,7 @@ npm run build    # production bundle → dist/index.cjs
 
 - No dotenv: load env with `set -a; source .env; set +a` before running. Copy `.env.example` to `.env`.
 - Local Postgres 16 via Homebrew: `jobsoxo_dev` for the app, `jobsoxo_test` for tests (`DATABASE_URL=postgresql://localhost/jobsoxo_test npm test`).
-- Replit and production run in UTC. Run date-sensitive work and tests in `America/New_York` too — some tests currently fail only outside UTC.
+- Replit and production run in UTC; users are in US time zones. `vitest.config.ts` forces `TZ=America/New_York` so calendar-date bugs fail in tests — don't remove it.
 
 ## Layout
 

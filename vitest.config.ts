@@ -2,6 +2,10 @@ import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
+// Run tests in a US time zone so UTC-midnight calendar-date bugs fail here,
+// not only in users' browsers. Production servers run in UTC.
+process.env.TZ = "America/New_York";
+
 export default defineConfig({
   plugins: [react()],
   test: {
