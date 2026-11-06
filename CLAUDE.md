@@ -9,10 +9,12 @@ npm run dev      # Express + Vite dev server (PORT from .env; 5050 locally — m
 npm run check    # tsc typecheck
 npm test         # vitest, serial (--no-file-parallelism); needs DATABASE_URL
 npm run build    # production bundle → dist/index.cjs
+npm run db:generate -- --name <change>   # schema change → migrations/NNNN_<change>.sql
+npm run db:migrate                       # apply pending migrations
 ```
 
 - No dotenv: load env with `set -a; source .env; set +a` before running. Copy `.env.example` to `.env`.
-- Local Postgres 16 via Homebrew: `jobsoxo_dev` for the app, `jobsoxo_test` for tests (`DATABASE_URL=postgresql://localhost/jobsoxo_test npm test`).
+- Local Postgres 16 via Homebrew: `jobsoxo_dev` for the app, `jobsoxo_test` for tests (`DATABASE_URL=postgresql://localhost/jobsoxo_test npm test`). Build a fresh one with `createdb` + `npm run db:migrate`.
 - Replit and production run in UTC; users are in US time zones. `vitest.config.ts` forces `TZ=America/New_York` so calendar-date bugs fail in tests — don't remove it.
 
 ## Layout
@@ -53,9 +55,11 @@ These protect real payroll, real funds and audit history. Don't relax them witho
 
 ## Database and schema
 
-- Schema source of truth is `shared/schema.ts`. Never use `drizzle-kit push --force` against a database with data — it can approve table truncation. `scripts/post-merge.sh` pipes `n` to keep pushes non-interactive and non-destructive.
-- Planned: move production to `drizzle-kit generate` + versioned migrations in `migrations/`.
-- `migrations/development/*.sql` are dev-only repairs; never run them from a deploy build or server startup.
+- Schema source of truth is `shared/schema.ts`. Every schema change ships with a generated migration: edit the schema, `npm run db:generate -- --name <change>`, review the SQL (drizzle-kit can emit unintended drops/renames), apply locally, and commit schema + SQL + `migrations/meta/` together. Never edit an applied migration. Full guide: `docs/database-migrations.md`.
+- Existing push-created databases (Replit, restored dumps) get `npm run db:baseline`, not `db:migrate`. It refuses if the schema doesn't match the baseline.
+- Don't run migrations from server startup; on Render they run as the pre-deploy command.
+- `db:push` is for the Replit workspace only until cutover (`scripts/post-merge.sh` pipes `n` so it never approves truncation). Never use `drizzle-kit push --force` against a database with data.
+- `migrations/development/*.sql` are hand-written dev-only repairs outside the journal; never run them from a deploy build or server startup.
 - Keep historical sample data unless the user approves removing it.
 
 ## Testing

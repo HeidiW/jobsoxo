@@ -9,6 +9,9 @@
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "db:push": "drizzle-kit push",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:baseline": "tsx script/baseline-migrations.ts",
     "test": "vitest run --no-file-parallelism"
   },
   "dependencies": {
