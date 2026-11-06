@@ -1,270 +1,265 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* LIGHT MODE */
+/* JobsOxo semantic theme tokens and compatibility aliases. */
 :root {
-  --button-outline: rgba(0,0,0, .10);
-  --badge-outline: rgba(0,0,0, .05);
+  --button-outline: rgba(18, 20, 18, .16);
+  --badge-outline: rgba(18, 20, 18, .10);
   --opaque-button-border-intensity: -8;
-  --elevate-1: rgba(0,0,0, .03);
-  --elevate-2: rgba(0,0,0, .08);
-  --background: 216 20% 98%;
-  --foreground: 222 47% 11%;
-  --border: 220 13% 91%;
-  --card: 0 0% 98%;
-  --card-foreground: 222 47% 11%;
-  --card-border: 220 13% 94%;
-  --sidebar: 220 14% 96%;
-  --sidebar-foreground: 222 47% 11%;
-  --sidebar-border: 220 13% 91%;
-  --sidebar-primary: 221 83% 53%;
-  --sidebar-primary-foreground: 210 40% 98%;
-  --sidebar-accent: 220 14% 92%;
-  --sidebar-accent-foreground: 222 47% 11%;
-  --sidebar-ring: 221 83% 53%;
-  --popover: 0 0% 96%;
-  --popover-foreground: 222 47% 11%;
-  --popover-border: 220 13% 92%;
-  --primary: 221 83% 53%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 220 14% 92%;
-  --secondary-foreground: 222 47% 11%;
-  --muted: 220 14% 94%;
-  --muted-foreground: 215 16% 47%;
-  --accent: 220 13% 93%;
-  --accent-foreground: 222 47% 11%;
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 0 0% 98%;
-  --input: 217 19% 35%;
-  --ring: 221 83% 53%;
-  --chart-1: 221 83% 53%;
-  --chart-2: 142 71% 45%;
-  --chart-3: 262 83% 58%;
-  --chart-4: 32 95% 44%;
-  --chart-5: 340 82% 52%;
-  --track: #eef0f3;
-  --row-hover: #f8fafc;
+  --elevate-1: rgba(18, 20, 18, .03);
+  --elevate-2: rgba(18, 20, 18, .07);
 
-  /* ── JobsOxo design tokens ── */
-  --jox-primary: #2563eb;
-  --panel: #ffffff;
-  --panel-bd: #e4e7ec;
-  --fg: #0f1729;
-  --faint: #8a93a3;
-  --soft: #eef2fe;
-  --rowhover: #f8fafc;
-  --navhover: #e7e9ee;
-  --topbar: rgba(255,255,255,.7);
-  --searchbg: #eef0f3;
-  --activeitem: #ffffff;
-  --activeshadow: rgba(15,23,41,.08);
-  --b-blue-bg: #eef2fe;
-  --b-blue-fg: #2563eb;
-  --b-red-bg: #fdeeec;
-  --b-red-fg: #d23b1f;
-  --b-amber-bg: #fef5e7;
-  --b-amber-fg: #b6731a;
-  --b-green-bg: #e7f7ee;
-  --b-green-fg: #15a35a;
-  --b-purple-bg: #f3eafe;
-  --b-purple-fg: #7c3aed;
-  --b-gray-bg: #eef0f3;
-  --b-gray-fg: #6b7686;
-  --b-pink-bg: #fde8ef;
-  --b-pink-fg: #be185d;
-  --b-teal-bg: #e0f2fe;
-  --b-teal-fg: #0e7faf;
+  --background: 0 0% 100%;
+  --foreground: 120 5% 7%;
+  --border: 96 9% 90%;
+  --input: 110 3% 55%;
+  --card: 0 0% 100%;
+  --card-foreground: 120 5% 7%;
+  --card-border: 96 9% 90%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 120 5% 7%;
+  --popover-border: 96 9% 90%;
+  --primary: 113 33% 26%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 80 14% 96%;
+  --secondary-foreground: 120 5% 7%;
+  --muted: 80 14% 96%;
+  --muted-foreground: 110 3% 36%;
+  --accent: 103 23% 94%;
+  --accent-foreground: var(--primary);
+  --destructive: 15 79% 57%;
+  --destructive-foreground: 0 0% 100%;
+  --ring: var(--primary);
+  --chart-1: var(--primary);
+  --chart-2: 208 49% 46%;
+  --chart-3: 15 79% 57%;
+  --chart-4: 46 54% 49%;
+  --chart-5: 110 3% 55%;
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 120 5% 7%;
+  --sidebar-border: 96 9% 90%;
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-ring: var(--primary);
 
-  /* ── Gmail Messages tokens (light) ── */
-  --gem-bg: linear-gradient(120deg,#eef3ff,#f5eefc,#fdeef0);
-  --gem-bd: #e3d4f3;
+  --jx-surface: #F5F6F3;
+  --jx-ink: #121412;
+  --jx-ink-2: #5A5F59;
+  --jx-ink-3: #8B908A;
+  --jx-line: #E4E7E2;
+  --jx-green: #31572C;
+  --jx-green-hover: #284824;
+  --jx-green-ink: #31572C;
+  --jx-green-tint: #EEF3EC;
+  --jx-green-tint-2: #D5E2D1;
+  --jx-blue: #3C78AE;
+  --jx-blue-ink: #2A5B88;
+  --jx-blue-tint: #EDF4FB;
+  --jx-orange: #E8643A;
+  --jx-orange-ink: #B5441C;
+  --jx-orange-tint: #FDEEE7;
+  --jx-gold: #C2A23A;
+  --jx-gold-ink: #7A6312;
+  --jx-gold-tint: #FDFBE4;
 
-  /* ── Scheduling block tokens (light) ── */
-  --colhead: #fafbfc;
-  --bl-bg: #eef2fe; --bl-fg: #2563eb; --bl-bd: #bcd0fb;
-  --gr-bg: #e7f7ee; --gr-fg: #15a35a; --gr-bd: #a7e3c1;
-  --pu-bg: #f3eafe; --pu-fg: #7c3aed; --pu-bd: #d6bbf7;
-  --am-bg: #fef5e7; --am-fg: #b6731a; --am-bd: #f7d994;
+  /* Preserve live-page tokens while moving their colors onto the new palette. */
+  --jox-primary: var(--jx-green);
+  --panel: #FFFFFF;
+  --panel-bd: var(--jx-line);
+  --fg: var(--jx-ink);
+  --faint: var(--jx-ink-2);
+  --soft: var(--jx-green-tint);
+  --rowhover: var(--jx-surface);
+  --row-hover: var(--jx-surface);
+  --navhover: var(--jx-surface);
+  --topbar: rgba(255, 255, 255, .88);
+  --searchbg: var(--jx-surface);
+  --activeitem: var(--jx-green-tint);
+  --activeshadow: rgba(18, 20, 18, .10);
+  --track: var(--jx-line);
+  --b-blue-bg: var(--jx-blue-tint); --b-blue-fg: var(--jx-blue-ink);
+  --b-red-bg: var(--jx-orange-tint); --b-red-fg: var(--jx-orange-ink);
+  --b-amber-bg: var(--jx-gold-tint); --b-amber-fg: var(--jx-gold-ink);
+  --b-green-bg: var(--jx-green-tint); --b-green-fg: var(--jx-green-ink);
+  --b-purple-bg: #F3EFF6; --b-purple-fg: #655276;
+  --b-gray-bg: var(--jx-surface); --b-gray-fg: var(--jx-ink-2);
+  --b-pink-bg: #F9EEF0; --b-pink-fg: #8A4A58;
+  --b-teal-bg: #EAF4F1; --b-teal-fg: #33665B;
+  --gem-bg: #FFFFFF; --gem-bd: var(--jx-line); --gem-mark: var(--jx-green);
+  --colhead: var(--jx-surface);
+  --bl-bg: var(--jx-blue-tint); --bl-fg: var(--jx-blue-ink); --bl-bd: #B8D0E5;
+  --gr-bg: var(--jx-green-tint); --gr-fg: var(--jx-green-ink); --gr-bd: var(--jx-green-tint-2);
+  --pu-bg: #F3EFF6; --pu-fg: #655276; --pu-bd: #D5CADF;
+  --am-bg: var(--jx-gold-tint); --am-fg: var(--jx-gold-ink); --am-bd: #E1D39C;
+  --av1: var(--jx-green-tint); --av1f: var(--jx-green-ink);
+  --av2: var(--jx-blue-tint); --av2f: var(--jx-blue-ink);
+  --av3: #F3EFF6; --av3f: #655276;
+  --av4: #EAF4F1; --av4f: #33665B;
+  --av5: #F9EEF0; --av5f: #8A4A58;
+  --av6: var(--jx-gold-tint); --av6f: var(--jx-gold-ink);
 
-  /* ── Avatar palette (light) ── */
-  --av1: #eef2fe; --av1f: #2563eb;
-  --av2: #e6f6fb; --av2f: #0e7faf;
-  --av3: #f3eafe; --av3f: #7c3aed;
-  --av4: #e7f7ee; --av4f: #15a35a;
-  --av5: #fdf4ff; --av5f: #9d174d;
-  --av6: #fefce8; --av6f: #b45309;
-
-  --font-sans: 'Inter', sans-serif;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Inter Tight", "Inter", system-ui, sans-serif;
   --font-serif: Georgia, serif;
-  --font-mono: 'IBM Plex Mono', monospace;
-  --radius: .5rem;
-  --shadow-2xs: 0px 2px 0px 0px hsl(220 13% 20% / 0.00);
-  --shadow-xs: 0px 2px 0px 0px hsl(220 13% 20% / 0.00);
-  --shadow-sm: 0px 2px 0px 0px hsl(220 13% 20% / 0.00), 0px 1px 2px -1px hsl(220 13% 20% / 0.00);
-  --shadow: 0px 2px 0px 0px hsl(220 13% 20% / 0.00), 0px 1px 2px -1px hsl(220 13% 20% / 0.00);
-  --shadow-md: 0px 2px 0px 0px hsl(220 13% 20% / 0.00), 0px 2px 4px -1px hsl(220 13% 20% / 0.00);
-  --shadow-lg: 0px 2px 0px 0px hsl(220 13% 20% / 0.00), 0px 4px 6px -1px hsl(220 13% 20% / 0.00);
-  --shadow-xl: 0px 2px 0px 0px hsl(220 13% 20% / 0.00), 0px 8px 10px -1px hsl(220 13% 20% / 0.00);
-  --shadow-2xl: 0px 2px 0px 0px hsl(220 13% 20% / 0.00);
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --radius: 1.5rem;
+
+  --shadow-2xs: 0px 1px 1px hsl(120 5% 7% / 0.04);
+  --shadow-xs: 0px 1px 2px hsl(120 5% 7% / 0.06);
+  --shadow-sm: 0px 1px 2px hsl(120 5% 7% / 0.10);
+  --shadow: 0px 1px 2px hsl(120 5% 7% / 0.10);
+  --shadow-md: 0px 3px 10px hsl(120 5% 7% / 0.11);
+  --shadow-lg: 0px 6px 18px hsl(120 5% 7% / 0.13);
+  --shadow-xl: 0px 12px 32px hsl(120 5% 7% / 0.16);
+  --shadow-2xl: 0px 18px 44px hsl(120 5% 7% / 0.18);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 
-/* Fallback for older browsers */
+  /* Fallback declarations followed by modern computed border values. */
   --sidebar-primary-border: hsl(var(--sidebar-primary));
   --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --sidebar-accent-border: hsl(var(--sidebar-accent));
   --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --primary-border: hsl(var(--primary));
   --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --secondary-border: hsl(var(--secondary));
   --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --muted-border: hsl(var(--muted));
   --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --accent-border: hsl(var(--accent));
   --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --destructive-border: hsl(var(--destructive));
   --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
 }
 
 .dark {
-  --button-outline: rgba(255,255,255, .10);
-  --badge-outline: rgba(255,255,255, .05);
+  --button-outline: rgba(236, 241, 236, .12);
+  --badge-outline: rgba(236, 241, 236, .06);
   --opaque-button-border-intensity: 9;
-  --elevate-1: rgba(255,255,255, .04);
-  --elevate-2: rgba(255,255,255, .09);
-  --background: 222 47% 11%;
-  --foreground: 210 40% 98%;
-  --border: 217 33% 17%;
-  --card: 220 39% 13%;
-  --card-foreground: 210 40% 98%;
-  --card-border: 217 33% 16%;
-  --sidebar: 217 33% 15%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 215 28% 19%;
-  --sidebar-primary: 217 91% 60%;
-  --sidebar-primary-foreground: 222 47% 11%;
-  --sidebar-accent: 217 33% 18%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 217 91% 60%;
-  --popover: 217 33% 17%;
-  --popover-foreground: 210 40% 98%;
-  --popover-border: 215 28% 21%;
-  --primary: 217 91% 60%;
-  --primary-foreground: 222 47% 11%;
-  --secondary: 217 33% 20%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217 33% 19%;
-  --muted-foreground: 215 20% 65%;
-  --accent: 217 28% 18%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62% 30%;
-  --destructive-foreground: 210 40% 98%;
-  --input: 217 50% 65%;
-  --ring: 217 91% 60%;
-  --track: #1a2336;
-  --row-hover: #1b2740;
+  --elevate-1: rgba(236, 241, 236, .04);
+  --elevate-2: rgba(236, 241, 236, .09);
 
-  /* ── JobsOxo design tokens (dark) ── */
-  --jox-primary: #3b82f6;
-  --panel: #141d30;
-  --panel-bd: #243049;
-  --fg: #f1f5f9;
-  --faint: #7c8aa3;
-  --soft: #1c2a44;
-  --rowhover: #1b2740;
-  --navhover: #222e4a;
-  --topbar: rgba(20,29,48,.72);
-  --searchbg: #1a2336;
-  --activeitem: #222e4a;
-  --activeshadow: rgba(0,0,0,.3);
-  --b-blue-bg: rgba(59,130,246,.18);
-  --b-blue-fg: #93b4fb;
-  --b-red-bg: rgba(220,59,31,.2);
-  --b-red-fg: #f1937f;
-  --b-amber-bg: rgba(224,160,32,.2);
-  --b-amber-fg: #e7be73;
-  --b-green-bg: rgba(21,163,90,.2);
-  --b-green-fg: #6cd49d;
-  --b-purple-bg: rgba(124,58,237,.22);
-  --b-purple-fg: #b794f4;
-  --b-gray-bg: rgba(148,163,184,.18);
-  --b-gray-fg: #aab4c6;
-  --b-pink-bg: rgba(214,101,112,.2);
-  --b-pink-fg: #e79aa3;
-  --b-teal-bg: rgba(14,127,175,.2);
-  --b-teal-fg: #6cc0e0;
+  --background: 135 13% 6%;
+  --foreground: 120 15% 94%;
+  --border: 136 12% 19%;
+  --input: 132 6% 45%;
+  --card: 135 13% 12%;
+  --card-foreground: 120 15% 94%;
+  --card-border: 136 12% 19%;
+  --popover: 135 13% 12%;
+  --popover-foreground: 120 15% 94%;
+  --popover-border: 136 12% 19%;
+  --primary: 112 32% 38%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 140 13% 9%;
+  --secondary-foreground: 120 15% 94%;
+  --muted: 140 13% 9%;
+  --muted-foreground: 132 6% 66%;
+  --accent: 104 29% 10%;
+  --accent-foreground: 109 33% 72%;
+  --destructive: 15 84% 64%;
+  --destructive-foreground: 0 0% 100%;
+  --ring: var(--primary);
+  --sidebar: 135 13% 6%;
+  --sidebar-foreground: 120 15% 94%;
+  --sidebar-border: 136 12% 19%;
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--accent-foreground);
+  --sidebar-ring: var(--primary);
+  --chart-1: var(--primary);
+  --chart-2: 208 49% 62%;
+  --chart-3: 15 84% 64%;
+  --chart-4: 46 54% 60%;
+  --chart-5: 132 6% 66%;
 
-  /* ── Gmail Messages tokens (dark) ── */
-  --gem-bg: linear-gradient(120deg,rgba(66,133,244,.16),rgba(155,114,203,.16),rgba(217,101,112,.14));
-  --gem-bd: rgba(155,114,203,.4);
+  --jx-surface: #141A16;
+  --jx-ink: #ECF1EC;
+  --jx-ink-2: #A3ADA5;
+  --jx-ink-3: #6F7A72;
+  --jx-line: #2A352D;
+  --jx-green: #4A7F42;
+  --jx-green-hover: #5A9151;
+  --jx-green-ink: #A9CFA0;
+  --jx-green-tint: #152112;
+  --jx-green-tint-2: #1E2E1A;
+  --jx-blue: #6FA3D4;
+  --jx-blue-ink: #9CC2E6;
+  --jx-blue-tint: #131F2A;
+  --jx-orange: #F07C55;
+  --jx-orange-ink: #F6A285;
+  --jx-orange-tint: #2A1811;
+  --jx-gold: #D8BC55;
+  --jx-gold-ink: #E6D07E;
+  --jx-gold-tint: #24200E;
 
-  /* ── Scheduling block tokens (dark) ── */
-  --colhead: #10192b;
-  --bl-bg: rgba(59,130,246,.16); --bl-fg: #93b4fb; --bl-bd: rgba(59,130,246,.4);
-  --gr-bg: rgba(21,163,90,.16);  --gr-fg: #6cd49d; --gr-bd: rgba(21,163,90,.4);
-  --pu-bg: rgba(124,58,237,.18); --pu-fg: #b794f4; --pu-bd: rgba(124,58,237,.45);
-  --am-bg: rgba(224,160,32,.16); --am-fg: #e7be73; --am-bd: rgba(224,160,32,.4);
+  --jox-primary: var(--jx-green);
+  --panel: #1B231D;
+  --panel-bd: var(--jx-line);
+  --fg: var(--jx-ink);
+  --faint: var(--jx-ink-2);
+  --soft: var(--jx-green-tint);
+  --rowhover: #141A16;
+  --row-hover: #141A16;
+  --navhover: var(--jx-green-tint);
+  --topbar: rgba(27, 35, 29, .88);
+  --searchbg: #141A16;
+  --activeitem: var(--jx-green-tint);
+  --activeshadow: rgba(0, 0, 0, .40);
+  --track: var(--jx-line);
+  --b-blue-bg: var(--jx-blue-tint); --b-blue-fg: var(--jx-blue-ink);
+  --b-red-bg: var(--jx-orange-tint); --b-red-fg: var(--jx-orange-ink);
+  --b-amber-bg: var(--jx-gold-tint); --b-amber-fg: var(--jx-gold-ink);
+  --b-green-bg: var(--jx-green-tint); --b-green-fg: var(--jx-green-ink);
+  --b-purple-bg: rgba(160, 137, 180, .18); --b-purple-fg: #C9B7D8;
+  --b-gray-bg: rgba(163, 173, 165, .14); --b-gray-fg: #B8C0B9;
+  --b-pink-bg: rgba(196, 126, 145, .18); --b-pink-fg: #DFA9B6;
+  --b-teal-bg: rgba(104, 161, 147, .18); --b-teal-fg: #A5CEC2;
+  --gem-bg: #1B231D; --gem-bd: var(--jx-line); --gem-mark: var(--jx-green);
+  --colhead: #141A16;
+  --bl-bg: var(--jx-blue-tint); --bl-fg: var(--jx-blue-ink); --bl-bd: rgba(111, 163, 212, .42);
+  --gr-bg: var(--jx-green-tint); --gr-fg: var(--jx-green-ink); --gr-bd: color-mix(in srgb, var(--jx-green) 42%, transparent);
+  --pu-bg: rgba(160, 137, 180, .18); --pu-fg: #C9B7D8; --pu-bd: rgba(160, 137, 180, .45);
+  --am-bg: var(--jx-gold-tint); --am-fg: var(--jx-gold-ink); --am-bd: rgba(216, 188, 85, .42);
+  --av1: var(--jx-green-tint); --av1f: var(--jx-green-ink);
+  --av2: #131F2A; --av2f: #9CC2E6;
+  --av3: #211A28; --av3f: #C9B7D8;
+  --av4: #15251F; --av4f: #A5CEC2;
+  --av5: #2A181F; --av5f: #DFA9B6;
+  --av6: #24200E; --av6f: #E6D07E;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-display: "Inter Tight", "Inter", system-ui, sans-serif;
+  --font-serif: Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --radius: 1.5rem;
 
-  /* ── Avatar palette (dark) ── */
-  --av1: #1c2a44; --av1f: #93b4fb;
-  --av2: #13304a; --av2f: #6cc0e0;
-  --av3: #2a2347; --av3f: #b794f4;
-  --av4: #142e2a; --av4f: #6cd49d;
-  --av5: #332344; --av5f: #e0a0d0;
-  --av6: #3a2e1a; --av6f: #e7be73;
+  --shadow-2xs: 0px 1px 1px hsl(0 0% 0% / 0.20);
+  --shadow-xs: 0px 1px 2px hsl(0 0% 0% / 0.26);
+  --shadow-sm: 0px 1px 2px hsl(0 0% 0% / 0.34);
+  --shadow: 0px 1px 2px hsl(0 0% 0% / 0.34);
+  --shadow-md: 0px 3px 10px hsl(0 0% 0% / 0.40);
+  --shadow-lg: 0px 6px 18px hsl(0 0% 0% / 0.46);
+  --shadow-xl: 0px 12px 32px hsl(0 0% 0% / 0.52);
+  --shadow-2xl: 0px 18px 44px hsl(0 0% 0% / 0.58);
 
-  --chart-1: 217 91% 70%;
-  --chart-2: 142 76% 65%;
-  --chart-3: 262 83% 75%;
-  --chart-4: 32 98% 65%;
-  --chart-5: 340 82% 68%;
-  --shadow-2xs: 0px 2px 0px 0px hsl(220 13% 80% / 0.00);
-  --shadow-xs: 0px 2px 0px 0px hsl(220 13% 80% / 0.00);
-  --shadow-sm: 0px 2px 0px 0px hsl(220 13% 80% / 0.00), 0px 1px 2px -1px hsl(220 13% 80% / 0.00);
-  --shadow: 0px 2px 0px 0px hsl(220 13% 80% / 0.00), 0px 1px 2px -1px hsl(220 13% 80% / 0.00);
-  --shadow-md: 0px 2px 0px 0px hsl(220 13% 80% / 0.00), 0px 2px 4px -1px hsl(220 13% 80% / 0.00);
-  --shadow-lg: 0px 2px 0px 0px hsl(220 13% 80% / 0.00), 0px 4px 6px -1px hsl(220 13% 80% / 0.00);
-  --shadow-xl: 0px 2px 0px 0px hsl(220 13% 80% / 0.00), 0px 8px 10px -1px hsl(220 13% 80% / 0.00);
-  --shadow-2xl: 0px 2px 0px 0px hsl(220 13% 80% / 0.00);
-
-/* Fallback for older browsers */
   --sidebar-primary-border: hsl(var(--sidebar-primary));
   --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --sidebar-accent-border: hsl(var(--sidebar-accent));
   --sidebar-accent-border: hsl(from hsl(var(--sidebar-accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --primary-border: hsl(var(--primary));
   --primary-border: hsl(from hsl(var(--primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --secondary-border: hsl(var(--secondary));
   --secondary-border: hsl(from hsl(var(--secondary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --muted-border: hsl(var(--muted));
   --muted-border: hsl(from hsl(var(--muted)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --accent-border: hsl(var(--accent));
   --accent-border: hsl(from hsl(var(--accent)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
-
-  /* Fallback for older browsers */
   --destructive-border: hsl(var(--destructive));
   --destructive-border: hsl(from hsl(var(--destructive)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
 }
@@ -276,13 +271,50 @@
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    line-height: 1.12;
+    letter-spacing: -0.015em;
+  }
+  h1 { font-weight: 400; letter-spacing: -0.025em; }
+  h2 { font-weight: 400; letter-spacing: -0.02em; }
+
+  .font-mono,
+  table td, table th,
+  [data-tabular] {
+    font-feature-settings: 'tnum';
+  }
+
+  a {
+    color: hsl(var(--primary));
+    text-underline-offset: 3px;
+  }
+  a:hover {
+    color: hsl(var(--primary) / 0.78);
+  }
+
+  /* Keyboard focus is themed, never the default blue ring */
+  :focus { outline: none; }
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.16);
   }
 }
 
+/* Retained for components that reference it. Motion is minimal here:
+   the mark breathes rather than sparkles. */
 @keyframes sparklePulse {
-  0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); }
-  33%       { opacity: .85; transform: scale(1.08) rotate(6deg); }
-  66%       { opacity: .9; transform: scale(.95) rotate(-4deg); }
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .72; }
 }
 
 /**
@@ -312,12 +344,12 @@
     background: var(--rowhover) !important;
   }
 
-  /* Gmail Messages task row hover */
+  /* Smart Inbox task row hover */
   .taskrow:hover {
     background: var(--rowhover) !important;
   }
 
-  /* Gmail Messages checkbox hover */
+  /* Smart Inbox checkbox hover */
   .cbtn:hover {
     border-color: var(--jox-primary) !important;
   }
@@ -332,6 +364,27 @@
     content: attr(data-placeholder);
     color: hsl(var(--muted-foreground));
     pointer-events: none;
+  }
+
+  .font-display {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: -0.02em;
+  }
+
+  /* Existing kicker utility retained for current pages. */
+  .kicker {
+    font-size: 10.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: hsl(var(--primary));
+  }
+
+  /* Hairline rule */
+  .hairline {
+    height: 1px;
+    border: 0;
+    background: hsl(var(--border));
   }
 
   /* .no-default-hover-elevate/no-default-active-elevate is an escape hatch so consumers of

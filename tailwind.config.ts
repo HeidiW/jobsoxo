@@ -6,9 +6,12 @@ export default {
   theme: {
     extend: {
       borderRadius: {
-        lg: ".5625rem", /* 9px */
-        md: ".375rem", /* 6px */
-        sm: ".1875rem", /* 3px */
+        "3xl": "1.5rem",
+        "2xl": "1rem",
+        xl: "0.875rem",
+        lg: "0.75rem",
+        md: "0.625rem",
+        sm: "0.375rem",
       },
       colors: {
         // Flat / base colors (regular buttons)
@@ -76,16 +79,50 @@ export default {
           border: "var(--sidebar-accent-border)"
         },
         status: {
-          online: "rgb(34 197 94)",
-          away: "rgb(245 158 11)",
-          busy: "rgb(239 68 68)",
-          offline: "rgb(156 163 175)",
+          online: "var(--jx-green)",
+          away: "rgb(139 103 64)",
+          busy: "rgb(142 43 42)",
+          offline: "rgb(174 184 176)",
+        },
+        jx: {
+          surface: "var(--jx-surface)",
+          ink: "var(--jx-ink)",
+          "ink-2": "var(--jx-ink-2)",
+          "ink-3": "var(--jx-ink-3)",
+          line: "var(--jx-line)",
+          green: {
+            DEFAULT: "var(--jx-green)",
+            hover: "var(--jx-green-hover)",
+            ink: "var(--jx-green-ink)",
+            tint: "var(--jx-green-tint)",
+            "tint-2": "var(--jx-green-tint-2)",
+          },
+          blue: {
+            DEFAULT: "var(--jx-blue)",
+            ink: "var(--jx-blue-ink)",
+            tint: "var(--jx-blue-tint)",
+          },
+          orange: {
+            DEFAULT: "var(--jx-orange)",
+            ink: "var(--jx-orange-ink)",
+            tint: "var(--jx-orange-tint)",
+          },
+          gold: {
+            DEFAULT: "var(--jx-gold)",
+            ink: "var(--jx-gold-ink)",
+            tint: "var(--jx-gold-tint)",
+          },
         },
       },
       fontFamily: {
         sans: ["var(--font-sans)"],
         serif: ["var(--font-serif)"],
         mono: ["var(--font-mono)"],
+        display: ["var(--font-display)"],
+      },
+      letterSpacing: {
+        display: "-0.05em",
+        title: "-0.04em",
       },
       keyframes: {
         "accordion-down": {

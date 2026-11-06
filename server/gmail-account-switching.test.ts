@@ -134,6 +134,7 @@ describe("Gmail OAuth account switching", () => {
     expect(authLocation.origin).toBe("https://accounts.google.com");
     expect(authLocation.pathname).toBe("/o/oauth2/v2/auth");
     expect(authLocation.searchParams.get("prompt")).toBe("select_account consent");
+    expect(authLocation.searchParams.get("redirect_uri")).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/api\/gmail\/callback$/);
     expect(state).toBeTruthy();
 
     fetchMock.mockReset();
@@ -150,7 +151,7 @@ describe("Gmail OAuth account switching", () => {
       .expect(302);
 
     expect(callbackResponse.headers.location)
-      .toBe("http://test-app/gmail-todos?gmail_connected=1");
+      .toMatch(/^http:\/\/127\.0\.0\.1:\d+\/gmail-todos\?gmail_connected=1$/);
     expect(await storage.getGoogleToken(USER_ID)).toMatchObject({
       accessToken: "new-access-token",
       refreshToken: "new-refresh-token",
@@ -174,7 +175,7 @@ describe("Gmail OAuth failures", () => {
       .expect(302);
 
     expect(response.headers.location)
-      .toBe("http://test-app/gmail-todos?gmail_error=access_denied");
+      .toMatch(/^http:\/\/127\.0\.0\.1:\d+\/gmail-todos\?gmail_error=access_denied$/);
     expect(await storage.getInboxTasks(USER_ID)).toEqual([]);
   });
 
@@ -190,14 +191,14 @@ describe("Gmail OAuth failures", () => {
       .get("/api/gmail/callback?error=access_denied")
       .expect(302);
     expect(missingStateResponse.headers.location)
-      .toBe("http://test-app/gmail-todos?gmail_error=invalid_state");
+      .toMatch(/^http:\/\/127\.0\.0\.1:\d+\/gmail-todos\?gmail_error=invalid_state$/);
     expect(await storage.getInboxTasks(USER_ID)).toHaveLength(1);
 
     const mismatchedStateResponse = await agent
       .get("/api/gmail/callback?error=access_denied&state=not-the-oauth-state")
       .expect(302);
     expect(mismatchedStateResponse.headers.location)
-      .toBe("http://test-app/gmail-todos?gmail_error=invalid_state");
+      .toMatch(/^http:\/\/127\.0\.0\.1:\d+\/gmail-todos\?gmail_error=invalid_state$/);
     expect(await storage.getInboxTasks(USER_ID)).toHaveLength(1);
 
     // Rejected callbacks do not consume the original state.
@@ -205,7 +206,7 @@ describe("Gmail OAuth failures", () => {
       .get(`/api/gmail/callback?error=access_denied&state=${encodeURIComponent(state!)}`)
       .expect(302);
     expect(validStateResponse.headers.location)
-      .toBe("http://test-app/gmail-todos?gmail_error=access_denied");
+      .toMatch(/^http:\/\/127\.0\.0\.1:\d+\/gmail-todos\?gmail_error=access_denied$/);
     expect(await storage.getInboxTasks(USER_ID)).toEqual([]);
   });
 

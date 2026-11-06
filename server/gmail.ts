@@ -103,8 +103,8 @@ const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
  * Build the redirect URI for per-user Gmail OAuth.
  * Must be registered in Google Cloud Console.
  */
-export function getGmailCallbackUrl(): string {
-  const base = (process.env.APP_URL || "http://localhost:5000").replace(/\/$/, "");
+export function getGmailCallbackUrl(baseUrl?: string): string {
+  const base = (baseUrl || process.env.APP_URL || "http://localhost:5000").replace(/\/$/, "");
   return `${base}/api/gmail/callback`;
 }
 
@@ -112,13 +112,13 @@ export function getGmailCallbackUrl(): string {
  * Build the Google OAuth authorisation URL for Gmail (per-user).
  * Requests offline access so a refresh token is returned.
  */
-export function buildGmailAuthUrl(state: string): string {
+export function buildGmailAuthUrl(state: string, callbackUrl = getGmailCallbackUrl()): string {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) throw new Error("GOOGLE_CLIENT_ID not configured");
 
   const params = new URLSearchParams({
     client_id: clientId,
-    redirect_uri: getGmailCallbackUrl(),
+    redirect_uri: callbackUrl,
     response_type: "code",
     scope: "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.email",
     access_type: "offline",
@@ -131,7 +131,7 @@ export function buildGmailAuthUrl(state: string): string {
 /**
  * Exchange an authorisation code for access + refresh tokens.
  */
-export async function exchangeGmailCode(code: string): Promise<{
+export async function exchangeGmailCode(code: string, callbackUrl = getGmailCallbackUrl()): Promise<{
   accessToken: string;
   refreshToken: string | null;
   expiresAt: Date | null;
@@ -147,7 +147,7 @@ export async function exchangeGmailCode(code: string): Promise<{
       code,
       client_id: clientId,
       client_secret: clientSecret,
-      redirect_uri: getGmailCallbackUrl(),
+      redirect_uri: callbackUrl,
       grant_type: "authorization_code",
     }).toString(),
   });

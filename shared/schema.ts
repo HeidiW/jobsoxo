@@ -351,6 +351,7 @@ export const employeesRelations = relations(employees, ({ many }) => ({
   assignments: many(employeeAssignments),
   timeEntries: many(timeEntries),
   payrollRecords: many(payrollRecords),
+  payrollWorksheets: many(payrollWorksheets),
   deductions: many(employeeDeductions),
 }));
 
@@ -504,6 +505,92 @@ export const insertPayrollRecordSchema = createInsertSchema(payrollRecords)
   });
 export type InsertPayrollRecord = z.infer<typeof insertPayrollRecordSchema>;
 export type PayrollRecord = typeof payrollRecords.$inferSelect;
+
+// Payroll Worksheets — Gusto-assisted, reviewable payroll entries. These are
+// intentionally separate from payroll_records, which represent payroll runs.
+export const payrollWorksheets = pgTable("payroll_worksheets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  employeeId: varchar("employee_id").notNull().references(() => employees.id, { onDelete: "restrict" }),
+  periodStart: date("period_start").notNull(),
+  periodEnd: date("period_end").notNull(),
+  payDate: date("pay_date").notNull(),
+  daysWorked: decimal("days_worked", { precision: 10, scale: 2 }).notNull(),
+  dailyGross: decimal("daily_gross", { precision: 12, scale: 2 }).notNull(),
+  grossPay: decimal("gross_pay", { precision: 12, scale: 2 }).notNull(),
+  gustoDeductionsBreakdown: jsonb("gusto_deductions_breakdown")
+    .$type<{ label: string; amount: number; category?: string; gustoCode?: string }[]>()
+    .notNull()
+    .default([]),
+  totalDeductions: decimal("total_deductions", { precision: 12, scale: 2 }).notNull(),
+  netPay: decimal("net_pay", { precision: 12, scale: 2 }).notNull(),
+  status: text("status").notNull().default("draft"), // draft, exported, confirmed
+  exportedAt: timestamp("exported_at"),
+  gustoConfirmationReference: text("gusto_confirmation_reference"),
+  gustoConfirmedAt: timestamp("gusto_confirmed_at"),
+  gustoConfirmationNotes: text("gusto_confirmation_notes"),
+  createdByUserId: varchar("created_by_user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  confirmedByUserId: varchar("confirmed_by_user_id").references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const payrollWorksheetsRelations = relations(payrollWorksheets, ({ one }) => ({
+  employee: one(employees, {
+    fields: [payrollWorksheets.employeeId],
+    references: [employees.id],
+  }),
+  createdBy: one(users, {
+    fields: [payrollWorksheets.createdByUserId],
+    references: [users.id],
+    relationName: "payrollWorksheetCreator",
+  }),
+  confirmedBy: one(users, {
+    fields: [payrollWorksheets.confirmedByUserId],
+    references: [users.id],
+    relationName: "payrollWorksheetConfirmer",
+  }),
+}));
+
+const gustoDeductionBreakdownSchema = z.array(z.object({
+  label: z.string().trim().min(1, "Deduction label is required"),
+  amount: z.coerce.number().finite().min(0, "Deduction amount must not be negative"),
+  category: z.string().trim().optional(),
+  gustoCode: z.string().trim().optional(),
+}));
+
+export const insertPayrollWorksheetSchema = createInsertSchema(payrollWorksheets)
+  .omit({
+    id: true,
+    grossPay: true,
+    totalDeductions: true,
+    netPay: true,
+    status: true,
+    exportedAt: true,
+    gustoConfirmationReference: true,
+    gustoConfirmedAt: true,
+    gustoConfirmationNotes: true,
+    createdByUserId: true,
+    confirmedByUserId: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+  .extend({
+    employeeId: z.string().trim().min(1, "Employee is required"),
+    periodStart: z.coerce.date(),
+    periodEnd: z.coerce.date(),
+    payDate: z.coerce.date(),
+    daysWorked: nonNegativeNumericString("Days worked"),
+    dailyGross: nonNegativeNumericString("Daily gross"),
+    gustoDeductionsBreakdown: gustoDeductionBreakdownSchema.optional().default([]),
+  });
+export const updatePayrollWorksheetSchema = insertPayrollWorksheetSchema.partial();
+export const confirmPayrollWorksheetSchema = z.object({
+  gustoConfirmationReference: z.string().trim().min(1, "Gusto confirmation reference is required"),
+  gustoConfirmedAt: z.coerce.date().optional(),
+  gustoConfirmationNotes: z.string().trim().max(5000).optional().nullable(),
+});
+export type InsertPayrollWorksheet = typeof payrollWorksheets.$inferInsert;
+export type PayrollWorksheet = typeof payrollWorksheets.$inferSelect;
 
 // Google Tokens — per-user Gmail OAuth tokens (access + refresh)
 export const googleTokens = pgTable("google_tokens", {
@@ -675,6 +762,95 @@ export const plaidTransactions = pgTable("plaid_transactions", {
 export const insertPlaidTransactionSchema = createInsertSchema(plaidTransactions).omit({ id: true, syncedAt: true });
 export type InsertPlaidTransaction = z.infer<typeof insertPlaidTransactionSchema>;
 export type StoredPlaidTransaction = typeof plaidTransactions.$inferSelect;
+
+// Gusto Embedded Payroll integration. This is intentionally singleton-tenant
+// data (the application currently has one company), but userId provides an
+// ownership boundary for credentials and admin operations.
+export const gustoIntegrations = pgTable("gusto_integrations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  companyId: text("company_id"),
+  environment: text("environment").notNull().default("demo"),
+  state: text("state").notNull().default("not_connected"), // not_connected, connected, error
+  fundingAccountId: text("funding_account_id"),
+  fundingStatus: text("funding_status"),
+  encryptedAccessToken: text("encrypted_access_token"),
+  lastError: text("last_error"),
+  lastSyncedAt: timestamp("last_synced_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export type GustoIntegration = typeof gustoIntegrations.$inferSelect;
+export type InsertGustoIntegration = typeof gustoIntegrations.$inferInsert;
+
+export const gustoEmployeeMappings = pgTable("gusto_employee_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  employeeId: varchar("employee_id").notNull().unique().references(() => employees.id, { onDelete: "cascade" }),
+  gustoEmployeeId: text("gusto_employee_id").notNull().unique(),
+  companyId: text("company_id"),
+  environment: text("environment"),
+  onboardingStatus: text("onboarding_status").notNull().default("unknown"),
+  paymentMethodStatus: text("payment_method_status").notNull().default("unknown"),
+  lastSyncedAt: timestamp("last_synced_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export type GustoEmployeeMapping = typeof gustoEmployeeMappings.$inferSelect;
+
+export const gustoPayrollRuns = pgTable("gusto_payroll_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  gustoPayrollId: text("gusto_payroll_id").unique(),
+  companyId: text("company_id"),
+  environment: text("environment"),
+  periodStart: date("period_start").notNull(),
+  periodEnd: date("period_end").notNull(),
+  payDate: date("pay_date").notNull(),
+  status: text("status").notNull().default("draft"),
+  providerRequestState: text("provider_request_state").notNull().default("idle"),
+  expectedDebitDate: date("expected_debit_date"),
+  checkDate: date("check_date"),
+  grossTotal: decimal("gross_total", { precision: 14, scale: 2 }).notNull().default("0"),
+  netTotal: decimal("net_total", { precision: 14, scale: 2 }).notNull().default("0"),
+  debitTotal: decimal("debit_total", { precision: 14, scale: 2 }).notNull().default("0"),
+  idempotencyKey: text("idempotency_key").notNull().unique(),
+  submissionActorUserId: varchar("submission_actor_user_id").references(() => users.id),
+  submittedAt: timestamp("submitted_at"),
+  lastProviderStatus: text("last_provider_status"),
+  lastError: text("last_error"),
+  blockers: jsonb("blockers").$type<string[]>().notNull().default([]),
+  reviewFingerprint: text("review_fingerprint"),
+  canCancel: boolean("can_cancel").notNull().default(false),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+export type GustoPayrollRun = typeof gustoPayrollRuns.$inferSelect;
+
+export const gustoPayrollItems = pgTable("gusto_payroll_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  runId: varchar("run_id").notNull().references(() => gustoPayrollRuns.id, { onDelete: "cascade" }),
+  employeeId: varchar("employee_id").notNull().references(() => employees.id),
+  gustoEmployeeId: text("gusto_employee_id"),
+  hours: decimal("hours", { precision: 10, scale: 2 }).notNull().default("0"),
+  days: decimal("days", { precision: 10, scale: 2 }).notNull().default("0"),
+  grossEarnings: decimal("gross_earnings", { precision: 14, scale: 2 }).notNull().default("0"),
+  deductions: decimal("deductions", { precision: 14, scale: 2 }).notNull().default("0"),
+  taxes: decimal("taxes", { precision: 14, scale: 2 }).notNull().default("0"),
+  reimbursements: decimal("reimbursements", { precision: 14, scale: 2 }).notNull().default("0"),
+  netPay: decimal("net_pay", { precision: 14, scale: 2 }).notNull().default("0"),
+  providerResult: jsonb("provider_result"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+export type GustoPayrollItem = typeof gustoPayrollItems.$inferSelect;
+
+export const gustoWebhookEvents = pgTable("gusto_webhook_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  eventId: text("event_id").notNull().unique(),
+  eventType: text("event_type").notNull(),
+  payload: jsonb("payload").notNull(),
+  processedAt: timestamp("processed_at").defaultNow().notNull(),
+});
+export type GustoWebhookEvent = typeof gustoWebhookEvents.$inferSelect;
 
 // SMS Attempts — log every inbound SMS for manager review (success + rejections)
 export const smsAttempts = pgTable("sms_attempts", {

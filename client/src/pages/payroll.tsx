@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { Link } from "wouter";
 import { formatPhone } from "@/lib/formatPhone";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -24,11 +25,15 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
-import { Plus, Play, AlertTriangle, PhoneOff, Edit, Trash2, CheckCircle, ChevronLeft, ChevronRight, FileText, X, Settings2, Download, ClipboardList, ChevronDown, ChevronUp, MessageSquare, Landmark, Unlink, AlertCircle } from "lucide-react";
-import { usePlaidLink, type PlaidAccountMeta } from "@/hooks/use-plaid-link";
+import { Plus, Play, AlertTriangle, PhoneOff, Edit, Trash2, ChevronLeft, ChevronRight, FileText, X, Settings2, Download, ClipboardList, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { format, startOfMonth, endOfMonth, subMonths } from "date-fns";
 import type { Employee, TimeEntry, PayrollRecord, Job, SmsAttempt } from "@shared/schema";
+import GustoBankView from "@/components/payroll/gusto-bank-view";
+import GustoOnlyWorkspace from "@/components/payroll/gusto-payroll-workspace";
+import { PayrollSummary } from "@/components/payroll/payroll-summary";
+import "@/components/payroll/payroll-redesign.css";
+export { default as GustoPayrollWorkspace } from "@/components/payroll/gusto-payroll-workspace";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface EmployeeDeduction {
@@ -97,12 +102,12 @@ function periodLabel(start: string | Date, end: string | Date) {
 
 // ── Shared input style ────────────────────────────────────────────────────────
 const inp: React.CSSProperties = {
-  width: "100%", padding: "9px 11px", border: "1px solid #cbd5e1", borderRadius: "8px",
-  fontSize: "13.5px", color: "#0f172a", background: "#fff", fontFamily: "inherit",
+  width: "100%", padding: "9px 11px", border: "1px solid var(--panel-bd)", borderRadius: "8px",
+  fontSize: "13.5px", color: "var(--fg)", background: "var(--panel)", fontFamily: "inherit",
   outline: "none", boxSizing: "border-box",
 };
 const lbl: React.CSSProperties = {
-  display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b",
+  display: "block", fontSize: "11px", fontWeight: 700, color: "var(--muted)",
   textTransform: "uppercase", letterSpacing: ".04em", marginBottom: "5px",
 };
 
@@ -642,11 +647,6 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
           <DeductionsSection employeeId={employee.id} />
         )}
 
-        {/* Direct Deposit — only shown in edit mode */}
-        {isEdit && employee?.id && (
-          <DirectDepositSection employeeId={employee.id} employeeEmail={employee.email} employeeName={employee.name} />
-        )}
-
         {/* Onboarding — only shown in edit mode */}
         {isEdit && employee?.id && (
           <OnboardingSection employeeId={employee.id} />
@@ -714,231 +714,13 @@ function TimeEntryForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-// ── Balance Pre-flight Banner ─────────────────────────────────────────────────
-function BalancePreflightBanner({ estimatedPayroll }: { estimatedPayroll: number }) {
-  const { data: balance, isLoading } = useQuery<{
-    connected: boolean;
-    available?: number;
-    current?: number;
-    institutionName?: string;
-    accountMask?: string;
-  }>({
-    queryKey: ["/api/plaid/balance"],
-    queryFn: async () => {
-      const res = await fetch("/api/plaid/balance", { credentials: "include" });
-      if (!res.ok) return { connected: false };
-      return res.json();
-    },
-    staleTime: 30_000,
-  });
-
-  if (isLoading) return (
-    <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--track)", borderRadius: "8px", padding: "10px 12px", fontSize: "12.5px", color: "var(--muted)" }}>
-      <Landmark style={{ width: "14px", height: "14px", flexShrink: 0 }} />
-      Checking bank balance…
-    </div>
-  );
-
-  if (!balance?.connected) return (
-    <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--track)", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "10px 12px", fontSize: "12.5px", color: "var(--muted)" }} data-testid="balance-preflight-no-account">
-      <Landmark style={{ width: "14px", height: "14px", flexShrink: 0 }} />
-      <span>No bank account connected — <a href="/settings" style={{ color: "var(--jox-primary)", fontWeight: 600, textDecoration: "none" }}>connect one in Settings</a> to enable balance checks before payroll.</span>
-    </div>
-  );
-
-  const avail = balance.available ?? balance.current ?? 0;
-  const sufficient = avail >= estimatedPayroll;
-
-  return (
-    <div style={{
-      display: "flex", alignItems: "flex-start", gap: "10px", borderRadius: "8px", padding: "10px 12px",
-      background: sufficient ? "#f0fdf4" : "#fef2f2",
-      border: `1px solid ${sufficient ? "#bbf7d0" : "#fecaca"}`,
-      fontSize: "12.5px",
-    }} data-testid="balance-preflight-banner">
-      {sufficient
-        ? <CheckCircle style={{ width: "15px", height: "15px", color: "#16a34a", flexShrink: 0, marginTop: "1px" }} />
-        : <AlertCircle style={{ width: "15px", height: "15px", color: "#dc2626", flexShrink: 0, marginTop: "1px" }} />}
-      <div style={{ color: sufficient ? "#166534" : "#991b1b" }}>
-        <span style={{ fontWeight: 700 }}>{balance.institutionName} ••••{balance.accountMask}</span>
-        {" — "}
-        <span>Available: <strong>${avail.toLocaleString("en-US", { minimumFractionDigits: 2 })}</strong></span>
-        {" · "}
-        <span>Est. payroll: <strong>${estimatedPayroll.toLocaleString("en-US", { minimumFractionDigits: 2 })}</strong></span>
-        {!sufficient && <div style={{ marginTop: "3px", fontWeight: 600 }}>⚠ Insufficient balance — fund your account before running payroll.</div>}
-      </div>
-    </div>
-  );
-}
-
-// ── Direct Deposit Section ────────────────────────────────────────────────────
-function DirectDepositSection({ employeeId, employeeEmail, employeeName }: { employeeId: string; employeeEmail?: string | null; employeeName?: string }) {
-  const { toast } = useToast();
-  const [localAccount, setLocalAccount] = useState<PlaidAccountMeta | null | undefined>(undefined);
-  const [sendingLink, setSendingLink] = useState(false);
-  const [linkSent, setLinkSent] = useState(false);
-  const [confirmOverwrite, setConfirmOverwrite] = useState(false);
-
-  const { data: accountData, isLoading } = useQuery<PlaidAccountMeta | null>({
-    queryKey: ["/api/plaid/bank-account", "employee", employeeId],
-    queryFn: async () => {
-      const res = await fetch(`/api/plaid/bank-account?entityType=employee&entityId=${employeeId}`, { credentials: "include" });
-      if (!res.ok) return null;
-      return res.json();
-    },
-  });
-
-  const account = localAccount !== undefined ? localAccount : accountData;
-
-  const disconnectMutation = useMutation({
-    mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/plaid/bank-accounts/${id}`); },
-    onSuccess: () => {
-      setLocalAccount(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/plaid/bank-account", "employee", employeeId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/plaid/employee-bank-accounts"] });
-      toast({ title: "Direct deposit account removed" });
-    },
-    onError: (err: Error) => toast({ title: "Failed to disconnect", description: err.message, variant: "destructive" }),
-  });
-
-  const { open, isLoading: linkLoading } = usePlaidLink({
-    entityType: "employee",
-    entityId: employeeId,
-    onSuccess: (acct) => {
-      setLocalAccount(acct);
-      queryClient.invalidateQueries({ queryKey: ["/api/plaid/bank-account", "employee", employeeId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/plaid/employee-bank-accounts"] });
-      toast({ title: "Direct deposit set up", description: `${acct.institutionName} ••••${acct.accountMask}` });
-    },
-  });
-
-  async function sendSetupLink(force = false) {
-    setSendingLink(true);
-    try {
-      // Use raw fetch so we can inspect a 409 response before deciding to throw
-      const res = await fetch(`/api/employees/${employeeId}/send-deposit-link`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ force }),
-      });
-      const body = await res.json();
-      if (res.status === 409 && body.hasPendingToken) {
-        // Existing pending token — ask manager to confirm before overwriting
-        setConfirmOverwrite(true);
-        return;
-      }
-      if (!res.ok) throw new Error(body.error || "Failed to send link");
-      setLinkSent(true);
-      toast({ title: "Setup link sent", description: `Email sent to ${employeeEmail}` });
-    } catch (err: any) {
-      toast({ title: "Failed to send link", description: err.message, variant: "destructive" });
-    } finally {
-      setSendingLink(false);
-    }
-  }
-
-  return (
-    <>
-    <AlertDialog open={confirmOverwrite} onOpenChange={setConfirmOverwrite}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Replace existing setup link?</AlertDialogTitle>
-          <AlertDialogDescription>
-            A setup link has already been sent to <strong>{employeeEmail}</strong>. Sending a new one will invalidate the old link — the employee won't be able to use it anymore. Continue?
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={() => { setConfirmOverwrite(false); sendSetupLink(true); }}
-            data-testid={`button-confirm-resend-deposit-link-${employeeId}`}
-          >
-            Send new link
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-    <div style={{ marginTop: "16px", borderTop: "1px solid var(--panel-bd)", paddingTop: "16px" }}>
-      <div style={{ fontSize: "11.5px", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--muted)", marginBottom: "10px" }}>Direct Deposit</div>
-      {isLoading ? (
-        <div style={{ display: "flex", gap: "8px", alignItems: "center", padding: "10px 12px", borderRadius: "8px", background: "var(--track)", fontSize: "12.5px", color: "var(--muted)" }}>
-          <Landmark style={{ width: "13px", height: "13px" }} />
-          Loading…
-        </div>
-      ) : account ? (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", border: "1px solid var(--panel-bd)", borderRadius: "8px", background: "var(--panel)", gap: "10px" }} data-testid={`direct-deposit-connected-${employeeId}`}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
-            <Landmark style={{ width: "14px", height: "14px", flexShrink: 0, color: "var(--muted)" }} />
-            <div>
-              <div style={{ fontSize: "12.5px", fontWeight: 600 }}>{account.institutionName}</div>
-              <div style={{ fontSize: "11.5px", color: "var(--muted)" }}>
-                {account.accountName} ••••{account.accountMask}
-                {account.routingNumberMask && (
-                  <span style={{ marginLeft: "8px" }}>· Routing: {account.routingNumberMask}</span>
-                )}
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => disconnectMutation.mutate(account.id)}
-            disabled={disconnectMutation.isPending}
-            style={{ display: "flex", alignItems: "center", gap: "5px", border: "1px solid #fecaca", borderRadius: "7px", padding: "5px 10px", background: "#fff5f5", color: "#dc2626", fontSize: "12px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}
-            data-testid={`button-remove-direct-deposit-${employeeId}`}
-          >
-            <Unlink style={{ width: "12px", height: "12px" }} />
-            {disconnectMutation.isPending ? "Removing…" : "Remove"}
-          </button>
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          <p style={{ fontSize: "12.5px", color: "var(--muted)", margin: 0 }}>No direct deposit account connected for this employee.</p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-            <button
-              type="button"
-              onClick={open}
-              disabled={linkLoading}
-              style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "8px 14px", background: "var(--panel)", fontSize: "12.5px", fontWeight: 600, cursor: linkLoading ? "wait" : "pointer", fontFamily: "inherit", color: "var(--fg)" }}
-              data-testid={`button-setup-direct-deposit-${employeeId}`}
-            >
-              <Landmark style={{ width: "13px", height: "13px" }} />
-              {linkLoading ? "Opening…" : "Connect bank"}
-            </button>
-            {employeeEmail && (
-              <button
-                type="button"
-                onClick={() => sendSetupLink()}
-                disabled={sendingLink || linkSent}
-                style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid #bfdbfe", borderRadius: "8px", padding: "8px 14px", background: linkSent ? "#eff6ff" : "var(--panel)", fontSize: "12.5px", fontWeight: 600, cursor: (sendingLink || linkSent) ? "default" : "pointer", fontFamily: "inherit", color: linkSent ? "#2563eb" : "#2563eb", opacity: (sendingLink || linkSent) ? 0.75 : 1 }}
-                data-testid={`button-send-deposit-link-${employeeId}`}
-              >
-                {linkSent ? <CheckCircle style={{ width: "13px", height: "13px" }} /> : <MessageSquare style={{ width: "13px", height: "13px" }} />}
-                {sendingLink ? "Sending…" : linkSent ? "Link sent" : "Send setup link"}
-              </button>
-            )}
-          </div>
-          {!employeeEmail && (
-            <p style={{ fontSize: "11.5px", color: "var(--muted)", margin: 0 }}>
-              Add an email address to send the employee a self-service setup link.
-            </p>
-          )}
-        </div>
-      )}
-    </div>
-    </>
-  );
-}
-
 // ── Run Payroll Form ──────────────────────────────────────────────────────────
 function RunPayrollForm({ onClose }: { onClose: () => void }) {
   const { toast } = useToast();
   const { data: employees } = useQuery<EmployeeWithStats[]>({ queryKey: ["/api/employees"] });
   const { data: payrollRecords } = useQuery<PayrollRecordWithEmployee[]>({ queryKey: ["/api/payroll-records"] });
   const { data: payrollSettings } = useQuery<PayrollSettings>({ queryKey: ["/api/payroll-settings"] });
-  const { data: empBankAccounts } = useQuery<{ entityId: string }[]>({ queryKey: ["/api/plaid/employee-bank-accounts"] });
   const activeCount = employees?.filter(e => e.status === "active").length ?? 0;
-  const w2Count = employees?.filter(e => e.status === "active" && (e as any).employmentType !== "1099").length ?? 0;
   const presets = periodPresets();
 
   // Derive smart defaults from saved pay frequency; fall back to "This Month"
@@ -965,7 +747,7 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
     },
     onSuccess: (records) => {
       queryClient.invalidateQueries({ queryKey: ["/api/payroll-records"] });
-      toast({ title: "Payroll run complete", description: `${records.length} record${records.length !== 1 ? "s" : ""} created.` });
+      toast({ title: "Local source records prepared", description: `${records.length} record${records.length !== 1 ? "s" : ""} saved. No payroll was submitted and no payment was initiated.` });
       onClose();
     },
     onError: (error: Error) => toast({ title: "Error", description: error.message, variant: "destructive" }),
@@ -985,7 +767,7 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
       <form onSubmit={form.handleSubmit(d => mutation.mutate(d))} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         {payrollSettings && (
           <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: "8px", padding: "10px 12px", fontSize: "12.5px", color: "#0369a1" }}>
-            Pay schedule: <strong>{PAY_FREQUENCY_LABELS[payrollSettings.payFrequency]}</strong> — change in Settings tab.
+            Local source-record period: <strong>{PAY_FREQUENCY_LABELS[payrollSettings.payFrequency]}</strong> — this does not submit payroll or initiate ACH.
           </div>
         )}
         {mutation.isPending && (
@@ -1040,22 +822,13 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
               <FormMessage /></FormItem>
           )} />
         </div>
-        {/* Balance pre-flight check */}
-        {watchStart && watchEnd && (
-          <BalancePreflightBanner estimatedPayroll={
-            (employees?.filter(e => e.status === "active") ?? []).reduce((sum, e) => {
-              const days = Math.ceil((new Date(watchEnd).getTime() - new Date(watchStart).getTime()) / (1000 * 60 * 60 * 24)) / 7 * 5;
-              return sum + (Number((e as any).dayRate ?? 0) * Math.max(1, days));
-            }, 0)
-          } />
-        )}
         {overlapping.length > 0 && (
           <div style={{ display: "flex", gap: "10px", background: "#fefce8", border: "1px solid #fde68a", borderRadius: "8px", padding: "12px" }} data-testid="warning-payroll-overlap">
             <AlertTriangle style={{ width: "16px", height: "16px", flexShrink: 0, color: "#b45309", marginTop: "1px" }} />
             <div style={{ fontSize: "13px", color: "#92400e" }}>
               <div style={{ fontWeight: 600, marginBottom: "4px" }}>Period overlaps an existing run</div>
               {overlapping.map(p => <div key={`${p.periodStart}-${p.periodEnd}`} style={{ fontSize: "12px" }}>{p.periodStart} → {p.periodEnd}</div>)}
-              <div style={{ marginTop: "4px", fontSize: "12px" }}>Adjust dates above to enable submission.</div>
+              <div style={{ marginTop: "4px", fontSize: "12px" }}>Adjust dates above to prepare a non-overlapping local source record period.</div>
             </div>
           </div>
         )}
@@ -1064,28 +837,7 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
             <div style={{ fontWeight: 600, marginBottom: "4px", color: "var(--fg)" }}>Preview</div>
             <div>{watchStart} → {watchEnd}</div>
             <div>{activeCount} active employee{activeCount !== 1 ? "s" : ""} will get pay records.</div>
-            {w2Count > 0 && <div>{w2Count} W-2 employees will have federal + state tax withheld automatically.</div>}
-            {empBankAccounts !== undefined && activeCount > 0 && (() => {
-              const connectedIds = new Set((empBankAccounts ?? []).map(a => a.entityId));
-              const connectedCount = (employees?.filter(e => e.status === "active" && connectedIds.has(e.id)) ?? []).length;
-              const missingCount = activeCount - connectedCount;
-              return (
-                <div style={{ marginTop: "6px", display: "flex", alignItems: "center", gap: "6px", fontSize: "12.5px" }}>
-                  <Landmark style={{ width: "12px", height: "12px", flexShrink: 0 }} />
-                  {connectedCount === activeCount
-                    ? <span style={{ color: "#16a34a", fontWeight: 600 }}>All {activeCount} employees have direct deposit connected.</span>
-                    : <span>
-                        <span style={{ color: "#16a34a", fontWeight: 600 }}>{connectedCount}</span>
-                        {" of "}
-                        <span style={{ fontWeight: 600, color: "var(--fg)" }}>{activeCount}</span>
-                        {" employees have direct deposit connected"}
-                        {missingCount > 0 && <span style={{ color: "#b45309" }}> — {missingCount} not set up</span>}
-                      </span>
-                  }
-                </div>
-              );
-            })()}
-            <div style={{ marginTop: "4px", fontSize: "12px", color: "#64748b" }}>OT calculated per work week (Mon–Sun). Recurring deductions applied per employee.</div>
+            <div style={{ marginTop: "4px", fontSize: "12px", color: "#64748b" }}>This prepares local source records only. Gusto controls tax and deduction calculations and payment setup.</div>
           </div>
         )}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
@@ -1100,7 +852,7 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
               <span>
                 <button type="submit" disabled={mutation.isPending || overlapping.length > 0} style={{ display: "flex", alignItems: "center", gap: "7px", padding: "9px 18px", border: "none", background: "#2563eb", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit", opacity: (mutation.isPending || overlapping.length > 0) ? 0.6 : 1 }} data-testid="button-run-payroll-submit">
                   <Play style={{ width: "14px", height: "14px" }} />
-                  {mutation.isPending ? "Running…" : "Run payroll"}
+                  {mutation.isPending ? "Preparing…" : "Prepare local records"}
                 </button>
               </span>
             </TooltipTrigger>
@@ -1177,6 +929,10 @@ function PayStubDialog({ record, onClose }: { record: PayrollRecordWithEmployee;
             {(emp as any).position ?? "Employee"} · {is1099 ? "1099 Contractor" : "W-2 Employee"}
           </div>
         </div>
+      </div>
+
+      <div role="note" style={{ marginBottom: "10px", padding: "9px 12px", border: "1px solid var(--panel-bd)", borderRadius: "8px", color: "var(--muted)", fontSize: "12px" }}>
+        Local payroll history is for reference. Amounts here are not Gusto-calculated totals, payment instructions, or confirmation of bank settlement.
       </div>
 
       {/* Earnings */}
@@ -1600,21 +1356,23 @@ export default function Payroll() {
   const [rangeExportPeriod, setRangeExportPeriod] = useState<{ start: string; end: string }>({ start: "", end: "" });
   const { toast } = useToast();
 
-  const { data: employees, isLoading: empLoading } = useQuery<EmployeeWithStats[]>({ queryKey: ["/api/employees"] });
-  const { data: timeEntries, isLoading: timeLoading } = useQuery<TimeEntryWithRelations[]>({ queryKey: ["/api/time-entries"] });
-  const { data: payrollRecords, isLoading: payrollLoading } = useQuery<PayrollRecordWithEmployee[]>({ queryKey: ["/api/payroll-records"] });
+  const employeeQuery = useQuery<EmployeeWithStats[]>({ queryKey: ["/api/employees"] });
+  const { data: employees, isLoading: empLoading } = employeeQuery;
+  const timeQuery = useQuery<TimeEntryWithRelations[]>({ queryKey: ["/api/time-entries"] });
+  const { data: timeEntries, isLoading: timeLoading } = timeQuery;
+  const payrollQuery = useQuery<PayrollRecordWithEmployee[]>({ queryKey: ["/api/payroll-records"] });
+  const { data: payrollRecords, isLoading: payrollLoading } = payrollQuery;
   const { data: appSettings } = useQuery<{ companyName?: string }>({ queryKey: ["/api/settings"] });
-  const { data: empBankAccountsList } = useQuery<{ entityId: string }[]>({
-    queryKey: ["/api/plaid/employee-bank-accounts"],
-    queryFn: async () => {
-      const res = await fetch("/api/plaid/employee-bank-accounts", { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
-  const connectedBankIds = useMemo(() => new Set((empBankAccountsList ?? []).map((a: { entityId: string }) => a.entityId)), [empBankAccountsList]);
   const companyName = appSettings?.companyName || "JobsOxo";
-  const { data: smsAttempts = [], isLoading: smsLoading } = useQuery<SmsAttempt[]>({ queryKey: ["/api/sms/attempts"] });
+  const smsQuery = useQuery<SmsAttempt[]>({ queryKey: ["/api/sms/attempts"] });
+  const { data: smsAttempts = [], isLoading: smsLoading } = smsQuery;
+  const sectionData = {
+    payroll: { query: payrollQuery, label: "local payroll history" },
+    employees: { query: employeeQuery, label: "employees" },
+    time: { query: timeQuery, label: "time entries" },
+    smslog: { query: smsQuery, label: "SMS log" },
+    settings: null,
+  }[activeSection];
 
   // ── Period grouping ────────────────────────────────────────────────────────
   const periods = useMemo(() => {
@@ -1644,27 +1402,6 @@ export default function Payroll() {
   const crewCount = currentRecords.length;
 
   // ── Mutations ─────────────────────────────────────────────────────────────
-  const markPaidMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiRequest("PATCH", `/api/payroll-records/${id}`, { status: "paid" });
-      return res.json();
-    },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/payroll-records"] }); toast({ title: "Marked as paid" }); },
-    onError: () => toast({ title: "Failed to update", variant: "destructive" }),
-  });
-
-  const markAllPaidMutation = useMutation({
-    mutationFn: async ({ periodStart, periodEnd }: { periodStart: string; periodEnd: string }) => {
-      const res = await apiRequest("POST", "/api/payroll-records/mark-all-paid", { periodStart, periodEnd });
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/payroll-records"] });
-      toast({ title: `${data.count} record${data.count !== 1 ? "s" : ""} marked as paid` });
-    },
-    onError: () => toast({ title: "Failed to mark records as paid", variant: "destructive" }),
-  });
-
   const deleteTimeEntryMutation = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/time-entries/${id}`); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/time-entries"] }); queryClient.invalidateQueries({ queryKey: ["/api/employees"] }); setDeleteTimeEntryId(null); },
@@ -1828,7 +1565,7 @@ export default function Payroll() {
       {/* ── Dialogs ── */}
       <Dialog open={isRunPayrollOpen} onOpenChange={o => { if (!o) setIsRunPayrollOpen(false); }}>
         <DialogContent className="max-w-md !flex flex-col max-h-[90dvh] overflow-hidden">
-          <DialogHeader className="shrink-0"><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>Run payroll</DialogTitle></DialogHeader>
+          <DialogHeader className="shrink-0"><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>Prepare local payroll records</DialogTitle></DialogHeader>
           <div className="flex-1 overflow-y-auto min-h-0">
             <RunPayrollForm onClose={() => setIsRunPayrollOpen(false)} />
           </div>
@@ -1970,18 +1707,18 @@ export default function Payroll() {
       </AlertDialog>
 
       {/* ── Page body ── */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "24px 26px 40px" }}>
-        <div style={{ maxWidth: "1280px", margin: "0 auto" }}>
+      <div className="payroll-redesign payroll-page-scroll" style={{ flex: 1, overflowY: "auto", padding: "24px 26px 40px" }}>
+        <div className="payroll-page-content" style={{ maxWidth: "1280px", margin: "0 auto" }}>
 
           {/* ── Title row ── */}
-          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "16px", marginBottom: "20px", flexWrap: "wrap" }}>
+          <div className="payroll-page-header" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "16px", marginBottom: "20px", flexWrap: "wrap" }}>
             <div>
-              <h2 style={{ margin: 0, fontSize: "26px", fontWeight: 700, letterSpacing: "-.02em" }}>Payroll</h2>
+              <h1 style={{ margin: 0, fontSize: "26px", fontWeight: 700, letterSpacing: "-.02em" }}>Payroll</h1>
               <p style={{ margin: "5px 0 0", fontSize: "13.5px", color: "var(--muted)" }}>
                 {currentPeriod ? `Pay period · ${periodLabel(currentPeriod.start, currentPeriod.end)}` : "Employees, time tracking, and pay runs"}
               </p>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div className="payroll-page-header-actions" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
               <button onClick={() => setIsTimeEntryDialogOpen(true)} style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-log-hours">
                 Log hours</button>
               <button onClick={() => { setEditingEmployee(null); setIsEmployeeDialogOpen(true); }} style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-add-employee">
@@ -2026,32 +1763,37 @@ export default function Payroll() {
                 </DropdownMenu>
               )}
               <button onClick={() => setIsRunPayrollOpen(true)} style={{ display: "flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "9px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 1px 2px rgba(37,99,235,.3)" }} data-testid="button-run-payroll">
-                Run payroll</button>
+                Prepare local records</button>
             </div>
           </div>
 
+          {sectionData?.query.isError && (
+            <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-jx-orange-tint p-5 text-jx-orange-ink">
+              <p className="text-sm">
+                Could not load or refresh {sectionData.label}. Any previously loaded values are not updated.
+                {activeSection === "payroll" && " Gusto payroll remains independent of this local history."}
+              </p>
+              <Button type="button" variant="outline" className="rounded-full" onClick={() => void sectionData.query.refetch()} disabled={sectionData.query.isFetching}>
+                Retry loading {sectionData.label}
+              </Button>
+            </div>
+          )}
+
           {/* ── 5-stat strip ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: "12px", marginBottom: "20px" }}>
-            {[
-              { label: "Gross this period", value: fmt(gross), testid: "stat-gross" },
-              { label: "Net pay (take-home)", value: fmt(netTotal), testid: "stat-net", highlight: true },
-              { label: "Tax withheld", value: fmt(taxTotal), testid: "stat-tax" },
-              { label: "Overtime hours", value: otHrs > 0 ? otHrs.toFixed(0) + " hrs" : "0", testid: "stat-ot", warn: otHrs > 0 },
-              { label: "Crew on payroll", value: String(crewCount), testid: "stat-crew" },
-            ].map(s => (
-              <div key={s.label} style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-                <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>{s.label}</div>
-                <div className="font-mono" style={{ fontSize: "20px", fontWeight: 600, marginTop: "6px", color: s.warn ? "#b6731a" : s.highlight ? "#15803d" : "var(--fg)" }} data-testid={s.testid}>{payrollLoading ? "—" : s.value}</div>
-              </div>
-            ))}
-          </div>
+          <PayrollSummary loading={payrollLoading} items={[
+            { label: "Local net estimate", value: currentPeriod ? fmt(netTotal) : "—", testId: "stat-net", tone: "gold", detail: "Historical reference · not provider totals" },
+            { label: "Gross this period", value: currentPeriod ? fmt(gross) : "—", testId: "stat-gross" },
+            { label: "Tax withheld", value: currentPeriod ? fmt(taxTotal) : "—", testId: "stat-tax", detail: "Local record only" },
+            { label: "Overtime hours", value: currentPeriod ? (otHrs > 0 ? `${otHrs.toFixed(0)} hrs` : "0 hrs") : "—", testId: "stat-ot", tone: otHrs > 0 ? "amber" : undefined },
+            { label: "Crew on payroll", value: currentPeriod ? String(crewCount) : "—", testId: "stat-crew" },
+          ]} />
 
           {/* ── Section tabs ── */}
-          <div style={{ display: "flex", gap: "4px", marginBottom: "16px" }}>
+          <div className="payroll-section-tabs" style={{ display: "flex", gap: "4px", marginBottom: "16px" }}>
             {SECTION_TABS.map(s => {
               const active = activeSection === s.key;
               return (
-                <button key={s.key} onClick={() => setActiveSection(s.key)}
+                <button key={s.key} aria-pressed={active} onClick={() => setActiveSection(s.key)}
                   style={{ display: "inline-flex", alignItems: "center", gap: "7px", cursor: "pointer", fontFamily: "inherit", fontSize: "13px", fontWeight: 600, padding: "7px 13px", borderRadius: "8px", border: "1px solid " + (active ? "transparent" : "var(--panel-bd)"), background: active ? "var(--jox-primary)" : "var(--panel)", color: active ? "#fff" : "var(--muted)" }}
                   data-testid={`tab-${s.key}`}>
                   {s.key === "smslog" && <MessageSquare style={{ width: "12px", height: "12px" }} />}
@@ -2074,9 +1816,12 @@ export default function Payroll() {
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* ── PAY RUN TABLE ── */}
           {activeSection === "payroll" && (
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
-              <div style={{ ...TH }}>
-                <span style={{ flex: 1, minWidth: 0 }}>Painter</span>
+            <>
+            <GustoBankView />
+            <GustoOnlyWorkspace records={currentRecords} period={currentPeriod} />
+            <div className="payroll-table-shell payroll-inline-panel" style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
+              <div className="payroll-table-head" data-payroll-wide="true" style={{ ...TH }}>
+                <span style={{ flex: 1, minWidth: 0 }}>Employee</span>
                 <span style={{ width: "90px", flexShrink: 0 }}>Type</span>
                 <span style={{ width: "80px", flexShrink: 0, textAlign: "right" }}>Reg hrs</span>
                 <span style={{ width: "72px", flexShrink: 0, textAlign: "right" }}>OT hrs</span>
@@ -2085,19 +1830,17 @@ export default function Payroll() {
                 <span style={{ width: "86px", flexShrink: 0, textAlign: "right" }}>Deductions</span>
                 <span style={{ width: "96px", flexShrink: 0, textAlign: "right" }}>Net pay</span>
                 <span style={{ width: "88px", flexShrink: 0, textAlign: "center" }}>Status</span>
-                <span style={{ width: "104px", flexShrink: 0, textAlign: "center" }}>Payment</span>
                 <span style={{ width: "28px", flexShrink: 0 }}></span>
               </div>
 
               {payrollLoading && <div style={{ padding: "40px", textAlign: "center" as const, color: "var(--faint)", fontSize: "13px" }}>Loading pay records…</div>}
 
-              {!payrollLoading && periods.length === 0 && (
+              {!payrollLoading && !payrollQuery.isError && periods.length === 0 && (
                 <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
-                  <div style={{ fontSize: "32px", marginBottom: "10px" }}>💰</div>
-                  <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>No payroll runs yet</div>
-                  <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>Log hours and run payroll to generate pay records.</div>
+                    <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>No local payroll records yet</div>
+                    <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>Prepare local source records here, then use the Gusto workspace for provider payroll.</div>
                   <button onClick={() => setIsRunPayrollOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 18px", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-run-first-payroll">
-                    <Play style={{ width: "14px", height: "14px" }} /> Run payroll
+                    <Play style={{ width: "14px", height: "14px" }} /> Prepare local records
                   </button>
                 </div>
               )}
@@ -2111,7 +1854,7 @@ export default function Payroll() {
                 const dedW = Number(r.deductions ?? 0);
                 const is1099 = (r.employee as any).employmentType === "1099";
                 return (
-                  <div key={r.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "11px 18px", borderBottom: "1px solid var(--panel-bd)", cursor: "pointer" }}
+                  <div key={r.id} data-payroll-wide="true" className="rowhover" style={{ display: "flex", alignItems: "center", padding: "11px 18px", borderBottom: "1px solid var(--panel-bd)", cursor: "pointer" }}
                     onClick={() => setPayStubRecord(r as PayrollRecordWithEmployee)} data-testid={`row-payroll-${r.id}`}>
                     {/* Painter */}
                     <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "10px", paddingRight: "10px" }}>
@@ -2147,23 +1890,6 @@ export default function Payroll() {
                     <span style={{ width: "88px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
                       <span style={{ background: r.badge.bg, color: r.badge.fg, fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px", textTransform: "capitalize", whiteSpace: "nowrap" }}>{r.badge.label}</span>
                     </span>
-                    {/* Payment method */}
-                    <span style={{ width: "104px", flexShrink: 0, display: "flex", justifyContent: "center" }} onClick={e => e.stopPropagation()}>
-                      <button
-                        data-testid={`payment-method-${r.id}`}
-                        onClick={() => { setEditingEmployee(r.employee as any); setIsEmployeeDialogOpen(true); }}
-                        title={`Click to edit employee${(r as any).hasDirectDeposit ? " (Direct Deposit)" : " (Check)"}`}
-                        style={{ border: "none", cursor: "pointer", padding: "3px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 600, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "4px", ...(
-                          (r as any).hasDirectDeposit
-                            ? { background: "var(--b-green-bg, #dcfce7)", color: "var(--b-green-fg, #15803d)" }
-                            : { background: "var(--b-gray-bg, #f1f5f9)", color: "var(--b-gray-fg, #475569)" }
-                        ) }}>
-                        {(r as any).hasDirectDeposit
-                          ? <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>Direct Deposit</>
-                          : <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M2 10h20"/><path d="M6 14h4"/></svg>Check</>
-                        }
-                      </button>
-                    </span>
                     {/* Actions */}
                     <span style={{ width: "28px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }} onClick={e => e.stopPropagation()}>
                       {r.status !== "paid" && (
@@ -2176,9 +1902,6 @@ export default function Payroll() {
                           <DropdownMenuContent align="end" sideOffset={4}>
                             <DropdownMenuItem onClick={() => setPayStubRecord(r as PayrollRecordWithEmployee)} data-testid={`button-view-stub-${r.id}`}>
                               <FileText className="h-4 w-4 mr-2" />View pay stub
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => markPaidMutation.mutate(r.id)} data-testid={`button-mark-paid-${r.id}`}>
-                              <CheckCircle className="h-4 w-4 mr-2 text-green-600" />Mark as paid
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -2195,7 +1918,7 @@ export default function Payroll() {
 
               {/* Footer totals */}
               {crewRows.length > 0 && (
-                <div style={{ display: "flex", alignItems: "center", padding: "12px 18px", background: "var(--track)", borderTop: "1px solid var(--panel-bd)" }}>
+                <div data-payroll-wide="true" style={{ display: "flex", alignItems: "center", padding: "12px 18px", background: "var(--track)", borderTop: "1px solid var(--panel-bd)" }}>
                   <span style={{ flex: 1, fontSize: "12.5px", fontWeight: 700 }}>Total</span>
                   <span style={{ width: "90px", flexShrink: 0 }}></span>
                   <span className="font-mono" style={{ width: "80px", flexShrink: 0, textAlign: "right", fontSize: "12px", color: "var(--muted)" }}>{totalHrs.toFixed(0)} hrs</span>
@@ -2210,30 +1933,14 @@ export default function Payroll() {
                 </div>
               )}
 
-              {/* Mark all paid action */}
-              {crewRows.length > 0 && currentRecords.some(r => r.status === "pending") && currentPeriod && (
-                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "10px", padding: "10px 18px", borderTop: "1px solid var(--panel-bd)", background: "var(--panel)" }}>
-                  <span style={{ fontSize: "12px", color: "var(--faint)" }}>
-                    {currentRecords.filter(r => r.status === "pending").length} record{currentRecords.filter(r => r.status === "pending").length !== 1 ? "s" : ""} pending payment
-                  </span>
-                  <button
-                    onClick={() => markAllPaidMutation.mutate({ periodStart: currentPeriod.start, periodEnd: currentPeriod.end })}
-                    disabled={markAllPaidMutation.isPending}
-                    data-testid="button-mark-all-paid"
-                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 14px", border: "none", borderRadius: "8px", background: "#15803d", color: "#fff", fontSize: "12.5px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", opacity: markAllPaidMutation.isPending ? 0.7 : 1 }}
-                  >
-                    <CheckCircle style={{ width: "13px", height: "13px" }} />
-                    {markAllPaidMutation.isPending ? "Marking paid…" : "Mark all paid"}
-                  </button>
-                </div>
-              )}
             </div>
+            </>
           )}
 
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* ── EMPLOYEES TABLE ── */}
           {activeSection === "employees" && (
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
+            <div className="payroll-table-shell payroll-inline-panel" style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)", background: "var(--track)" }}>
                 <div style={{ flex: 1, display: "flex", alignItems: "center", gap: "7px", background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "6px 11px" }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -2244,7 +1951,7 @@ export default function Payroll() {
                 </button>
               </div>
 
-              <div style={{ ...TH }}>
+              <div className="payroll-table-head" data-payroll-wide="true" style={{ ...TH }}>
                 <span style={{ flex: 1, minWidth: 0 }}>Employee</span>
                 <span style={{ width: "80px", flexShrink: 0 }}>Type</span>
                 <span style={{ width: "100px", flexShrink: 0 }}>Position</span>
@@ -2252,7 +1959,6 @@ export default function Payroll() {
                 <span style={{ width: "88px", flexShrink: 0, textAlign: "right" }}>Hrs (month)</span>
                 <span style={{ width: "100px", flexShrink: 0, textAlign: "right" }}>Month pay</span>
                 <span style={{ width: "80px", flexShrink: 0, textAlign: "center" }}>Deductions</span>
-                <span style={{ width: "92px", flexShrink: 0, textAlign: "center" }}>Bank</span>
                 <span style={{ width: "88px", flexShrink: 0, textAlign: "center" }}>Status</span>
                 <span style={{ width: "28px", flexShrink: 0 }}></span>
               </div>
@@ -2261,7 +1967,6 @@ export default function Payroll() {
 
               {!empLoading && filteredEmployees.length === 0 && (
                 <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
-                  <div style={{ fontSize: "32px", marginBottom: "10px" }}>👷</div>
                   <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>{empSearch ? "No employees found" : "No employees yet"}</div>
                   <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>{empSearch ? `No results for "${empSearch}"` : "Add your first employee to get started."}</div>
                   {!empSearch && <button onClick={() => setIsEmployeeDialogOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 18px", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-add-first-employee"><Plus style={{ width: "15px", height: "15px" }} />Add employee</button>}
@@ -2274,14 +1979,20 @@ export default function Payroll() {
                 const avFg = `var(${AV_FG[i % 6]})`;
                 const is1099 = (emp as any).employmentType === "1099";
                 return (
-                  <div key={emp.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-employee-${emp.id}`}>
+                  <div key={emp.id} data-payroll-wide="true" className="rowhover" style={{ display: "flex", alignItems: "center", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-employee-${emp.id}`}>
                     <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "12px", paddingRight: "12px" }}>
                       <div style={{ width: "34px", height: "34px", borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "11.5px", background: avBg, color: avFg }}>
                         {initials(emp.name)}
                       </div>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: "13.5px", fontWeight: 600, display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}>
-                          {emp.name}
+                          <Link
+                            href={`/payroll/worksheet?employeeId=${emp.id}`}
+                            className="text-foreground hover:text-primary hover:underline"
+                            data-testid={`link-run-payroll-${emp.id}`}
+                          >
+                            {emp.name}
+                          </Link>
                           {!emp.phone && active && (
                             <span title="No phone — can't log hours by SMS" style={{ display: "inline-flex", alignItems: "center", gap: "3px", background: "var(--b-amber-bg)", color: "var(--b-amber-fg)", fontSize: "10.5px", fontWeight: 600, padding: "1px 7px", borderRadius: "5px" }} data-testid={`badge-no-phone-${emp.id}`}>
                               <PhoneOff style={{ width: "10px", height: "10px" }} />No phone
@@ -2316,44 +2027,6 @@ export default function Payroll() {
                         <span style={{ fontSize: "11px", color: "var(--faint)" }}>—</span>
                       )}
                     </span>
-                    {/* Bank status */}
-                    <span style={{ width: "92px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
-                      {empBankAccountsList !== undefined ? (
-                        connectedBankIds.has(emp.id) ? (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                onClick={() => { setEditingEmployee(emp); setIsEmployeeDialogOpen(true); }}
-                                style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "5px", background: "#f0fdf4", color: "#16a34a", border: "none", cursor: "pointer", whiteSpace: "nowrap" }}
-                                data-testid={`badge-bank-connected-${emp.id}`}
-                              >
-                                <Landmark style={{ width: "10px", height: "10px" }} />
-                                Connected
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent>Direct deposit connected — click to view</TooltipContent>
-                          </Tooltip>
-                        ) : (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                onClick={() => { setEditingEmployee(emp); setIsEmployeeDialogOpen(true); }}
-                                style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 600, padding: "2px 8px", borderRadius: "5px", background: "#fff7ed", color: "#c2410c", border: "none", cursor: "pointer", whiteSpace: "nowrap" }}
-                                data-testid={`badge-bank-missing-${emp.id}`}
-                              >
-                                <Landmark style={{ width: "10px", height: "10px" }} />
-                                Not set up
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent>No direct deposit — click to set up</TooltipContent>
-                          </Tooltip>
-                        )
-                      ) : (
-                        <span style={{ fontSize: "11px", color: "var(--faint)" }}>—</span>
-                      )}
-                    </span>
                     <span style={{ width: "88px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
                       <span style={{ background: active ? "var(--b-green-bg)" : "var(--b-gray-bg)", color: active ? "var(--b-green-fg)" : "var(--b-gray-fg)", fontSize: "11px", fontWeight: 600, padding: "3px 10px", borderRadius: "6px", textTransform: "capitalize", whiteSpace: "nowrap" }}>
                         {emp.status}
@@ -2370,6 +2043,11 @@ export default function Payroll() {
                           <DropdownMenuItem onClick={() => { setEditingEmployee(emp); setIsEmployeeDialogOpen(true); }} data-testid={`button-edit-employee-${emp.id}`}>
                             <Edit className="h-4 w-4 mr-2" />Edit &amp; deductions
                           </DropdownMenuItem>
+                          <DropdownMenuItem asChild>
+                            <Link href={`/payroll/worksheet?employeeId=${emp.id}`} data-testid={`button-run-gusto-payroll-${emp.id}`}>
+                              <ClipboardList className="h-4 w-4 mr-2" />Prepare Gusto payroll
+                            </Link>
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </span>
@@ -2378,7 +2056,7 @@ export default function Payroll() {
               })}
 
               {!empLoading && filteredEmployees.length > 0 && (
-                <div style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
+                <div data-payroll-wide="true" style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
                   {filteredEmployees.length} employee{filteredEmployees.length !== 1 ? "s" : ""} · {filteredEmployees.filter(e => e.status === "active").length} active
                   · {filteredEmployees.filter(e => (e as any).employmentType === "1099").length} contractors
                 </div>
@@ -2389,7 +2067,7 @@ export default function Payroll() {
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* ── TIME ENTRIES TABLE ── */}
           {activeSection === "time" && (
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
+            <div className="payroll-table-shell payroll-inline-panel" style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "12px 18px", borderBottom: "1px solid var(--panel-bd)", background: "var(--track)", flexWrap: "wrap" }}>
                 {(["all","this_month","last_month","last_7"] as const).map(f => {
                   const labels: Record<string, string> = { all: "All time", this_month: "This month", last_month: "Last month", last_7: "Last 7 days" };
@@ -2418,7 +2096,7 @@ export default function Payroll() {
                 </button>
               </div>
 
-              <div style={{ ...TH }}>
+              <div className="payroll-table-head" data-payroll-wide="true" style={{ ...TH }}>
                 <span style={{ width: "96px", flexShrink: 0 }}>Date</span>
                 <span style={{ width: "150px", flexShrink: 0 }}>Employee</span>
                 <span style={{ flex: 1, minWidth: 0 }}>Job</span>
@@ -2433,7 +2111,6 @@ export default function Payroll() {
 
               {!timeLoading && filteredTimeEntries.length === 0 && (
                 <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
-                  <div style={{ fontSize: "32px", marginBottom: "10px" }}>⏱️</div>
                   <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>No time entries</div>
                   <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>Log hours to track time worked by your crew.</div>
                   <button onClick={() => setIsTimeEntryDialogOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 18px", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-add-first-time-entry">
@@ -2445,7 +2122,7 @@ export default function Payroll() {
               {filteredTimeEntries.map((entry) => {
                 const isSms = entry.source === "sms";
                 return (
-                  <div key={entry.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "11px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-time-${entry.id}`}>
+                  <div key={entry.id} data-payroll-wide="true" className="rowhover" style={{ display: "flex", alignItems: "center", padding: "11px 18px", borderBottom: "1px solid var(--panel-bd)" }} data-testid={`row-time-${entry.id}`}>
                     <span style={{ width: "96px", flexShrink: 0, fontSize: "12.5px", color: "var(--muted)" }}>
                       {format(new Date(entry.date), "MMM d, yyyy")}
                     </span>
@@ -2473,7 +2150,7 @@ export default function Payroll() {
               })}
 
               {!timeLoading && filteredTimeEntries.length > 0 && (
-                <div style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
+                <div data-payroll-wide="true" style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
                   {filteredTimeEntries.length} entr{filteredTimeEntries.length !== 1 ? "ies" : "y"} · {filteredTimeEntries.reduce((s, e) => s + Number(e.hoursWorked), 0).toFixed(1)} total hours
                   {smsEntryCount > 0 && <> · <span style={{ color: "var(--b-blue-fg, #1d4ed8)", fontWeight: 600 }}>{smsEntryCount} via SMS</span></>}
                 </div>
@@ -2484,7 +2161,7 @@ export default function Payroll() {
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* ── SMS LOG ── */}
           {activeSection === "smslog" && (
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
+            <div className="payroll-table-shell payroll-inline-panel" style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "14px 18px", borderBottom: "1px solid var(--panel-bd)", background: "var(--track)" }}>
                 <MessageSquare style={{ width: "15px", height: "15px", color: "var(--jox-primary)" }} />
                 <div>
@@ -2498,7 +2175,7 @@ export default function Payroll() {
                 )}
               </div>
 
-              <div style={{ ...TH }}>
+              <div className="payroll-table-head" data-payroll-wide="true" style={{ ...TH }}>
                 <span style={{ width: "148px", flexShrink: 0 }}>Time</span>
                 <span style={{ width: "130px", flexShrink: 0 }}>From</span>
                 <span style={{ width: "140px", flexShrink: 0 }}>Employee</span>
@@ -2511,7 +2188,6 @@ export default function Payroll() {
 
               {!smsLoading && smsAttempts.length === 0 && (
                 <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
-                  <div style={{ fontSize: "32px", marginBottom: "10px" }}>📱</div>
                   <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>No SMS activity yet</div>
                   <div style={{ fontSize: "13px", color: "var(--faint)" }}>When employees text in their hours, all attempts will appear here.</div>
                 </div>
@@ -2521,7 +2197,7 @@ export default function Payroll() {
                 const badge = SMS_STATUS[attempt.status] ?? { bg: "var(--b-gray-bg)", fg: "var(--b-gray-fg)", label: attempt.status };
                 const isRejected = !["ok", "help"].includes(attempt.status);
                 return (
-                  <div key={attempt.id} className="rowhover" style={{ display: "flex", alignItems: "center", padding: "10px 18px", borderBottom: "1px solid var(--panel-bd)", background: isRejected ? "rgba(254,226,226,0.18)" : undefined }} data-testid={`row-sms-${attempt.id}`}>
+                  <div key={attempt.id} data-payroll-wide="true" className="rowhover" style={{ display: "flex", alignItems: "center", padding: "10px 18px", borderBottom: "1px solid var(--panel-bd)", background: isRejected ? "rgba(254,226,226,0.18)" : undefined }} data-testid={`row-sms-${attempt.id}`}>
                     <span style={{ width: "148px", flexShrink: 0, fontSize: "12px", color: "var(--muted)" }}>
                       {format(new Date(attempt.createdAt), "MMM d, h:mm a")}
                     </span>
@@ -2547,7 +2223,7 @@ export default function Payroll() {
               })}
 
               {!smsLoading && smsAttempts.length > 0 && (
-                <div style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
+                <div data-payroll-wide="true" style={{ padding: "12px 18px", fontSize: "12.5px", color: "var(--faint)" }}>
                   {smsAttempts.length} message{smsAttempts.length !== 1 ? "s" : ""}
                   {" · "}{smsAttempts.filter(a => a.status === "ok").length} logged
                   {smsRejectedCount > 0 && <> · <span style={{ color: "#b91c1c", fontWeight: 600 }}>{smsRejectedCount} rejected</span></>}

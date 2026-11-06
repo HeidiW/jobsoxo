@@ -1,29 +1,7 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { format } from "date-fns";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,52 +12,39 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ClientForm } from "@/components/clients/client-form";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
-import { formatPhone } from "@/lib/formatPhone";
-import { Plus, Edit, FileText, Trash2, MoreVertical } from "lucide-react";
-import { format } from "date-fns";
+import {
+  CircleAlert,
+  FileText,
+  Mail,
+  MapPin,
+  MoreHorizontal,
+  Phone,
+  Plus,
+  Search,
+  Trash2,
+  UsersRound,
+  BriefcaseBusiness,
+  Pencil,
+} from "lucide-react";
 import type { Client } from "@shared/schema";
-
-// ── Avatar color palette (4-color cycle) ─────────────────────────────────────
-const AV_COLORS = [
-  { bg: "#eef2fe", fg: "#2563eb" },
-  { bg: "#e6f6fb", fg: "#0e7faf" },
-  { bg: "#f3eafe", fg: "#7c3aed" },
-  { bg: "#e7f7ee", fg: "#15a35a" },
-];
-
-function getAv(index: number) {
-  return AV_COLORS[index % AV_COLORS.length];
-}
-
-// ── Initials helper ───────────────────────────────────────────────────────────
-function getInitials(name: string): string {
-  const skip = new Set(["and", "the", "&", "of", "co", "company", "llc", "inc"]);
-  const words = name.split(/\s+/).filter((w) => w && !skip.has(w.toLowerCase()));
-  if (words.length === 0) return name.slice(0, 2).toUpperCase();
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return words.slice(0, 2).map((w) => w[0]).join("").toUpperCase();
-}
-
-// ── Form schema ───────────────────────────────────────────────────────────────
-const clientFormSchema = z.object({
-  name: z.string().min(1, "Client name is required"),
-  generalContractorName: z.string().optional(),
-  email: z.string().email("Invalid email").optional().or(z.literal("")),
-  phone: z.string().optional(),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  state: z.string().optional(),
-  zipCode: z.string().optional(),
-  notes: z.string().optional(),
-});
-
-type ClientFormValues = z.infer<typeof clientFormSchema>;
+import { formatPhone } from "@/lib/formatPhone";
 
 interface ClientWithStats extends Client {
   activeJobs: number;
@@ -87,480 +52,533 @@ interface ClientWithStats extends Client {
   lastInvoiceDate?: string | Date;
 }
 
-// ── Form styles ───────────────────────────────────────────────────────────────
-const lbl: React.CSSProperties = {
-  display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b",
-  textTransform: "uppercase", letterSpacing: ".04em", marginBottom: "5px",
-};
-const inp: React.CSSProperties = {
-  width: "100%", padding: "9px 11px", border: "1px solid #cbd5e1",
-  borderRadius: "8px", fontSize: "13.5px", color: "#0f172a",
-  background: "#fff", fontFamily: "inherit", outline: "none", boxSizing: "border-box",
-};
+const CARD_TINTS = [
+  { card: "bg-jx-green-tint", tile: "text-jx-green-ink" },
+  { card: "bg-jx-blue-tint", tile: "text-jx-blue-ink" },
+  { card: "bg-jx-gold-tint", tile: "text-jx-gold-ink" },
+  { card: "bg-jx-orange-tint", tile: "text-jx-orange-ink" },
+  { card: "bg-jx-surface", tile: "text-jx-ink-2" },
+] as const;
 
-// ── ClientForm ────────────────────────────────────────────────────────────────
-function ClientForm({ client, onClose }: { client?: Client; onClose: () => void }) {
-  const { toast } = useToast();
-  const isEdit = !!client;
+function initialsFor(name: string) {
+  const omit = new Set(["and", "the", "&", "of", "co", "company", "llc", "inc"]);
+  const words = name.trim().split(/\s+/).filter((word) => word && !omit.has(word.toLowerCase()));
+  if (!words.length) return name.trim().slice(0, 2).toUpperCase();
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return words.slice(0, 2).map((word) => word[0]).join("").toUpperCase();
+}
 
-  const form = useForm<ClientFormValues>({
-    resolver: zodResolver(clientFormSchema),
-    defaultValues: {
-      name: client?.name || "",
-      generalContractorName: client?.generalContractorName || "",
-      email: client?.email || "",
-      phone: client?.phone || "",
-      address: client?.address || "",
-      city: client?.city || "",
-      state: client?.state || "",
-      zipCode: client?.zipCode || "",
-      notes: client?.notes || "",
-    },
-  });
+function money(value: number | string | null | undefined) {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value ?? 0));
+}
 
-  const mutation = useMutation({
-    mutationFn: async (data: ClientFormValues) => {
-      const url = isEdit ? `/api/clients/${client.id}` : "/api/clients";
-      const method = isEdit ? "PATCH" : "POST";
-      const res = await apiRequest(method, url, data);
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
-      toast({
-        title: isEdit ? "Client updated" : "Client created",
-        description: `${form.getValues("name")} has been ${isEdit ? "updated" : "added"} successfully.`,
-      });
-      onClose();
-    },
-    onError: (error: Error) => {
-      if (error instanceof ApiError && error.details) {
-        Object.entries(error.details).forEach(([field, messages]) => {
-          form.setError(field as keyof ClientFormValues, {
-            type: "server",
-            message: Array.isArray(messages) ? messages[0] : String(messages),
-          });
-        });
-        toast({ title: "Please fix the errors below", variant: "destructive" });
-      } else {
-        toast({ title: "Error", description: error.message, variant: "destructive" });
-      }
-    },
-  });
+function invoiceDate(value?: string | Date | null) {
+  if (!value) return "No invoice date";
+  try {
+    return format(new Date(value), "MMM d, yyyy");
+  } catch {
+    return "No invoice date";
+  }
+}
+
+function ClientCard({
+  client,
+  index,
+  onEdit,
+  onDelete,
+}: {
+  client: ClientWithStats;
+  index: number;
+  onEdit: (client: Client) => void;
+  onDelete: (client: Client) => void;
+}) {
+  const tint = CARD_TINTS[index % CARD_TINTS.length];
+  const location = [client.address, [client.city, client.state, client.zipCode].filter(Boolean).join(", ")]
+    .filter(Boolean)
+    .join(", ");
 
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit((d) => mutation.mutate(d))} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <FormField control={form.control} name="name" render={({ field }) => (
-            <FormItem>
-              <label style={lbl}>Client name *</label>
-              <FormControl><input {...field} style={inp} placeholder="Company or person name" data-testid="input-client-name" /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="generalContractorName" render={({ field }) => (
-            <FormItem>
-              <label style={lbl}>General contractor <span style={{ color: "#94a3b8", fontWeight: 400, textTransform: "none" }}>(optional)</span></label>
-              <FormControl><input {...field} style={inp} placeholder="GC company name" data-testid="input-client-gc-name" /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
+    <article
+      className={`min-w-0 rounded-[28px] p-5 text-jx-ink sm:p-6 ${tint.card}`}
+      data-testid={`row-client-${client.id}`}
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <div
+          aria-hidden="true"
+          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-card font-display text-sm !font-bold ${tint.tile}`}
+        >
+          {initialsFor(client.name)}
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-          <FormField control={form.control} name="email" render={({ field }) => (
-            <FormItem>
-              <label style={lbl}>Email</label>
-              <FormControl><input {...field} type="email" style={inp} placeholder="email@example.com" data-testid="input-client-email" /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="phone" render={({ field }) => (
-            <FormItem>
-              <label style={lbl}>Phone</label>
-              <FormControl><input {...field} style={inp} placeholder="(555) 123-4567" onChange={e => field.onChange(formatPhone(e.target.value))} data-testid="input-client-phone" /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
+        <div className="min-w-0 flex-1 pt-0.5">
+          <h2 className="break-words font-display text-[21px] !font-bold leading-[1.08] tracking-[-.035em] text-jx-ink">
+            {client.name}
+          </h2>
+          {client.generalContractorName && (
+            <p className="mt-1 break-words text-[13px] leading-snug text-jx-ink-2">
+              GC: {client.generalContractorName}
+            </p>
+          )}
         </div>
-        <FormField control={form.control} name="address" render={({ field }) => (
-          <FormItem>
-            <label style={lbl}>Address</label>
-            <FormControl><input {...field} style={inp} placeholder="Street address" data-testid="input-client-address" /></FormControl>
-            <FormMessage />
-          </FormItem>
-        )} />
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
-          <FormField control={form.control} name="city" render={({ field }) => (
-            <FormItem>
-              <label style={lbl}>City</label>
-              <FormControl><input {...field} style={inp} placeholder="City" data-testid="input-client-city" /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="state" render={({ field }) => (
-            <FormItem>
-              <label style={lbl}>State</label>
-              <FormControl><input {...field} style={inp} placeholder="NY" data-testid="input-client-state" /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <FormField control={form.control} name="zipCode" render={({ field }) => (
-            <FormItem>
-              <label style={lbl}>Zip</label>
-              <FormControl><input {...field} style={inp} placeholder="10001" data-testid="input-client-zip" /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={`Actions for ${client.name}`}
+              className="h-11 w-11 shrink-0 rounded-full text-jx-ink-2 hover:bg-card/70 hover:text-jx-ink"
+              data-testid={`button-client-actions-${client.id}`}
+            >
+              <MoreHorizontal className="h-5 w-5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48 rounded-2xl p-1.5">
+            <DropdownMenuItem
+              onSelect={() => onEdit(client)}
+              className="min-h-11 cursor-pointer rounded-xl"
+              data-testid={`button-edit-client-${client.id}`}
+            >
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit client
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => onDelete(client)}
+              className="min-h-11 cursor-pointer rounded-xl text-destructive focus:text-destructive"
+              data-testid={`button-delete-client-${client.id}`}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete client
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <div className="mt-5 space-y-2.5">
+        {client.email && (
+          <a
+            href={`mailto:${client.email}`}
+            className="flex min-w-0 items-start gap-2.5 rounded-lg text-[14px] leading-5 text-jx-ink-2 no-underline hover:text-jx-ink"
+          >
+            <Mail className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 break-all">{client.email}</span>
+          </a>
+        )}
+        {client.phone && (
+          <a
+            href={`tel:${client.phone.replace(/[^\d+]/g, "")}`}
+            className="flex min-w-0 items-start gap-2.5 rounded-lg text-[14px] leading-5 text-jx-ink-2 no-underline hover:text-jx-ink"
+          >
+            <Phone className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="break-words">{formatPhone(client.phone)}</span>
+          </a>
+        )}
+        {location && (
+          <div className="flex min-w-0 items-start gap-2.5 text-[14px] leading-5 text-jx-ink-2">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 break-words">{location}</span>
+          </div>
+        )}
+        {!client.email && !client.phone && !location && (
+          <p className="text-sm text-jx-ink-2">No contact details added yet.</p>
+        )}
+      </div>
+
+      <div className="mt-5 flex min-w-0 items-center justify-between gap-4 rounded-2xl bg-card px-4 py-3.5">
+        <div className="min-w-0">
+          <div className="text-[12px] font-medium text-jx-ink-2">Open balance</div>
+          <div
+            className="mt-0.5 break-words font-mono text-[20px] font-semibold leading-tight tabular-nums text-jx-ink"
+            data-testid={`outstanding-${client.id}`}
+          >
+            {money(client.outstandingBalance)}
+          </div>
         </div>
-        <FormField control={form.control} name="notes" render={({ field }) => (
-          <FormItem>
-            <label style={lbl}>Notes</label>
-            <FormControl>
-              <textarea {...field} rows={3} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} placeholder="Additional notes about this client" data-testid="input-client-notes" />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )} />
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "4px" }}>
-          <button type="button" onClick={onClose} style={{ padding: "9px 16px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "9px", fontSize: "13px", fontWeight: 600, color: "#475569", cursor: "pointer", fontFamily: "inherit" }} data-testid="button-cancel-client">
-            Cancel
-          </button>
-          <button type="submit" disabled={mutation.isPending} style={{ padding: "9px 18px", border: "none", background: "#2563eb", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit", opacity: mutation.isPending ? 0.7 : 1 }} data-testid="button-save-client">
-            {mutation.isPending ? "Saving…" : isEdit ? "Update client" : "Add client"}
-          </button>
+        <div className="shrink-0 border-l border-jx-line pl-4 text-right">
+          <div className="text-[12px] font-medium text-jx-ink-2">Active jobs</div>
+          <div
+            className="mt-0.5 font-mono text-[20px] font-semibold leading-tight tabular-nums text-jx-ink"
+            data-testid={`jobs-count-${client.id}`}
+          >
+            {client.activeJobs}
+          </div>
         </div>
-      </form>
-    </Form>
+      </div>
+      <span className="sr-only" data-testid={`last-invoice-${client.id}`}>
+        {invoiceDate(client.lastInvoiceDate)}
+      </span>
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <Button
+          asChild
+          type="button"
+          variant="outline"
+          className="min-h-11 rounded-full border-2 border-jx-ink px-3 text-[13px] font-semibold text-jx-ink hover:border-jx-green hover:bg-card"
+          data-testid={`button-view-jobs-${client.id}`}
+        >
+          <Link href={`/jobs?clientId=${encodeURIComponent(client.id)}`}>
+            <BriefcaseBusiness className="mr-1.5 h-4 w-4 shrink-0" />
+            View jobs
+          </Link>
+        </Button>
+        <Button
+          asChild
+          type="button"
+          className="min-h-11 rounded-full bg-jx-green px-3 text-[13px] font-semibold text-white hover:bg-jx-green-hover"
+          data-testid={`button-create-invoice-${client.id}`}
+        >
+          <Link href={`/invoices/new?clientId=${encodeURIComponent(client.id)}`}>
+            <FileText className="mr-1.5 h-4 w-4 shrink-0" />
+            New invoice
+          </Link>
+        </Button>
+      </div>
+    </article>
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+function ClientCardSkeleton({ index }: { index: number }) {
+  return (
+    <div
+      aria-hidden="true"
+      className={`animate-pulse rounded-[28px] p-6 ${CARD_TINTS[index % CARD_TINTS.length].card}`}
+    >
+      <div className="flex items-start gap-3">
+        <div className="h-12 w-12 rounded-2xl bg-card/80" />
+        <div className="flex-1 space-y-2 pt-1">
+          <div className="h-5 w-3/4 rounded bg-card/80" />
+          <div className="h-3 w-1/2 rounded bg-card/70" />
+        </div>
+      </div>
+      <div className="mt-7 space-y-3">
+        <div className="h-4 w-4/5 rounded bg-card/70" />
+        <div className="h-4 w-2/3 rounded bg-card/70" />
+        <div className="h-4 w-full rounded bg-card/70" />
+      </div>
+      <div className="mt-6 h-[68px] rounded-2xl bg-card/80" />
+      <div className="mt-4 h-11 rounded-full bg-card/80" />
+    </div>
+  );
+}
+
 export default function Clients() {
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [deletingClient, setDeletingClient] = useState<Client | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [deleteError, setDeleteError] = useState("");
   const { toast } = useToast();
-
-  const { data: clients, isLoading } = useQuery<ClientWithStats[]>({
-    queryKey: ["/api/clients"],
-  });
+  const {
+    data: clients,
+    isLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useQuery<ClientWithStats[]>({ queryKey: ["/api/clients"] });
 
   const deleteClientMutation = useMutation({
     mutationFn: async (clientId: string) => {
       await apiRequest("DELETE", `/api/clients/${clientId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
-      toast({ title: "Client deleted", description: `"${deletingClient?.name}" has been deleted.` });
+      void queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      toast({
+        title: "Client deleted",
+        description: `"${deletingClient?.name}" and its associated records have been deleted.`,
+      });
       setDeletingClient(null);
+      setDeleteError("");
     },
-    onError: () => {
-      toast({ title: "Failed to delete client", variant: "destructive" });
+    onError: (error: Error) => {
+      setDeleteError(error.message || "The client could not be deleted. Try again.");
+      toast({
+        title: "Failed to delete client",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
-  const openAdd = () => { setEditingClient(null); setIsDialogOpen(true); };
-  const openEdit = (c: Client) => { setEditingClient(c); setIsDialogOpen(true); };
+  const filteredClients = useMemo(() => {
+    const term = searchQuery.trim().toLowerCase();
+    if (!term) return clients ?? [];
+    return (clients ?? []).filter((client) =>
+      [
+        client.name,
+        client.generalContractorName,
+        client.email,
+        client.phone,
+        client.address,
+        client.city,
+        client.state,
+        client.zipCode,
+      ].some((value) => String(value ?? "").toLowerCase().includes(term)),
+    );
+  }, [clients, searchQuery]);
 
-  const filteredClients = (clients ?? []).filter((c) =>
-    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (c.email ?? "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (c.phone ?? "").includes(searchQuery)
+  const totalOutstanding = (clients ?? []).reduce(
+    (sum, client) => sum + Number(client.outstandingBalance ?? 0),
+    0,
   );
-
-  const totalOutstanding = (clients ?? []).reduce((s, c) => s + (c.outstandingBalance ?? 0), 0);
-  const totalActiveJobs = (clients ?? []).reduce((s, c) => s + (c.activeJobs ?? 0), 0);
-
-  const fmtMoney = (n: number) =>
-    "$" + n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-
-  const fmtDate = (d?: string | Date | null) => {
-    if (!d) return "—";
-    try { return format(new Date(d), "MMM d"); } catch { return "—"; }
+  const totalActiveJobs = (clients ?? []).reduce(
+    (sum, client) => sum + Number(client.activeJobs ?? 0),
+    0,
+  );
+  const openAdd = () => {
+    setEditingClient(null);
+    setDialogOpen(true);
+  };
+  const openEdit = (client: Client) => {
+    setEditingClient(client);
+    setDialogOpen(true);
+  };
+  const closeForm = () => {
+    setDialogOpen(false);
+    setEditingClient(null);
   };
 
   return (
     <>
-      {/* ── Add/Edit Dialog ── */}
-      <Dialog open={isDialogOpen} onOpenChange={(open) => { if (!open) { setIsDialogOpen(false); setEditingClient(null); } }}>
-        <DialogContent className="max-w-lg !flex flex-col max-h-[90dvh] overflow-hidden">
-          <DialogHeader className="shrink-0">
-            <DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>
-              {editingClient ? "Edit client" : "Add new client"}
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          if (!open) closeForm();
+          else setDialogOpen(true);
+        }}
+      >
+        <DialogContent className="flex max-h-[90dvh] flex-col overflow-hidden rounded-[28px] border-jx-line bg-card p-0 text-jx-ink sm:max-w-[640px]">
+          <DialogHeader className="shrink-0 border-b border-jx-line px-6 py-5 sm:px-8">
+            <DialogTitle className="font-display text-2xl !font-bold tracking-[-.04em] text-jx-ink">
+              {editingClient ? "Edit client" : "Add a client"}
             </DialogTitle>
+            <p className="text-sm text-jx-ink-2">
+              Keep their contact details close to the work and the money.
+            </p>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto min-h-0">
-            <ClientForm
-              client={editingClient || undefined}
-              onClose={() => { setIsDialogOpen(false); setEditingClient(null); }}
-            />
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 sm:px-8">
+            <ClientForm client={editingClient ?? undefined} onClose={closeForm} />
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* ── Delete Dialog ── */}
-      <AlertDialog open={!!deletingClient} onOpenChange={(o) => { if (!o) setDeletingClient(null); }}>
-        <AlertDialogContent>
+      <AlertDialog
+        open={!!deletingClient}
+        onOpenChange={(open) => {
+          if (!open && !deleteClientMutation.isPending) {
+            setDeletingClient(null);
+            setDeleteError("");
+          }
+        }}
+      >
+        <AlertDialogContent className="rounded-[28px] border-jx-line bg-card text-jx-ink">
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete client?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete <strong>"{deletingClient?.name}"</strong> and all their associated data. This cannot be undone.
+            <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-jx-orange-tint text-jx-orange-ink">
+              <Trash2 className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <AlertDialogTitle className="font-display text-2xl !font-bold text-jx-ink">
+              Delete this client?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-jx-ink-2">
+              Deleting <strong className="text-jx-ink">{deletingClient?.name}</strong> also permanently
+              deletes all associated jobs, invoices, and related records. This can’t be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteError && (
+            <p className="rounded-xl bg-jx-orange-tint px-4 py-3 text-sm text-jx-orange-ink" role="alert">
+              {deleteError}
+            </p>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-delete-client">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deletingClient && deleteClientMutation.mutate(deletingClient.id)}
+            <AlertDialogCancel
               disabled={deleteClientMutation.isPending}
+              data-testid="button-cancel-delete-client"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="min-h-11 bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteClientMutation.isPending}
+              onClick={(event) => {
+                event.preventDefault();
+                if (deletingClient && !deleteClientMutation.isPending) {
+                  setDeleteError("");
+                  deleteClientMutation.mutate(deletingClient.id);
+                }
+              }}
               data-testid="button-confirm-delete-client"
             >
-              {deleteClientMutation.isPending ? "Deleting…" : "Delete"}
+              {deleteClientMutation.isPending ? "Deleting…" : "Delete client"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ── Page body ── */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "24px 26px 40px" }}>
-        <div style={{ maxWidth: "1280px", margin: "0 auto" }}>
-
-          {/* ── Title row ── */}
-          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "16px", marginBottom: "20px" }}>
-            <div>
-              <h2 style={{ margin: 0, fontSize: "26px", fontWeight: 700, letterSpacing: "-.02em" }}>Clients</h2>
-              <p style={{ margin: "5px 0 0", fontSize: "13.5px", color: "var(--faint)" }}>
-                {clients
-                  ? `${clients.length} client${clients.length !== 1 ? "s" : ""} · ${totalActiveJobs} with active jobs`
-                  : "Loading…"}
+      <main className="min-h-[100dvh] px-4 pb-12 pt-7 sm:px-7 sm:pt-9 xl:px-10">
+        <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-6 sm:gap-7">
+          <header className="flex flex-wrap items-end justify-between gap-5">
+            <div className="min-w-0">
+              <h1
+                className="font-display text-[48px] !font-bold leading-[.95] tracking-[-.055em] text-jx-ink sm:text-[64px]"
+                data-testid="heading-clients"
+              >
+                Clients
+              </h1>
+              <p className="mt-3 flex flex-wrap items-center gap-x-2 text-[15px] text-jx-ink-2 sm:text-[17px]">
+                {isLoading ? (
+                  "Loading client totals"
+                ) : isError ? (
+                  "Client totals are unavailable"
+                ) : (
+                  <>
+                    <span data-testid="stat-total-clients">
+                      {clients?.length ?? 0} {(clients?.length ?? 0) === 1 ? "client" : "clients"}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      <span className="font-mono" data-testid="stat-outstanding">
+                        {money(totalOutstanding)}
+                      </span>{" "}
+                      owed to you
+                    </span>
+                    <span className="sr-only" data-testid="stat-active-jobs">{totalActiveJobs}</span>
+                  </>
+                )}
               </p>
             </div>
-            <button
+            <Button
+              type="button"
               onClick={openAdd}
-              style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 16px", fontSize: "13.5px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 1px 2px rgba(37,99,235,.3)" }}
+              className="min-h-12 rounded-full bg-jx-green px-6 text-xs font-bold tracking-[.08em] text-white hover:bg-jx-green-hover sm:px-7 sm:text-sm"
               data-testid="button-add-client"
             >
-              <Plus style={{ width: "16px", height: "16px" }} />
-              Add client
-            </button>
-          </div>
+              <Plus className="mr-2 h-4 w-4" strokeWidth={2.5} />
+              NEW CLIENT
+            </Button>
+          </header>
 
-          {/* ── Stat strip ── */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "14px", marginBottom: "20px" }}>
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>Total clients</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px" }} data-testid="stat-total-clients">
-                {isLoading ? "—" : clients?.length ?? 0}
-              </div>
-            </div>
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>Outstanding (all)</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px" }} data-testid="stat-outstanding">
-                {isLoading ? "—" : fmtMoney(totalOutstanding)}
-              </div>
-            </div>
-            <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "11px", padding: "14px 16px" }}>
-              <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: ".05em", textTransform: "uppercase" as const, color: "var(--faint)" }}>Active jobs</div>
-              <div className="font-mono" style={{ fontSize: "22px", fontWeight: 600, marginTop: "6px" }} data-testid="stat-active-jobs">
-                {isLoading ? "—" : totalActiveJobs}
-              </div>
-            </div>
-          </div>
-
-          {/* ── Search bar (above table, inline) ── */}
-          <div style={{ display: "flex", alignItems: "center", gap: "9px", marginBottom: "12px", justifyContent: "flex-end" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "var(--track)", border: "1px solid var(--panel-bd)", borderRadius: "8px", padding: "7px 12px" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--faint)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <section aria-label="Search clients" className="flex flex-wrap items-center gap-3">
+            <div className="flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-full border-2 border-transparent bg-jx-surface px-4 focus-within:border-jx-green sm:max-w-[420px]">
+              <Search className="h-4 w-4 shrink-0 text-jx-ink-3" aria-hidden="true" />
               <input
-                type="text"
-                placeholder="Search clients…"
+                type="search"
+                aria-label="Search clients"
+                placeholder="Search clients, contacts, phone"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ border: "none", background: "transparent", fontSize: "12.5px", color: "var(--fg)", outline: "none", width: "200px", fontFamily: "inherit" }}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                className="min-w-0 flex-1 bg-transparent text-sm text-jx-ink outline-none placeholder:text-jx-ink-3"
                 data-testid="input-search-clients"
               />
             </div>
-          </div>
-
-          {/* ── Table card ── */}
-          <div style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
-
-            {/* Table header */}
-            <div style={{ display: "flex", alignItems: "center", fontSize: "10.5px", fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase" as const, color: "var(--faint)", padding: "11px 18px", background: "var(--track)", borderBottom: "1px solid var(--panel-bd)" }}>
-              <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" }}>Client</span>
-              <span style={{ width: "190px", flexShrink: 0 }}>Primary contact</span>
-              <span style={{ width: "84px", flexShrink: 0, textAlign: "center" as const }}>Jobs</span>
-              <span style={{ width: "116px", flexShrink: 0, textAlign: "right" as const }}>Outstanding</span>
-              <span style={{ width: "100px", flexShrink: 0, textAlign: "right" as const }}>Last invoice</span>
-              <span style={{ width: "28px", flexShrink: 0 }}></span>
-            </div>
-
-            {/* Loading state */}
-            {isLoading && (
-              <div style={{ padding: "40px", textAlign: "center", color: "var(--faint)", fontSize: "13px" }}>
-                Loading clients…
-              </div>
+            {!isLoading && !isError && (
+              <span className="text-sm text-jx-ink-2" aria-live="polite">
+                {searchQuery.trim()
+                  ? `${filteredClients.length} of ${clients?.length ?? 0} clients`
+                  : `${filteredClients.length} ${filteredClients.length === 1 ? "client" : "clients"}`}
+              </span>
             )}
+          </section>
 
-            {/* Empty state */}
-            {!isLoading && filteredClients.length === 0 && (
-              <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
-                <div style={{ fontSize: "32px", marginBottom: "10px" }}>👥</div>
-                <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--fg)", marginBottom: "4px" }}>
-                  {searchQuery ? "No matching clients" : "No clients yet"}
-                </div>
-                <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>
-                  {searchQuery ? "Try a different search term" : "Add your first client to get started"}
-                </div>
-                {!searchQuery && (
-                  <button
-                    onClick={openAdd}
-                    style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 18px", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-                    data-testid="button-add-first-client"
-                  >
-                    <Plus style={{ width: "15px", height: "15px" }} /> Add client
-                  </button>
+          {isLoading ? (
+            <section
+              aria-label="Loading clients"
+              className="grid gap-4 sm:gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr))]"
+              data-testid="clients-loading"
+            >
+              {[0, 1, 2, 3].map((index) => <ClientCardSkeleton key={index} index={index} />)}
+            </section>
+          ) : isError ? (
+            <section
+              className="flex min-h-[300px] flex-col items-center justify-center rounded-[28px] bg-jx-surface px-6 py-10 text-center"
+              role="alert"
+              data-testid="clients-error"
+            >
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-jx-orange-tint text-jx-orange-ink">
+                <CircleAlert className="h-6 w-6" aria-hidden="true" />
+              </div>
+              <h2 className="font-display text-2xl !font-bold text-jx-ink">Clients didn’t load</h2>
+              <p className="mt-2 max-w-sm text-sm leading-relaxed text-jx-ink-2">
+                Your client details and balances aren’t available right now. Check your connection and try again.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void refetch()}
+                disabled={isFetching}
+                className="mt-5 min-h-11 rounded-full border-2 border-jx-ink px-6 font-semibold text-jx-ink"
+                data-testid="button-retry-clients"
+              >
+                {isFetching ? "Trying again…" : "Retry"}
+              </Button>
+            </section>
+          ) : filteredClients.length === 0 ? (
+            <section
+              className="flex min-h-[300px] flex-col items-center justify-center rounded-[28px] bg-jx-green-tint px-6 py-10 text-center"
+              data-testid={searchQuery.trim() ? "clients-no-matches" : "clients-empty"}
+            >
+              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-card text-jx-green-ink">
+                {searchQuery.trim() ? (
+                  <Search className="h-6 w-6" aria-hidden="true" />
+                ) : (
+                  <UsersRound className="h-6 w-6" aria-hidden="true" />
                 )}
               </div>
-            )}
-
-            {/* Rows */}
-            {!isLoading && filteredClients.map((client, i) => {
-              const av = getAv(i);
-              const initials = getInitials(client.name);
-              const meta = [client.city, client.state].filter(Boolean).join(", ");
-              const hasBalance = (client.outstandingBalance ?? 0) > 0;
-              return (
-                <div
-                  key={client.id}
-                  className="rowhover"
-                  style={{ display: "flex", alignItems: "center", padding: "13px 18px", borderBottom: "1px solid var(--panel-bd)" }}
-                  data-testid={`row-client-${client.id}`}
+              <h2 className="font-display text-2xl !font-bold text-jx-ink">
+                {searchQuery.trim() ? "No matching clients" : "No clients yet"}
+              </h2>
+              <p className="mt-2 max-w-md text-sm leading-relaxed text-jx-ink-2">
+                {searchQuery.trim()
+                  ? "Try a different name, contact, phone number, or address."
+                  : "Add a client to keep their contact details, jobs, and invoices together."}
+              </p>
+              {searchQuery.trim() ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSearchQuery("")}
+                  className="mt-5 min-h-11 rounded-full border-2 border-jx-ink px-6 font-semibold text-jx-ink"
                 >
-                  {/* Avatar + name */}
-                  <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "12px", paddingRight: "12px" }}>
-                    <div
-                      style={{ width: "38px", height: "38px", borderRadius: "9px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "13px", background: av.bg, color: av.fg }}
-                      aria-hidden="true"
-                    >
-                      {initials}
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "13.5px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {client.name}
-                      </div>
-                      {(meta || client.generalContractorName) && (
-                        <div style={{ fontSize: "11.5px", color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {client.generalContractorName ? `via ${client.generalContractorName}` : meta}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Primary contact */}
-                  <div style={{ width: "190px", flexShrink: 0, minWidth: 0, paddingRight: "10px" }}>
-                    <div style={{ fontSize: "12.5px", fontWeight: 500, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--fg)" }}>
-                      {client.phone ? formatPhone(client.phone) : "—"}
-                    </div>
-                    {client.email && (
-                      <div style={{ fontSize: "11px", color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {client.email}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Jobs badge */}
-                  <div style={{ width: "84px", flexShrink: 0, display: "flex", justifyContent: "center" }}>
-                    <span
-                      className="font-mono"
-                      style={{
-                        fontSize: "12px", fontWeight: 600, padding: "2px 9px", borderRadius: "6px",
-                        background: (client.activeJobs ?? 0) > 0 ? "#eef2fe" : "var(--track)",
-                        color: (client.activeJobs ?? 0) > 0 ? "#2563eb" : "var(--faint)",
-                      }}
-                      data-testid={`jobs-count-${client.id}`}
-                    >
-                      {client.activeJobs ?? 0}
-                    </span>
-                  </div>
-
-                  {/* Outstanding */}
-                  <span
-                    className="font-mono"
-                    style={{ width: "116px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 600, color: hasBalance ? "var(--fg)" : "var(--faint)" }}
-                    data-testid={`outstanding-${client.id}`}
-                  >
-                    {hasBalance ? fmtMoney(client.outstandingBalance) : "—"}
-                  </span>
-
-                  {/* Last invoice */}
-                  <span
-                    className="font-mono"
-                    style={{ width: "100px", flexShrink: 0, textAlign: "right", fontSize: "12px", color: "var(--faint)" }}
-                    data-testid={`last-invoice-${client.id}`}
-                  >
-                    {fmtDate(client.lastInvoiceDate)}
-                  </span>
-
-                  {/* Actions — dropdown masquerading as chevron */}
-                  <span style={{ width: "28px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          style={{ border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "4px 0", display: "flex", alignItems: "center" }}
-                          data-testid={`button-client-actions-${client.id}`}
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" sideOffset={4}>
-                        <DropdownMenuItem onClick={() => openEdit(client)} data-testid={`button-edit-client-${client.id}`}>
-                          <Edit className="h-4 w-4 mr-2" />Edit client
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <Link href={`/invoices/new?clientId=${client.id}`} data-testid={`button-create-invoice-${client.id}`}>
-                            <FileText className="h-4 w-4 mr-2" />Create invoice
-                          </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => setDeletingClient(client)}
-                          data-testid={`button-delete-client-${client.id}`}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </span>
-                </div>
-              );
-            })}
-
-            {/* Footer count */}
-            {!isLoading && filteredClients.length > 0 && (
-              <div style={{ padding: "13px 18px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: "12.5px", color: "var(--faint)" }}>
-                  {searchQuery
-                    ? `${filteredClients.length} of ${clients?.length ?? 0} clients`
-                    : `${filteredClients.length} client${filteredClients.length !== 1 ? "s" : ""}`}
-                </span>
-                <button
+                  Clear search
+                </Button>
+              ) : (
+                <Button
+                  type="button"
                   onClick={openAdd}
-                  style={{ display: "inline-flex", alignItems: "center", gap: "6px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--jox-primary)", borderRadius: "8px", padding: "6px 14px", fontSize: "12.5px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-                  data-testid="button-add-client-footer"
+                  className="mt-5 min-h-12 rounded-full bg-jx-green px-6 font-bold text-white hover:bg-jx-green-hover"
+                  data-testid="button-add-first-client"
                 >
-                  <Plus style={{ width: "13px", height: "13px" }} />Add client
-                </button>
-              </div>
-            )}
-          </div>
-
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add a client
+                </Button>
+              )}
+            </section>
+          ) : (
+            <section
+              aria-label="Clients"
+              className="grid gap-4 sm:gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr))]"
+              data-testid="clients-grid"
+            >
+              {filteredClients.map((client, index) => (
+                <ClientCard
+                  key={client.id}
+                  client={client}
+                  index={index}
+                  onEdit={openEdit}
+                  onDelete={(item) => {
+                    setDeleteError("");
+                    setDeletingClient(item);
+                  }}
+                />
+              ))}
+            </section>
+          )}
         </div>
-      </div>
+      </main>
     </>
   );
 }

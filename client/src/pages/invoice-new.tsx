@@ -20,10 +20,11 @@ import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
 import { trackEvent } from "@/lib/analytics";
 import { formatPhone } from "@/lib/formatPhone";
 import { positiveNumericField } from "@/lib/positive-numeric-field";
-import { Plus, FileText, Save, Send, Search } from "lucide-react";
+import { ArrowLeft, Plus, FileText, Save, Send, Search } from "lucide-react";
 import { format, addDays } from "date-fns";
 import type { Client, Job, Settings } from "@shared/schema";
 import { Link } from "wouter";
+import "./invoice-new.css";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -103,25 +104,25 @@ interface NewLineItem extends Omit<LineItemFormValues, "quantity" | "rate" | "am
 // ── Shared style helpers ─────────────────────────────────────────────────────
 
 const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "9px 11px", border: "1px solid #cbd5e1",
-  borderRadius: "8px", fontSize: "13.5px", color: "#0f172a",
-  background: "#fff", fontFamily: "inherit", outline: "none",
+  width: "100%", padding: "9px 11px", border: "2px solid var(--jx-line)",
+  borderRadius: "14px", fontSize: "14px", color: "hsl(var(--foreground))",
+  background: "hsl(var(--card))", fontFamily: "inherit", outline: "none",
   boxSizing: "border-box",
 };
 const labelStyle: React.CSSProperties = {
-  display: "block", fontSize: "11px", fontWeight: 700, color: "#64748b",
-  textTransform: "uppercase", letterSpacing: ".04em", marginBottom: "5px",
+  display: "block", fontSize: "13px", fontWeight: 600, color: "var(--jx-ink-2)",
+  marginBottom: "6px",
 };
 const sectionCardStyle: React.CSSProperties = {
-  background: "#fff", border: "1px solid #e2e8f0", borderRadius: "14px",
-  padding: "18px", boxShadow: "0 1px 2px rgba(15,23,42,.04)",
+  background: "hsl(var(--card))", border: "2px solid var(--jx-line)", borderRadius: "14px",
+  padding: "18px", boxShadow: "0 1px 2px rgba(18,20,18,.04)",
 };
 
-function SectionTitle({ color, children }: { color: string; children: React.ReactNode }) {
+function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
-      <span style={{ width: "6px", height: "16px", borderRadius: "3px", background: color, flexShrink: 0 }} />
-      <h3 style={{ margin: 0, fontSize: "14px", fontWeight: 800, letterSpacing: "-.01em", color: "#0f172a" }}>
+      <span style={{ width: "6px", height: "16px", borderRadius: "3px", background: "var(--jx-green)", flexShrink: 0 }} />
+      <h3 style={{ margin: 0, fontSize: "14px", fontWeight: 800, letterSpacing: "-.01em", color: "hsl(var(--foreground))" }}>
         {children}
       </h3>
     </div>
@@ -156,7 +157,7 @@ function InvoicePreview({
     return acc;
   }, {});
 
-  const mono: React.CSSProperties = { fontFamily: "ui-monospace,Menlo,monospace" };
+  const mono: React.CSSProperties = { fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums" };
   const lbl: React.CSSProperties = {
     fontSize: "10px", fontWeight: 800, color: "#94a3b8",
     textTransform: "uppercase" as const, letterSpacing: ".08em", marginBottom: "6px",
@@ -168,18 +169,12 @@ function InvoicePreview({
   };
 
   return (
-    <div style={{
-      fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
-      background: "#fff",
-      borderRadius: "6px",
-      boxShadow: "0 8px 30px rgba(15,23,42,.14)",
-      padding: "40px 48px",
-    }}>
+    <div className="invoice-paper">
       {/* ── Header ── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "24px" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: "15px", fontWeight: 800, color: "#0f172a" }}>
-            {settings?.companyName || <span style={{ color: "#cbd5e1" }}>Your Company</span>}
+            {settings?.companyName || <span style={{ color: "#858e82" }}>Your Company</span>}
           </div>
           {settings?.companyAddress && (
             <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.6, whiteSpace: "pre-line" }}>
@@ -193,10 +188,10 @@ function InvoicePreview({
           )}
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: "26px", fontWeight: 800, letterSpacing: ".06em", color: "#2563eb" }}>INVOICE</div>
+          <div className="invoice-paper-title">INVOICE</div>
           <div style={{ fontSize: "13px", ...mono, color: "#94a3b8", marginTop: "6px" }}>Draft</div>
           {issueDate && (
-            <div style={{ fontSize: "11.5px", color: "#64748b", marginTop: "8px" }}>
+            <div className="invoice-paper-issued" style={{ fontSize: "11.5px", color: "#64748b", marginTop: "8px" }}>
               Issued&nbsp;&nbsp;<span style={{ color: "#0f172a", fontWeight: 600 }}>{fmtDate(issueDate)}</span>
             </div>
           )}
@@ -244,7 +239,7 @@ function InvoicePreview({
                     {nonEmpty.map((c, i) => (
                       <div key={i} style={{ fontSize: "11.5px", color: "#64748b", lineHeight: 1.6 }}>
                         <span style={{ fontWeight: 600, color: "#475569" }}>{c.label}:</span>{" "}
-                        <span style={{ fontFamily: "ui-monospace,Menlo,monospace" }}>{c.code}</span>
+                        <span style={{ fontFamily: "var(--font-mono)" }}>{c.code}</span>
                       </div>
                     ))}
                   </div>
@@ -259,7 +254,7 @@ function InvoicePreview({
 
       {/* Notes */}
       {notes && (
-        <div style={{ marginTop: "18px", fontSize: "12.5px", color: "#475569", fontStyle: "italic", lineHeight: 1.6, borderLeft: "3px solid #dbeafe", paddingLeft: "12px" }}>
+        <div style={{ marginTop: "18px", fontSize: "12.5px", color: "#475569", fontStyle: "italic", lineHeight: 1.6, borderLeft: "3px solid #dce8d4", paddingLeft: "12px" }}>
           {notes}
         </div>
       )}
@@ -267,10 +262,10 @@ function InvoicePreview({
       {/* ── Line items ── */}
       <div style={{ marginTop: "24px" }}>
         {/* Column header */}
-        <div style={{ display: "flex", fontSize: "10px", fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", paddingBottom: "8px", borderBottom: "2px solid #0f172a" }}>
+        <div className="invoice-paper-table-head">
           <span style={{ flex: 1 }}>Description</span>
-          <span style={{ width: "70px", textAlign: "right" }}>Qty</span>
-          <span style={{ width: "110px", textAlign: "right" }}>Amount</span>
+          <span className="invoice-column-numeric" style={{ width: "70px" }}>Qty</span>
+          <span className="invoice-column-numeric" style={{ width: "110px" }}>Amount</span>
         </div>
 
         {lineItems.length === 0 ? (
@@ -294,7 +289,7 @@ function InvoicePreview({
                         {item.description || <span style={{ color: "#cbd5e1" }}>No description</span>}
                       </div>
                       {item.refs && (
-                        <div style={{ fontSize: "10.5px", color: "#2563eb", ...mono, marginTop: "2px" }}>{item.refs}</div>
+                        <div style={{ fontSize: "10.5px", color: "var(--jx-green-ink)", ...mono, marginTop: "2px" }}>{item.refs}</div>
                       )}
                     </div>
                     <div style={{ width: "70px", textAlign: "right", fontSize: "11.5px", color: "#64748b", ...mono }}>
@@ -322,15 +317,23 @@ function InvoicePreview({
             <span>Tax ({taxRate}%)</span>
             <span style={{ ...mono, color: "#0f172a" }}>{formatCurrency(taxAmount)}</span>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "15px", fontWeight: 800, color: "#0f172a", paddingTop: "9px", borderTop: "2px solid #0f172a" }}>
+          <div className="invoice-paper-total" style={{ display: "flex", justifyContent: "space-between" }}>
             <span>Total</span>
-            <span style={mono}>{formatCurrency(total)}</span>
+            <span style={mono} data-invoice-total-value>{formatCurrency(total)}</span>
           </div>
         </div>
       </div>
 
       {/* Bottom divider */}
       <div style={{ height: "1px", background: "#e2e8f0", margin: "24px 0 18px" }} />
+
+      <div className="invoice-pay-preview">
+        <div>
+          <strong>PAY ONLINE</strong>
+          <p>Preview only — payment isn’t active until this invoice is created.</p>
+        </div>
+        <span aria-hidden="true">NOT ACTIVE</span>
+      </div>
 
       {/* Terms */}
       {termsAndConditions && (
@@ -339,140 +342,6 @@ function InvoicePreview({
           <div style={{ fontSize: "12px", color: "#475569", lineHeight: 1.6 }}>{termsAndConditions}</div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ── Line Item Form ───────────────────────────────────────────────────────────
-
-function LineItemForm({ onSubmit, onCancel }: { onSubmit: (data: LineItemFormValues) => void; onCancel: () => void }) {
-  const form = useForm<LineItemFormValues>({
-    resolver: zodResolver(lineItemSchema),
-    defaultValues: { category: "labor", description: "", quantity: "", unit: "hours", rate: "", amount: "" },
-  });
-
-  const quantity = parseFloat(form.watch("quantity") || "0");
-  const rate = parseFloat(form.watch("rate") || "0");
-  const category = form.watch("category");
-
-  useEffect(() => {
-    if (category === "labor") form.setValue("unit", "hours");
-    else if (category === "materials") form.setValue("unit", "each");
-    else if (category === "square_footage") form.setValue("unit", "sqft");
-  }, [category, form]);
-
-  useEffect(() => {
-    if (!isNaN(quantity) && !isNaN(rate) && quantity > 0 && rate > 0) {
-      form.setValue("amount", (quantity * rate).toFixed(2));
-    }
-  }, [quantity, rate, form]);
-
-  const cat = [
-    { value: "labor", label: "Labor" },
-    { value: "materials", label: "Materials" },
-    { value: "square_footage", label: "Square Footage" },
-    { value: "other", label: "Other" },
-  ];
-  const units = ["hours", "each", "sqft", "gallon", "linear_ft", "flat"];
-
-  return (
-    <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "10px", padding: "16px" }}>
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-            <div>
-              <label style={labelStyle}>Category</label>
-              <FormField control={form.control} name="category" render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger style={inputStyle} data-testid="select-li-category">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {cat.map((c) => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-            </div>
-            <div>
-              <label style={labelStyle}>Unit</label>
-              <FormField control={form.control} name="unit" render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger style={inputStyle} data-testid="select-li-unit">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {units.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-            </div>
-          </div>
-          <div>
-            <label style={labelStyle}>Description</label>
-            <FormField control={form.control} name="description" render={({ field }) => (
-              <FormItem>
-                <FormControl>
-                  <input {...field} spellCheck={true} placeholder="e.g. Skim and paint feature wall" style={inputStyle} data-testid="input-li-description" />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
-            <div>
-              <label style={labelStyle}>Quantity</label>
-              <FormField control={form.control} name="quantity" render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <input {...field} type="number" step="0.01" placeholder="0" style={inputStyle} data-testid="input-li-quantity" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-            </div>
-            <div>
-              <label style={labelStyle}>Rate ($)</label>
-              <FormField control={form.control} name="rate" render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <input {...field} type="number" step="0.01" placeholder="0.00" style={inputStyle} data-testid="input-li-rate" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-            </div>
-            <div>
-              <label style={labelStyle}>Amount ($)</label>
-              <FormField control={form.control} name="amount" render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <input {...field} type="number" step="0.01" placeholder="0.00" style={{ ...inputStyle, background: "#f1f5f9" }} data-testid="input-li-amount" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-            </div>
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "4px" }}>
-            <button type="button" onClick={onCancel} style={{ padding: "8px 14px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "8px", fontSize: "13px", fontWeight: 600, color: "#475569", cursor: "pointer", fontFamily: "inherit" }}>
-              Cancel
-            </button>
-            <button type="submit" style={{ padding: "8px 16px", border: "none", background: "#2563eb", borderRadius: "8px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit" }} data-testid="button-save-line-item">
-              Add Item
-            </button>
-          </div>
-        </form>
-      </Form>
     </div>
   );
 }
@@ -501,9 +370,16 @@ export default function InvoiceNew() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("split");
   const [activeTab, setActiveTab] = useState<TabSection>("details");
+  const [mobilePane, setMobilePane] = useState<"form" | "preview">("form");
 
-  const { data: clients } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
-  const { data: jobs } = useQuery<(Job & { client: Client })[]>({ queryKey: ["/api/jobs"] });
+  const {
+    data: clients, isLoading: clientsLoading, isError: clientsError,
+    isFetching: clientsFetching, refetch: refetchClients,
+  } = useQuery<Client[]>({ queryKey: ["/api/clients"] });
+  const {
+    data: jobs, isLoading: jobsLoading, isError: jobsError,
+    isFetching: jobsFetching, refetch: refetchJobs,
+  } = useQuery<(Job & { client: Client })[]>({ queryKey: ["/api/jobs"] });
   const { data: settings } = useQuery<Settings>({ queryKey: ["/api/settings"] });
   const googleDocsStatusQuery = useQuery<GoogleDocsStatus>({
     queryKey: ["/api/google-docs/status"],
@@ -748,24 +624,6 @@ export default function InvoiceNew() {
     createInvoiceMutation.mutate({ formData: data, send });
   };
 
-  // ── Toggle button helper ──────────────────────────────────────────────────
-
-  const toggleBtnStyle = (active: boolean): React.CSSProperties => ({
-    padding: "6px 14px", border: "none", borderRadius: "8px", fontSize: "12.5px",
-    fontWeight: 700, cursor: "pointer", fontFamily: "inherit", transition: "all .15s",
-    background: active ? "#fff" : "transparent",
-    color: active ? "#0f172a" : "#94a3b8",
-    boxShadow: active ? "0 1px 3px rgba(15,23,42,.12)" : "none",
-  });
-
-  const tabStyle = (active: boolean): React.CSSProperties => ({
-    flex: 1, padding: "8px", border: "none", borderRadius: "8px",
-    fontSize: "12.5px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
-    background: active ? "#fff" : "transparent",
-    color: active ? "#0f172a" : "#94a3b8",
-    boxShadow: active ? "0 1px 3px rgba(15,23,42,.10)" : "none",
-  });
-
   const showDetails = viewMode !== "tabbed" || activeTab === "details";
   const showItems = viewMode !== "tabbed" || activeTab === "items";
   const showTotals = viewMode !== "tabbed" || activeTab === "totals";
@@ -774,94 +632,130 @@ export default function InvoiceNew() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#f1f5f9", fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif", color: "#0f172a" }}>
+    <div className="invoice-new">
 
       {/* ── Header ── */}
-      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", padding: "11px 22px", background: "#fff", borderBottom: "1px solid #e2e8f0", flexShrink: 0, zIndex: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "11px", minWidth: "170px" }}>
-          <div style={{ width: "34px", height: "34px", borderRadius: "9px", background: "#2563eb", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: "17px", flexShrink: 0 }}>J</div>
-          <div>
-            <div style={{ fontSize: "15px", fontWeight: 800, letterSpacing: "-.01em" }}>JobsOxo</div>
-            <div style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 600, marginTop: "1px" }}>Create Invoice</div>
-          </div>
-        </div>
+      <header className="invoice-toolbar">
+        <Link href="/invoices" className="invoice-back-link">
+          <ArrowLeft aria-hidden="true" size={16} /> Invoices
+        </Link>
+        <nav className="invoice-view-modes" aria-label="Editor layout">
+          <button type="button" onClick={() => setViewMode("split")} aria-pressed={viewMode === "split"}>Split view</button>
+          <button type="button" onClick={() => setViewMode("tabbed")} aria-pressed={viewMode === "tabbed"}>Tabbed</button>
+          <button type="button" onClick={() => setViewMode("builder")} aria-pressed={viewMode === "builder"}>Builder</button>
+        </nav>
 
-        {/* View toggle */}
-        <div style={{ display: "flex", alignItems: "center", gap: "3px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: "11px", padding: "4px" }}>
-          <button onClick={() => setViewMode("split")} style={toggleBtnStyle(viewMode === "split")}>Split view</button>
-          <button onClick={() => setViewMode("tabbed")} style={toggleBtnStyle(viewMode === "tabbed")}>Tabbed</button>
-          <button onClick={() => setViewMode("builder")} style={toggleBtnStyle(viewMode === "builder")}>Builder</button>
-        </div>
-
-        {/* Actions */}
-        <div style={{ display: "flex", alignItems: "center", gap: "9px", minWidth: "170px", justifyContent: "flex-end" }}>
+        <div className="invoice-toolbar-actions">
           <button
             onClick={form.handleSubmit((d) => onSubmit(d, false))}
             disabled={createInvoiceMutation.isPending}
-            style={{ padding: "8px 14px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#475569", cursor: "pointer", fontFamily: "inherit" }}
+            type="button"
+            className="invoice-secondary-action"
             data-testid="button-save-draft"
           >
-            <Save style={{ display: "inline", width: "14px", height: "14px", marginRight: "6px", verticalAlign: "middle", marginTop: "-2px" }} />
+            <Save aria-hidden="true" size={16} />
             Save draft
           </button>
           <button
             onClick={form.handleSubmit((d) => onSubmit(d, true))}
             disabled={createInvoiceMutation.isPending}
-            style={{ padding: "8px 16px", border: "none", background: "#2563eb", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit" }}
+            type="button"
+            className="invoice-primary-action"
             data-testid="button-send-invoice"
           >
-            <Send style={{ display: "inline", width: "14px", height: "14px", marginRight: "6px", verticalAlign: "middle", marginTop: "-2px" }} />
-            Send invoice
+            <Send aria-hidden="true" size={16} />
+            SEND INVOICE
           </button>
         </div>
       </header>
 
       {/* ── Document import strip ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "9px 22px", background: "#eff6ff", borderBottom: "1px solid #dbeafe", flexShrink: 0 }}>
-        <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "#2563eb", flexShrink: 0 }} />
-        <span style={{ fontSize: "12.5px", color: "#1e40af", fontWeight: 600 }}>Import a quote or invoice to review and add its sections and line items.</span>
+      <div className="invoice-import-strip">
+        <span aria-hidden="true" style={{ width: "8px", height: "8px", borderRadius: "2px", background: "var(--jx-green)", flexShrink: 0 }} />
+        <span className="invoice-import-copy">Import a quote or invoice to review and add its sections and line items.</span>
         <input ref={fileInputRef} type="file" accept=".pdf,application/pdf" style={{ display: "none" }} onChange={handleFileChange} data-testid="input-document-upload" />
+        <div className="invoice-import-actions">
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={parseDocumentMutation.isPending}
-          style={{ marginLeft: "auto", padding: "6px 13px", border: "1px solid #93c5fd", background: "#fff", borderRadius: "8px", fontSize: "12.5px", fontWeight: 700, color: "#1d4ed8", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "6px" }}
           data-testid="button-import-document"
         >
-          <FileText style={{ width: "13px", height: "13px" }} />
+          <FileText aria-hidden="true" size={15} />
           {parseDocumentMutation.isPending ? "Parsing…" : "Choose PDF"}
         </button>
         <button
           onClick={openGoogleDocsImport}
           disabled={googleDocsStatusQuery.isLoading}
-          style={{ padding: "6px 13px", border: "1px solid #93c5fd", background: "#fff", borderRadius: "8px", fontSize: "12.5px", fontWeight: 700, color: "#1d4ed8", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "6px" }}
           data-testid="button-import-google-doc"
         >
-          <FileText style={{ width: "13px", height: "13px" }} />
+          <FileText aria-hidden="true" size={15} />
           Import from Google Doc
         </button>
+        </div>
       </div>
 
       {/* ── Body ── */}
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      <div className="invoice-layout" data-mobile-pane={mobilePane} data-view-mode={viewMode}>
+        <nav className="invoice-mobile-nav" aria-label="Invoice form and preview">
+          <button type="button" aria-pressed={mobilePane === "form"} onClick={() => { setMobilePane("form"); setViewMode("split"); }} data-testid="button-mobile-form">Edit invoice</button>
+          <button type="button" aria-pressed={mobilePane === "preview"} onClick={() => { setMobilePane("preview"); setViewMode("split"); }} data-testid="button-mobile-preview">Preview</button>
+        </nav>
 
         {/* Left: Form */}
-        <div style={{ overflowY: "auto", padding: "20px 22px 80px", borderRight: showPreview ? "1px solid #e2e8f0" : "none", width: showPreview ? "52%" : "100%", maxWidth: showPreview ? "52%" : "760px", margin: showPreview ? "0" : "0 auto" }}>
+        <div className="invoice-form-pane">
+          <div className="invoice-form-heading">
+            <h1 className="font-display !font-bold">New invoice</h1>
+            <p>Build a clear bill for the work already done.</p>
+          </div>
           <Form {...form}>
-            <form style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <form>
+
+              {(clientsLoading || jobsLoading) && (
+                <div role="status" aria-label="Loading clients and projects" data-testid="invoice-related-loading" style={{ display: "flex", alignItems: "center", gap: "12px", padding: "14px 16px", borderRadius: "13px", background: "#fff", border: "1px solid #e1e7dc" }}>
+                  <span aria-hidden="true" style={{ width: 34, height: 34, borderRadius: 11, background: "#e7ecdf", flexShrink: 0 }} />
+                  <span aria-hidden="true" style={{ display: "grid", gap: 7, flex: 1 }}>
+                    <span style={{ width: "42%", height: 9, borderRadius: 99, background: "#e7ecdf" }} />
+                    <span style={{ width: "72%", height: 8, borderRadius: 99, background: "#f0f2ed" }} />
+                  </span>
+                  <span style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", border: 0 }}>Loading your client and project records</span>
+                </div>
+              )}
+              {clientsError && (
+                <div role="alert" data-testid="invoice-clients-error" style={{ padding: "15px 16px", borderRadius: "13px", background: "#fff7ed", border: "1px solid #f1d5b9", color: "#7a4b25" }}>
+                  <strong>Clients didn’t load.</strong> Existing client records are unavailable right now.
+                  <button type="button" onClick={() => { void refetchClients(); }} disabled={clientsFetching} style={{ marginLeft: 10, border: 0, background: "transparent", color: "var(--jx-green-ink)", textDecoration: "underline", fontWeight: 700, cursor: "pointer" }} data-testid="button-retry-clients">
+                    {clientsFetching ? "Trying again…" : "Retry"}
+                  </button>
+                </div>
+              )}
+              {!clientsLoading && !clientsError && clients?.length === 0 && (
+                <div data-testid="invoice-clients-empty" style={{ padding: "15px 16px", borderRadius: "13px", background: "#fff", border: "1px solid #e1e7dc", color: "#626b61" }}>
+                  <strong style={{ color: "#20251f" }}>Add a client before creating an invoice.</strong>
+                  <Link href="/clients" style={{ display: "inline-block", marginLeft: 10, color: "var(--jx-green-ink)", fontWeight: 700 }}>Go to clients</Link>
+                </div>
+              )}
+              {jobsError && (
+                <div role="alert" data-testid="invoice-jobs-error" style={{ padding: "15px 16px", borderRadius: "13px", background: "#fff7ed", border: "1px solid #f1d5b9", color: "#7a4b25" }}>
+                  <strong>Projects didn’t load.</strong> You can continue without linking a project.
+                  <button type="button" onClick={() => { void refetchJobs(); }} disabled={jobsFetching} style={{ marginLeft: 10, border: 0, background: "transparent", color: "var(--jx-green-ink)", textDecoration: "underline", fontWeight: 700, cursor: "pointer" }} data-testid="button-retry-jobs">
+                    {jobsFetching ? "Trying again…" : "Retry"}
+                  </button>
+                </div>
+              )}
 
               {/* ── Tabbed nav ── */}
               {viewMode === "tabbed" && (
-                <div style={{ display: "flex", gap: "4px", background: "#fff", border: "1px solid #e2e8f0", borderRadius: "11px", padding: "4px", position: "sticky", top: "-20px", zIndex: 8 }}>
-                  <button type="button" onClick={() => setActiveTab("details")} style={tabStyle(activeTab === "details")}>1 · Details</button>
-                  <button type="button" onClick={() => setActiveTab("items")} style={tabStyle(activeTab === "items")}>2 · Line items</button>
-                  <button type="button" onClick={() => setActiveTab("totals")} style={tabStyle(activeTab === "totals")}>3 · Totals &amp; Terms</button>
+                <div className="invoice-tab-nav">
+                  <button type="button" onClick={() => setActiveTab("details")} aria-pressed={activeTab === "details"}>1 · Details</button>
+                  <button type="button" onClick={() => setActiveTab("items")} aria-pressed={activeTab === "items"}>2 · Line items</button>
+                  <button type="button" onClick={() => setActiveTab("totals")} aria-pressed={activeTab === "totals"}>3 · Totals &amp; Terms</button>
                 </div>
               )}
 
               {/* ── From — your business ── */}
               {showDetails && (
-                <div style={sectionCardStyle}>
-                  <SectionTitle color="#2563eb">From — your business</SectionTitle>
+                <div className="invoice-section-card" style={sectionCardStyle}>
+                  <SectionTitle>From — your business</SectionTitle>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", gap: "12px 14px" }}>
                     <div style={{ gridColumn: "1/-1" }}>
                       <label style={labelStyle}>Business name</label>
@@ -900,17 +794,17 @@ export default function InvoiceNew() {
               {showDetails && (
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: "16px" }}>
                   {/* Bill to */}
-                  <div style={sectionCardStyle}>
-                    <SectionTitle color="#0ea5e9">Bill to — client</SectionTitle>
+                  <div className="invoice-section-card" style={sectionCardStyle}>
+                    <SectionTitle>Bill to — client</SectionTitle>
                     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                       <div>
                         <label style={labelStyle}>Client / company *</label>
                         <FormField control={form.control} name="clientId" render={({ field }) => (
                           <FormItem>
                             <FormControl>
-                              <Select onValueChange={field.onChange} value={field.value}>
+                              <Select onValueChange={(value) => { if (value) field.onChange(value); }} value={field.value}>
                                 <SelectTrigger style={inputStyle} data-testid="select-invoice-client">
-                                  <SelectValue placeholder="Select client" />
+                                  <SelectValue placeholder={clientsLoading ? "Loading clients…" : clientsError ? "Clients unavailable" : "Select client"} />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {clients?.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
@@ -943,8 +837,8 @@ export default function InvoiceNew() {
                   </div>
 
                   {/* Project / site */}
-                  <div style={sectionCardStyle}>
-                    <SectionTitle color="#14b8a6">Project / site</SectionTitle>
+                  <div className="invoice-section-card" style={sectionCardStyle}>
+                    <SectionTitle>Project / site</SectionTitle>
                     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                       <div>
                         <label style={labelStyle}>Project / job name</label>
@@ -992,8 +886,8 @@ export default function InvoiceNew() {
 
               {/* ── Invoice dates + scope notes ── */}
               {showDetails && (
-                <div style={sectionCardStyle}>
-                  <SectionTitle color="#6366f1">Invoice details</SectionTitle>
+                <div className="invoice-section-card" style={sectionCardStyle}>
+                  <SectionTitle>Invoice details</SectionTitle>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: "12px 14px" }}>
                     <div>
                       <label style={labelStyle}>Invoice date</label>
@@ -1045,7 +939,7 @@ export default function InvoiceNew() {
 
               {/* ── Line items ── */}
               {showItems && (
-                <div style={sectionCardStyle}>
+                <div className="invoice-section-card" style={sectionCardStyle}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
                     <span style={{ width: "6px", height: "16px", borderRadius: "3px", background: "#2563eb", flexShrink: 0 }} />
                     <h3 style={{ margin: 0, fontSize: "14px", fontWeight: 800, letterSpacing: "-.01em" }}>Line items</h3>
@@ -1079,7 +973,7 @@ export default function InvoiceNew() {
                                   onBlur={e => { e.currentTarget.style.borderColor = "transparent"; e.currentTarget.style.background = "none"; }}
                                   data-testid={`input-section-title-${si}`}
                                 />
-                                <span style={{ fontSize: "13px", color: "#0f172a", fontWeight: 700, fontFamily: "ui-monospace,monospace", flexShrink: 0 }}>
+                                <span style={{ fontSize: "13px", color: "var(--jx-ink)", fontWeight: 700, fontFamily: "var(--font-mono)", flexShrink: 0 }}>
                                   {formatCurrency(secTotal)}
                                 </span>
                                 <button type="button" onClick={() => deleteSection(sec)}
@@ -1095,7 +989,7 @@ export default function InvoiceNew() {
                               {isOpen && (
                                 <div style={{ display: "flex", flexDirection: "column", gap: "10px", padding: "2px 2px 10px" }}>
                                   {secItems.map(item => (
-                                    <div key={item.id} style={{ border: "1px solid #e2e8f0", borderRadius: "10px", padding: "11px 12px", background: "#fbfcfe", display: "flex", flexDirection: "column", gap: "9px" }}>
+                    <div key={item.id} className="invoice-line-item-card" style={{ border: "1px solid #e2e8f0", borderRadius: "10px", padding: "11px 12px", background: "#fbfcfe", display: "flex", flexDirection: "column", gap: "9px" }}>
                                       {/* Description + delete */}
                                       <div style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
                                         <input
@@ -1122,7 +1016,7 @@ export default function InvoiceNew() {
                                               value={item.refs}
                                               onChange={e => updateItem(item.id, { refs: e.target.value })}
                                               placeholder="PT-01B · ID-202"
-                                              style={{ ...fInput, fontFamily: "ui-monospace,monospace", color: "#1d4ed8" }}
+                                              style={{ ...fInput, fontFamily: "var(--font-mono)", color: "var(--jx-green-ink)" }}
                                               data-testid={`input-item-refs-${item.id}`}
                                             />
                                           </div>
@@ -1161,12 +1055,12 @@ export default function InvoiceNew() {
                                               <label style={fLabel}>Rate ($)</label>
                                               <input type="number" min="0" step="any" value={item.rate}
                                                 onChange={e => { const r = parseFloat(e.target.value) || 0; updateItem(item.id, { rate: r, amount: +(item.quantity * r).toFixed(2) }); }}
-                                                style={{ ...fInput, fontFamily: "ui-monospace,monospace" }}
+                                                style={{ ...fInput, fontFamily: "var(--font-mono)" }}
                                                 data-testid={`input-item-rate-${item.id}`} />
                                             </div>
                                             <div>
                                               <label style={fLabel}>Amount</label>
-                                              <div style={{ width: "100%", padding: "7px 9px", border: "1px solid #e2e8f0", borderRadius: "7px", fontSize: "12.5px", fontWeight: 700, fontFamily: "ui-monospace,monospace", color: "#0f172a", background: "#f8fafc", boxSizing: "border-box" }}>
+                                              <div style={{ width: "100%", padding: "7px 9px", border: "1px solid var(--jx-line)", borderRadius: "14px", fontSize: "12.5px", fontWeight: 700, fontFamily: "var(--font-mono)", color: "hsl(var(--foreground))", background: "var(--jx-surface)", boxSizing: "border-box" }}>
                                                 {formatCurrency(item.amount)}
                                               </div>
                                             </div>
@@ -1184,7 +1078,7 @@ export default function InvoiceNew() {
                                             </label>
                                             <input type="number" min="0" step="any" value={item.amount}
                                               onChange={e => { const a = parseFloat(e.target.value) || 0; updateItem(item.id, { amount: a, rate: a }); }}
-                                              style={{ ...fInput, fontFamily: "ui-monospace,monospace" }}
+                                              style={{ ...fInput, fontFamily: "var(--font-mono)" }}
                                               data-testid={`input-item-amount-${item.id}`} />
                                           </div>
                                         )}
@@ -1205,7 +1099,7 @@ export default function InvoiceNew() {
 
                         {/* Add section */}
                         <button type="button" onClick={addSection}
-                          style={{ display: "flex", alignItems: "center", gap: "6px", padding: "9px 14px", border: "1.5px dashed #cbd5e1", background: "transparent", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#64748b", cursor: "pointer", fontFamily: "inherit", width: "100%", marginTop: sectionOrder.length > 0 ? "8px" : 0 }}
+                          style={{ display: "flex", alignItems: "center", gap: "6px", padding: "9px 14px", border: "1.5px dashed var(--jx-ink-3)", background: "transparent", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "var(--jx-ink-2)", cursor: "pointer", fontFamily: "inherit", width: "100%", marginTop: sectionOrder.length > 0 ? "8px" : 0 }}
                           data-testid="button-add-line-item">
                           <Plus style={{ width: "15px", height: "15px" }} />
                           {sectionOrder.length === 0 ? "Add line items" : "Add section"}
@@ -1218,18 +1112,18 @@ export default function InvoiceNew() {
 
               {/* ── Totals & Terms ── */}
               {showTotals && (
-                <div style={sectionCardStyle}>
-                  <SectionTitle color="#f59e0b">Totals &amp; terms</SectionTitle>
+                <div className="invoice-section-card" style={sectionCardStyle}>
+                  <SectionTitle>Totals &amp; terms</SectionTitle>
                   <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "16px" }}>
                     <div style={{ width: "240px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: "#64748b", marginBottom: "6px" }}>
-                        <span>Subtotal</span><span style={{ fontFamily: "ui-monospace,monospace" }}>{formatCurrency(subtotal)}</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: "var(--jx-ink-2)", marginBottom: "6px" }}>
+                        <span>Subtotal</span><span style={{ fontFamily: "var(--font-mono)" }}>{formatCurrency(subtotal)}</span>
                       </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: "#64748b", marginBottom: "8px" }}>
-                        <span>Tax ({taxRate}%)</span><span style={{ fontFamily: "ui-monospace,monospace" }}>{formatCurrency(taxAmount)}</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px", color: "var(--jx-ink-2)", marginBottom: "8px" }}>
+                        <span>Tax ({taxRate}%)</span><span style={{ fontFamily: "var(--font-mono)" }}>{formatCurrency(taxAmount)}</span>
                       </div>
-                      <div style={{ borderTop: "1.5px solid #e2e8f0", paddingTop: "8px", display: "flex", justifyContent: "space-between", fontSize: "16px", fontWeight: 800, color: "#0f172a" }}>
-                        <span>Total</span><span style={{ fontFamily: "ui-monospace,monospace" }}>{formatCurrency(total)}</span>
+                      <div style={{ borderTop: "1.5px solid var(--jx-line)", paddingTop: "8px", display: "flex", justifyContent: "space-between", fontSize: "16px", fontWeight: 800, color: "var(--jx-ink)" }}>
+                        <span>Total</span><span style={{ fontFamily: "var(--font-mono)" }}>{formatCurrency(total)}</span>
                       </div>
                     </div>
                   </div>
@@ -1251,17 +1145,8 @@ export default function InvoiceNew() {
           </Form>
 
           {/* ── Bottom save bar ── */}
-          <div style={{
-            position: "sticky", bottom: 0, left: 0, right: 0,
-            background: "rgba(255,255,255,0.95)",
-            backdropFilter: "blur(8px)",
-            borderTop: "1px solid #e2e8f0",
-            padding: "12px 0",
-            marginTop: "8px",
-            display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "10px",
-            zIndex: 10,
-          }}>
-            <span style={{ marginRight: "auto", fontSize: "12px", color: "#94a3b8", fontWeight: 600 }}>
+          <div className="invoice-bottom-bar">
+            <span>
               {lineItems.length > 0
                 ? `${lineItems.length} item${lineItems.length !== 1 ? "s" : ""} · Total ${formatCurrency(total)}`
                 : "Add line items to calculate total"}
@@ -1270,29 +1155,29 @@ export default function InvoiceNew() {
               type="button"
               onClick={form.handleSubmit((d) => onSubmit(d, false))}
               disabled={createInvoiceMutation.isPending}
-              style={{ padding: "9px 18px", border: "1px solid #cbd5e1", background: "#fff", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#475569", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "6px" }}
+              className="invoice-secondary-action"
               data-testid="button-save-invoice-bottom"
             >
-              <Save style={{ width: "14px", height: "14px" }} />
-              Save invoice
+              <Save aria-hidden="true" size={15} />
+              Save draft
             </button>
             <button
               type="button"
               onClick={form.handleSubmit((d) => onSubmit(d, true))}
               disabled={createInvoiceMutation.isPending}
-              style={{ padding: "9px 18px", border: "none", background: "#2563eb", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "6px" }}
+              className="invoice-primary-action"
               data-testid="button-send-invoice-bottom"
             >
-              <Send style={{ width: "14px", height: "14px" }} />
-              Send invoice
+              <Send aria-hidden="true" size={15} />
+              SEND INVOICE
             </button>
           </div>
         </div>
 
         {/* Right: Live preview */}
         {showPreview && (
-          <div style={{ flex: 1, overflowY: "auto", padding: "20px 22px 80px", background: "#f1f5f9" }}>
-            <div style={{ fontSize: "11px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: "10px" }}>Live preview</div>
+          <div className="invoice-preview-pane">
+            <div className="invoice-preview-kicker">Live preview</div>
             <InvoicePreview
               settings={settings}
               client={selectedClient}

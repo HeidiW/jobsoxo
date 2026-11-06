@@ -1,0 +1,287 @@
+.jx-inbox-shell {
+  --inbox-line: var(--jx-line);
+  --inbox-surface: var(--jx-surface);
+  --inbox-ink: var(--jx-ink);
+  --inbox-muted: var(--jx-ink-2);
+  --inbox-green: var(--jx-green);
+  --inbox-tint: var(--jx-green-tint);
+  color: var(--inbox-ink);
+}
+
+.jx-inbox-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-radius: 18px;
+  background: var(--jx-orange-tint);
+  padding: 18px;
+  color: var(--jx-orange-ink);
+}
+.jx-inbox-error button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1.5px solid var(--jx-ink);
+  border-radius: 999px;
+  background: hsl(var(--card));
+  color: var(--jx-ink);
+  font-weight: 650;
+  cursor: pointer;
+}
+.jx-business-workspace { padding: 8px 0 36px !important; overflow: visible !important; }
+.jx-business-workspace > div { max-width: 1040px !important; }
+.jx-business-workspace .jx-business-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1.5px solid var(--jx-ink);
+  border-radius: 999px;
+  background: hsl(var(--card));
+  color: var(--jx-ink);
+  text-decoration: none;
+  font-size: 12.5px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.jx-business-workspace .jx-business-action.is-primary {
+  background: var(--jx-green);
+  border-color: var(--jx-green);
+  color: white;
+}
+.jx-business-workspace .jx-business-action:hover { border-color: var(--jx-green); }
+.jx-business-workspace .jx-business-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  border-radius: 22px;
+  background: var(--jx-green-tint);
+  color: var(--jx-ink) !important;
+}
+.jx-business-workspace .jx-business-empty strong {
+  font: 700 24px var(--font-display);
+}
+.jx-business-workspace .rowhover:hover {
+  background: var(--jx-green-tint);
+}
+
+.jx-inbox-source-tabs [role="tab"] {
+  min-height: 46px;
+  border-radius: 999px;
+  border: 2px solid var(--jx-ink-3);
+  background: hsl(var(--card));
+  padding: 0 20px;
+  color: var(--jx-ink);
+  font-weight: 650;
+  box-shadow: none;
+}
+.jx-inbox-source-tabs [role="tab"][data-state="active"] {
+  color: white;
+  background: var(--jx-green);
+  border-color: var(--jx-green);
+  box-shadow: none;
+}
+
+.jx-gmail-workspace {
+  padding: 0 0 42px !important;
+  overflow: visible !important;
+}
+.jx-gmail-workspace > div {
+  max-width: none !important;
+  margin: 0 !important;
+}
+.jx-gmail-workspace .jx-gmail-heading {
+  align-items: flex-end !important;
+  margin-bottom: 20px !important;
+}
+.jx-gmail-workspace .jx-gmail-heading h2 {
+  font-family: var(--font-display);
+  font-size: clamp(36px, 4vw, 54px) !important;
+  font-weight: 700 !important;
+  letter-spacing: -.045em !important;
+  line-height: .98 !important;
+}
+.jx-gmail-workspace .jx-gmail-heading p {
+  margin-top: 10px !important;
+  color: var(--jx-ink-2) !important;
+}
+.jx-gmail-workspace .jx-sync-button,
+.jx-gmail-workspace .jx-connect-button,
+.jx-gmail-workspace .jx-account-button {
+  background: var(--jx-green) !important;
+  color: white !important;
+  border: 2px solid var(--jx-green) !important;
+  border-radius: 999px !important;
+  min-height: 44px;
+  padding: 0 20px !important;
+  font-weight: 700 !important;
+}
+.jx-gmail-workspace .jx-account-button {
+  min-height: 38px;
+  background: transparent !important;
+  color: var(--jx-ink) !important;
+  border-color: var(--jx-ink-3) !important;
+}
+.jx-mail-status-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 20px;
+}
+.jx-mail-status-tab {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 18px;
+  border: 2px solid var(--jx-ink-3);
+  border-radius: 999px;
+  color: var(--jx-ink);
+  background: hsl(var(--card));
+  font-weight: 650;
+  cursor: pointer;
+}
+.jx-mail-status-tab[aria-pressed="true"] {
+  color: white;
+  background: var(--jx-green);
+  border-color: var(--jx-green);
+}
+.jx-mail-status-tab .jx-mail-count {
+  font: 500 11px var(--font-mono);
+  opacity: .8;
+}
+.jx-gmail-workspace .jx-mail-row {
+  display: grid !important;
+  grid-template-columns: 30px 48px minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 14px !important;
+  padding: 15px 18px !important;
+  min-height: 112px;
+  border: 2px solid transparent !important;
+  border-radius: 20px !important;
+  background: var(--jx-green-tint) !important;
+  transition: transform .15s ease !important;
+}
+.jx-gmail-workspace .jx-mail-row:hover {
+  border-color: var(--jx-green) !important;
+  transform: translateY(-1px);
+}
+.jx-gmail-workspace .jx-mail-row:nth-child(3n + 2) { background: var(--jx-blue-tint) !important; }
+.jx-gmail-workspace .jx-mail-row:nth-child(3n + 3) { background: var(--jx-orange-tint) !important; }
+.jx-gmail-workspace .jx-mail-content { min-width: 0; }
+.jx-gmail-workspace .jx-mail-subject {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 650 16px/1.35 var(--font-display) !important;
+  color: var(--jx-ink) !important;
+}
+.jx-gmail-workspace .jx-mail-snippet {
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--jx-ink-2);
+}
+.jx-gmail-workspace .jx-mail-meta { margin-top: 6px !important; }
+.jx-gmail-workspace .jx-mail-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+.jx-gmail-workspace .jx-mail-action {
+  min-height: 38px;
+  border: 1.5px solid var(--jx-ink);
+  border-radius: 999px;
+  padding: 0 14px;
+  background: hsl(var(--card));
+  color: var(--jx-ink);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.jx-gmail-workspace .jx-mail-action:hover { border-color: var(--jx-green); color: var(--jx-green-ink); }
+.jx-gmail-workspace .jx-mail-check {
+  width: 30px !important;
+  height: 30px !important;
+  border: 2px solid var(--jx-ink-3) !important;
+  background: hsl(var(--card)) !important;
+}
+.jx-gmail-workspace .jx-mail-check[aria-pressed="true"] {
+  border-color: var(--jx-green) !important;
+  background: var(--jx-green) !important;
+}
+.jx-gmail-workspace .jx-mail-empty {
+  background: var(--jx-green-tint);
+  border-radius: 24px;
+  padding: 42px 24px !important;
+  color: var(--jx-ink) !important;
+}
+.jx-gmail-workspace .jx-mail-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-radius: 18px;
+  background: var(--jx-orange-tint);
+  padding: 18px;
+  color: var(--jx-orange-ink);
+}
+
+@media (max-width: 640px) {
+  .jx-business-workspace .jx-business-row {
+    display: grid !important;
+    grid-template-columns: 38px minmax(0, 1fr) 32px;
+    align-items: start !important;
+    gap: 10px !important;
+    padding: 14px 12px !important;
+  }
+  .jx-business-row > div:first-child { grid-column: 1; grid-row: 1; }
+  .jx-business-row > .jx-business-content { grid-column: 2; grid-row: 1; }
+  .jx-business-row > span { grid-column: 1; grid-row: 2; align-self: center; }
+  .jx-business-row > [data-testid^="action-"] {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+    min-height: 44px;
+  }
+  .jx-business-row > [data-testid^="dismiss-"] {
+    grid-column: 3;
+    grid-row: 1;
+    min-width: 32px;
+    min-height: 36px;
+    justify-content: center;
+  }
+  .jx-business-content [data-testid^="task-title-"],
+  .jx-business-content > div:last-child {
+    white-space: normal !important;
+    overflow-wrap: anywhere;
+    overflow: visible !important;
+  }
+  .jx-inbox-source-tabs [role="tab"] { flex: 1 1 auto; padding-inline: 13px; }
+  .jx-gmail-workspace .jx-gmail-heading { align-items: flex-start !important; flex-direction: column; }
+  .jx-gmail-workspace .jx-mail-row {
+    grid-template-columns: 30px 40px minmax(0, 1fr) !important;
+    gap: 10px !important;
+    padding: 13px !important;
+  }
+  .jx-gmail-workspace .jx-mail-actions {
+    grid-column: 2 / -1;
+    width: 100%;
+    justify-content: flex-start !important;
+    flex-wrap: wrap;
+  }
+  .jx-gmail-workspace .jx-mail-actions > span { margin-right: auto; }
+  .jx-gmail-workspace .jx-mail-subject { white-space: normal; }
+  .jx-inbox-error { align-items: flex-start; flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jx-gmail-workspace .jx-mail-row { transition: none !important; }
+}

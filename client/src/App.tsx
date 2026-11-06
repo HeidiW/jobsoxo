@@ -23,9 +23,8 @@ import InvoiceNew from "@/pages/invoice-new";
 import InvoiceDetail from "@/pages/invoice-detail";
 import InvoicePayment from "@/pages/invoice-payment";
 import Scheduling from "@/pages/scheduling";
-import Payroll from "@/pages/payroll";
-import InboxTasks from "@/pages/inbox-tasks";
-import GmailTodos from "@/pages/gmail-todos";
+import PayrollArea from "@/components/payroll-area";
+import InboxShell from "@/components/inbox-shell";
 import Settings from "@/pages/settings";
 import Login from "@/pages/login";
 import ResetPassword from "@/pages/reset-password";
@@ -34,6 +33,7 @@ import Terms from "@/pages/terms";
 import InvoicePay from "@/pages/invoice-pay";
 import EmployeeBankSetup from "@/pages/employee-bank-setup";
 import { initializeAnalytics } from "@/lib/analytics";
+import { legacyInboxDestination } from "@/lib/app-shell";
 
 function Router() {
   return (
@@ -45,14 +45,20 @@ function Router() {
       <Route path="/jobs/:id/line-items" component={JobLineItems} />
       <Route path="/jobs/:id" component={JobDetail} />
       <Route path="/change-orders" component={ChangeOrders} />
-      <Route path="/invoices" component={Invoices} />
       <Route path="/invoices/new" component={InvoiceNew} />
-      <Route path="/invoices/:id" component={InvoiceDetail} />
       <Route path="/invoices/:id/payment" component={InvoicePayment} />
+      <Route path="/invoices/:id" component={InvoiceDetail} />
+      <Route path="/invoices" component={Invoices} />
       <Route path="/scheduling" component={Scheduling} />
-      <Route path="/payroll" component={Payroll} />
-      <Route path="/inbox-tasks" component={InboxTasks} />
-      <Route path="/gmail-todos" component={GmailTodos} />
+      <Route path="/payroll/worksheet" component={PayrollArea} />
+      <Route path="/payroll" component={PayrollArea} />
+      <Route path="/inbox" component={InboxShell} />
+      <Route path="/inbox-tasks">
+        <LegacyInboxRedirect />
+      </Route>
+      <Route path="/gmail-todos">
+        <LegacyInboxRedirect />
+      </Route>
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
@@ -69,31 +75,48 @@ const ROUTE_LABELS: Record<string, string> = {
   "/change-orders": "Change Orders",
   "/scheduling": "Scheduling",
   "/payroll": "Payroll",
-  "/inbox-tasks": "Inbox Tasks",
-  "/gmail-todos": "Gmail Todos",
+  "/payroll/worksheet": "Gusto worksheet",
+  "/inbox": "Inbox",
   "/settings": "Settings",
 };
 
+function LegacyInboxRedirect() {
+  const [location, setLocation] = useLocation();
+
+  useEffect(() => {
+    setLocation(legacyInboxDestination(window.location.pathname, window.location.search), { replace: true });
+  }, [location, setLocation]);
+
+  return <div className="min-h-full animate-pulse bg-jx-surface/40" aria-label="Opening inbox" />;
+}
+
 function AppTopbar() {
   const [location] = useLocation();
-  const label =
+  const routeLabel =
     ROUTE_LABELS[location] ??
     (location.startsWith("/invoices/") ? "Invoice" :
      location.startsWith("/jobs/") ? "Job" :
      location.startsWith("/clients/") ? "Client" : "");
+  const parentLabel = location.startsWith("/invoices/") ? "Invoices"
+    : location.startsWith("/jobs/") ? "Jobs"
+    : location.startsWith("/clients/") ? "Clients"
+    : location.startsWith("/payroll/") ? "Payroll"
+    : "";
 
   return (
-    <header className="h-[54px] flex-shrink-0 flex items-center gap-3 px-[22px] border-b bg-background/70 backdrop-blur-md">
-      <SidebarTrigger data-testid="button-sidebar-toggle" className="text-muted-foreground" />
-      <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
-        <span>JobsOxo</span>
-        <span>/</span>
-        <span className="text-foreground font-semibold">{label}</span>
+    <header className="sticky top-0 z-20 flex h-[60px] flex-shrink-0 items-center gap-3.5 border-b border-jx-line bg-background px-4 md:px-8">
+      <SidebarTrigger data-testid="button-sidebar-toggle" className="text-jx-ink-2" />
+      <div className="flex min-w-0 items-center gap-2 text-[13px] text-jx-ink-3">
+        <span className="shrink-0">JobsOxo</span>
+        {(parentLabel || routeLabel) && <span aria-hidden="true">/</span>}
+        {parentLabel && <span className="shrink-0">{parentLabel}</span>}
+        {parentLabel && routeLabel && <span aria-hidden="true">/</span>}
+        <span className="truncate font-semibold text-jx-ink">{routeLabel}</span>
       </div>
       <div className="ml-auto flex items-center gap-2">
-        <div className="flex items-center gap-2 bg-muted border border-border rounded-lg px-3 py-1.5 w-[240px]">
-          <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <span className="text-[12.5px] text-muted-foreground">Search invoices, clients…</span>
+        <div aria-hidden="true" className="hidden w-[260px] items-center gap-2 rounded-full bg-jx-surface px-3.5 py-2.5 text-[13px] text-jx-ink-3 sm:flex">
+          <Search className="h-3.5 w-3.5 shrink-0" />
+          <span>Search invoices, clients…</span>
         </div>
         <ThemeToggle />
       </div>
@@ -103,17 +126,17 @@ function AppTopbar() {
 
 function AuthenticatedApp() {
   const style = {
-    "--sidebar-width": "16rem",
+    "--sidebar-width": "248px",
     "--sidebar-width-icon": "3rem",
   };
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
-      <div className="flex h-screen w-full">
+      <div className="flex h-[100dvh] min-h-[100dvh] w-full overflow-hidden">
         <AppSidebar />
         <div className="flex flex-col flex-1 overflow-hidden">
           <AppTopbar />
-          <main className="flex-1 overflow-y-auto">
+          <main className="min-w-0 flex-1 overflow-y-auto bg-background">
             <Router />
           </main>
         </div>

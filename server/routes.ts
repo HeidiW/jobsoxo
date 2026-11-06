@@ -15,12 +15,14 @@ function _require(id: string): any {
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { sendDashboardReminder } from "./dashboard-reminders";
 import { db } from "./db";
 import { 
-  clients, jobs, invoices, lineItems, payments, employees, timeEntries, users, changeOrders, plaidTransactions,
+  clients, jobs, invoices, lineItems, payments, employees, employeeAssignments, timeEntries, users, changeOrders, plaidTransactions,
   insertClientSchema, insertJobSchema, insertLineItemSchema, updateLineItemSchema, insertInvoiceSchema,
   insertPaymentSchema, insertEmployeeSchema, insertTimeEntrySchema, insertSettingsSchema,
-  insertPayrollRecordSchema, insertChangeOrderSchema, insertJobMaterialSchema
+  insertPayrollRecordSchema, insertChangeOrderSchema, insertJobMaterialSchema,
+  insertPayrollWorksheetSchema, updatePayrollWorksheetSchema, confirmPayrollWorksheetSchema
 } from "@shared/schema";
 import { z } from "zod";
 import { sendInvoiceEmail, processOverdueReminders, sendPasswordResetEmail, sendDirectDepositEmail } from "./email";
@@ -28,7 +30,7 @@ import bcrypt from "bcryptjs";
 import { passport, setupOAuthStrategies, getEnabledProviders, callbackUrl } from "./oauth";
 import {
   isGmailConnected, fetchGmailInbox, revokeGmailConnection, getGmailOAuthUrl,
-  buildGmailAuthUrl, exchangeGmailCode,
+  buildGmailAuthUrl, exchangeGmailCode, getGmailCallbackUrl,
   isUserGmailConnected, getUserGmailEmail, fetchUserGmailInbox, revokeUserGmailToken,
   fetchGmailLabelsForUser,
 } from "./gmail";
@@ -37,6 +39,11 @@ import { syncPlaidTransactionsForUser } from "./plaid-sync";
 import { handleInboundSms, twimlReply } from "./sms";
 import { sendChangeOrderEmail } from "./email";
 import twilio from "twilio";
+import {
+  AddressLookupRateLimitError,
+  getAddressDetailsForUser,
+  searchAddressesForUser,
+} from "./address-autocomplete";
 import { parseDocumentText } from "./document-parser";
 import {
   buildGoogleDocsAuthUrl,
@@ -49,6 +56,7 @@ import {
   parseGoogleDocText,
 } from "./google-docs";
 import { eq, sql, desc } from "drizzle-orm";
+import { registerGustoRoutes } from "./gusto-routes";
 
 function parseNumeric(value: unknown): number {
   if (typeof value === "number") return value;
@@ -58,6 +66,32 @@ function parseNumeric(value: unknown): number {
 
 function badRequest(res: Response, err: z.ZodError) {
   return res.status(400).json({ error: "Invalid request data", details: err.flatten().fieldErrors });
+}
+
+type GustoDeduction = { label: string; amount: number; category?: string; gustoCode?: string };
+
+/** Calculates monetary worksheet fields in cents so client-provided totals are never trusted. */
+export function calculatePayrollWorksheetTotals(
+  daysWorked: string | number,
+  dailyGross: string | number,
+  deductions: GustoDeduction[],
+) {
+  const grossCents = Math.round(Number(daysWorked) * Number(dailyGross) * 100);
+  const deductionsCents = deductions.reduce((total, deduction) =>
+    total + Math.round(Number(deduction.amount) * 100), 0);
+  return {
+    grossPay: (grossCents / 100).toFixed(2),
+    totalDeductions: (deductionsCents / 100).toFixed(2),
+    netPay: (Math.max(0, grossCents - deductionsCents) / 100).toFixed(2),
+  };
+}
+
+function worksheetDateOnly(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function validWorksheetPeriod(periodStart: Date, periodEnd: Date): boolean {
+  return periodStart.getTime() <= periodEnd.getTime();
 }
 
 async function recalcInvoiceTotals(invoiceId: string): Promise<void> {
@@ -643,7 +677,53 @@ export async function registerRoutes(
   });
 
   // All routes below require authentication
-  app.use("/api", requireAuth);
+  app.use("/api", (req, res, next) => {
+    // Gusto delivers signed provider webhooks without a JobsOxo session.
+    if (req.path === "/gusto/webhook") return next();
+    return requireAuth(req, res, next);
+  });
+
+  app.get("/api/address-suggestions", async (req, res) => {
+    const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const sessionToken = typeof req.query.sessionToken === "string" ? req.query.sessionToken : undefined;
+    if (query.length < 3 || query.length > 200) {
+      return res.status(400).json({ error: "Enter at least 3 address characters" });
+    }
+    try {
+      res.json(await searchAddressesForUser(req.session.userId!, query, sessionToken));
+    } catch (error) {
+      if (error instanceof AddressLookupRateLimitError) {
+        res.set("Retry-After", String(error.retryAfterSeconds));
+        return res.status(429).json({
+          error: "Too many address suggestion requests. You can keep entering the address manually.",
+          retryAfterSeconds: error.retryAfterSeconds,
+        });
+      }
+      console.error("Address suggestion error:", error);
+      res.status(502).json({ error: "Address suggestions are temporarily unavailable" });
+    }
+  });
+
+  app.get("/api/address-details", async (req, res) => {
+    const placeId = typeof req.query.placeId === "string" ? req.query.placeId.trim() : "";
+    const sessionToken = typeof req.query.sessionToken === "string" ? req.query.sessionToken : undefined;
+    if (!placeId || placeId.length > 500) {
+      return res.status(400).json({ error: "A valid place ID is required" });
+    }
+    try {
+      res.json(await getAddressDetailsForUser(req.session.userId!, placeId, sessionToken));
+    } catch (error) {
+      if (error instanceof AddressLookupRateLimitError) {
+        res.set("Retry-After", String(error.retryAfterSeconds));
+        return res.status(429).json({
+          error: "Too many address detail requests. The selected address can still be entered manually.",
+          retryAfterSeconds: error.retryAfterSeconds,
+        });
+      }
+      console.error("Address details error:", error);
+      res.status(502).json({ error: "Address details are temporarily unavailable" });
+    }
+  });
 
   // Dashboard
   app.get("/api/dashboard", async (req, res) => {
@@ -875,10 +955,21 @@ export async function registerRoutes(
   app.get("/api/jobs", async (req, res) => {
     try {
       const allJobs = await storage.getJobs();
+      const assignments = await db.select({
+        jobId: employeeAssignments.jobId,
+        id: employees.id,
+        name: employees.name,
+      }).from(employeeAssignments).innerJoin(employees, eq(employeeAssignments.employeeId, employees.id));
+      const crews = new Map<string, { id: string; name: string }[]>();
+      for (const { jobId, id, name } of assignments) {
+        const crew = crews.get(jobId) ?? [];
+        crew.push({ id, name });
+        crews.set(jobId, crew);
+      }
       const jobsWithClients = await Promise.all(
         allJobs.map(async (job) => {
           const client = await storage.getClient(job.clientId);
-          return { ...job, client };
+          return { ...job, client, assignedEmployees: crews.get(job.id) ?? [] };
         })
       );
       res.json(jobsWithClients);
@@ -1598,6 +1689,8 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/invoices/:id/remind", sendDashboardReminder);
+
   app.post("/api/reminders/process", async (req, res) => {
     try {
       const result = await processOverdueReminders();
@@ -2020,6 +2113,173 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Get payroll records error:", error);
       res.status(500).json({ error: "Failed to get payroll records" });
+    }
+  });
+
+  // Payroll Worksheets — manually prepared values to enter and confirm in Gusto.
+  app.get("/api/payroll-worksheets", requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      res.json(await storage.getPayrollWorksheets());
+    } catch (error) {
+      console.error("Get payroll worksheets error:", error);
+      res.status(500).json({ error: "Failed to get payroll worksheets" });
+    }
+  });
+
+  app.get("/api/payroll-worksheets/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const worksheet = await storage.getPayrollWorksheet(req.params.id);
+      if (!worksheet) return res.status(404).json({ error: "Payroll worksheet not found" });
+      res.json(worksheet);
+    } catch (error) {
+      console.error("Get payroll worksheet error:", error);
+      res.status(500).json({ error: "Failed to get payroll worksheet" });
+    }
+  });
+
+  app.post("/api/payroll-worksheets", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const parsed = insertPayrollWorksheetSchema.safeParse({
+        ...req.body,
+        gustoDeductionsBreakdown:
+          req.body.gustoDeductionsBreakdown ?? req.body.adpDeductionsBreakdown,
+      });
+      if (!parsed.success) return badRequest(res, parsed.error);
+      if (!validWorksheetPeriod(parsed.data.periodStart, parsed.data.periodEnd)) {
+        return res.status(400).json({ error: "periodEnd must be on or after periodStart" });
+      }
+      const employee = await storage.getEmployee(parsed.data.employeeId);
+      if (!employee) return res.status(400).json({ error: "Employee not found" });
+
+      const gustoDeductionsBreakdown = parsed.data.gustoDeductionsBreakdown as GustoDeduction[];
+      const totals = calculatePayrollWorksheetTotals(
+        parsed.data.daysWorked,
+        parsed.data.dailyGross,
+        gustoDeductionsBreakdown,
+      );
+      if (Number(totals.totalDeductions) > Number(totals.grossPay)) {
+        return res.status(400).json({ error: "Deductions cannot exceed gross pay" });
+      }
+      const worksheet = await storage.createPayrollWorksheet({
+        employeeId: parsed.data.employeeId,
+        periodStart: worksheetDateOnly(parsed.data.periodStart),
+        periodEnd: worksheetDateOnly(parsed.data.periodEnd),
+        payDate: worksheetDateOnly(parsed.data.payDate),
+        daysWorked: parsed.data.daysWorked,
+        dailyGross: parsed.data.dailyGross,
+        gustoDeductionsBreakdown,
+        ...totals,
+        status: "draft",
+        createdByUserId: req.session.userId!,
+      });
+      res.status(201).json(worksheet);
+    } catch (error) {
+      console.error("Create payroll worksheet error:", error);
+      res.status(500).json({ error: "Failed to create payroll worksheet" });
+    }
+  });
+
+  app.patch("/api/payroll-worksheets/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const parsed = updatePayrollWorksheetSchema.safeParse({
+        ...req.body,
+        gustoDeductionsBreakdown:
+          req.body.gustoDeductionsBreakdown ?? req.body.adpDeductionsBreakdown,
+      });
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const existing = await storage.getPayrollWorksheet(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Payroll worksheet not found" });
+      if (existing.status === "confirmed") {
+        return res.status(409).json({ error: "Confirmed payroll worksheets cannot be edited" });
+      }
+
+      const employeeId = parsed.data.employeeId ?? existing.employeeId;
+      if (employeeId !== existing.employeeId && !(await storage.getEmployee(employeeId))) {
+        return res.status(400).json({ error: "Employee not found" });
+      }
+      const periodStart = parsed.data.periodStart ?? new Date(`${existing.periodStart}T00:00:00.000Z`);
+      const periodEnd = parsed.data.periodEnd ?? new Date(`${existing.periodEnd}T00:00:00.000Z`);
+      const payDate = parsed.data.payDate ?? new Date(`${existing.payDate}T00:00:00.000Z`);
+      if (!validWorksheetPeriod(periodStart, periodEnd)) {
+        return res.status(400).json({ error: "periodEnd must be on or after periodStart" });
+      }
+      const daysWorked = parsed.data.daysWorked ?? existing.daysWorked;
+      const dailyGross = parsed.data.dailyGross ?? existing.dailyGross;
+      const gustoDeductionsBreakdown = (parsed.data.gustoDeductionsBreakdown ??
+        existing.gustoDeductionsBreakdown) as GustoDeduction[];
+      const totals = calculatePayrollWorksheetTotals(daysWorked, dailyGross, gustoDeductionsBreakdown);
+      if (Number(totals.totalDeductions) > Number(totals.grossPay)) {
+        return res.status(400).json({ error: "Deductions cannot exceed gross pay" });
+      }
+      const worksheet = await storage.updateUnconfirmedPayrollWorksheet(req.params.id, {
+        employeeId,
+        periodStart: worksheetDateOnly(periodStart),
+        periodEnd: worksheetDateOnly(periodEnd),
+        payDate: worksheetDateOnly(payDate),
+        daysWorked,
+        dailyGross,
+        gustoDeductionsBreakdown,
+        ...totals,
+      });
+      if (!worksheet) return res.status(409).json({ error: "Confirmed payroll worksheets cannot be edited" });
+      res.json(worksheet);
+    } catch (error) {
+      console.error("Update payroll worksheet error:", error);
+      res.status(500).json({ error: "Failed to update payroll worksheet" });
+    }
+  });
+
+  app.post("/api/payroll-worksheets/:id/export", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const existing = await storage.getPayrollWorksheet(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Payroll worksheet not found" });
+      if (existing.status === "confirmed") {
+        return res.status(409).json({ error: "Confirmed payroll worksheets cannot be changed" });
+      }
+      const worksheet = await storage.updateUnconfirmedPayrollWorksheet(existing.id, {
+        status: "exported",
+        exportedAt: new Date(),
+      });
+      if (!worksheet) return res.status(409).json({ error: "Confirmed payroll worksheets cannot be changed" });
+      res.json(worksheet);
+    } catch (error) {
+      console.error("Export payroll worksheet error:", error);
+      res.status(500).json({ error: "Failed to mark payroll worksheet exported" });
+    }
+  });
+
+  app.post("/api/payroll-worksheets/:id/confirm", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const parsed = confirmPayrollWorksheetSchema.safeParse({
+        ...req.body,
+        gustoConfirmationReference:
+          req.body.gustoConfirmationReference ?? req.body.adpConfirmationReference,
+        gustoConfirmationNotes:
+          req.body.gustoConfirmationNotes ?? req.body.adpConfirmationNotes,
+      });
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const existing = await storage.getPayrollWorksheet(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Payroll worksheet not found" });
+      if (existing.status === "confirmed") {
+        return res.status(409).json({ error: "Payroll worksheet is already confirmed" });
+      }
+      const worksheet = await storage.updateUnconfirmedPayrollWorksheet(existing.id, {
+        status: "confirmed",
+        gustoConfirmationReference: parsed.data.gustoConfirmationReference,
+        gustoConfirmedAt: parsed.data.gustoConfirmedAt ?? new Date(),
+        gustoConfirmationNotes: parsed.data.gustoConfirmationNotes ?? null,
+        confirmedByUserId: req.session.userId!,
+      });
+      if (!worksheet) return res.status(409).json({ error: "Payroll worksheet is already confirmed" });
+      res.json({
+        ...worksheet,
+        adpConfirmationReference: worksheet.gustoConfirmationReference,
+        adpConfirmedAt: worksheet.gustoConfirmedAt,
+        adpConfirmationNotes: worksheet.gustoConfirmationNotes,
+      });
+    } catch (error) {
+      console.error("Confirm payroll worksheet error:", error);
+      res.status(500).json({ error: "Failed to confirm payroll worksheet" });
     }
   });
 
@@ -2549,10 +2809,12 @@ export async function registerRoutes(
     }
     const crypto = require("crypto") as typeof import("crypto");
     const state = crypto.randomBytes(16).toString("hex");
+    const callbackUrl = getGmailCallbackUrl(getPublicBase(req));
     req.session.gmailOAuthState = state;
     req.session.gmailReturnPath = req.query.returnTo === "/gmail-todos" ? "/gmail-todos" : "/inbox-tasks";
+    req.session.gmailOAuthCallbackUrl = callbackUrl;
     try {
-      const authUrl = buildGmailAuthUrl(state);
+      const authUrl = buildGmailAuthUrl(state, callbackUrl);
       res.redirect(authUrl);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2562,8 +2824,9 @@ export async function registerRoutes(
   // Google redirects here after user consents
   app.get("/api/gmail/callback", async (req, res) => {
     const { code, state, error } = req.query as Record<string, string>;
-    const baseUrl = (process.env.APP_URL || "http://localhost:5000").replace(/\/$/, "");
+    const baseUrl = getPublicBase(req);
     const returnPath = req.session.gmailReturnPath === "/gmail-todos" ? "/gmail-todos" : "/inbox-tasks";
+    const callbackUrl = req.session.gmailOAuthCallbackUrl || getGmailCallbackUrl(baseUrl);
     const clearCachedTasksAfterOAuthFailure = async () => {
       if (!req.session.userId) return;
       try {
@@ -2582,6 +2845,7 @@ export async function registerRoutes(
     }
     delete req.session.gmailOAuthState;
     delete req.session.gmailReturnPath;
+    delete req.session.gmailOAuthCallbackUrl;
 
     if (error) {
       await clearCachedTasksAfterOAuthFailure();
@@ -2589,7 +2853,7 @@ export async function registerRoutes(
     }
 
     try {
-      const tokens = await exchangeGmailCode(code);
+      const tokens = await exchangeGmailCode(code, callbackUrl);
       await storage.saveGoogleToken(req.session.userId, {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
@@ -3286,6 +3550,8 @@ export async function registerRoutes(
       res.status(500).json({ error: "Failed to seed demo data" });
     }
   });
+
+  registerGustoRoutes(app, requireAdmin);
 
   return httpServer;
 }

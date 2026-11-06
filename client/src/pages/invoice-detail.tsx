@@ -650,7 +650,7 @@ function NewChangeOrderForm({
 // ── ChangeOrdersPanel ─────────────────────────────────────────────────────────
 
 function coBadge(status: string) {
-  if (status === "approved") return <Badge className="bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-300">Approved</Badge>;
+  if (status === "approved") return <Badge className="bg-jx-green-tint text-jx-green-ink border-jx-green-tint-2">Approved</Badge>;
   if (status === "rejected") return <Badge variant="outline" className="text-muted-foreground">Rejected</Badge>;
   return <Badge className="bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300">Pending</Badge>;
 }
@@ -782,7 +782,7 @@ function ChangeOrdersPanel({
                     )}
                   </div>
                   <div className="text-right shrink-0">
-                    <span className={`font-mono text-sm font-semibold ${co.status === "approved" ? "text-green-600 dark:text-green-400" : co.status === "rejected" ? "text-muted-foreground" : "text-amber-600 dark:text-amber-400"}`}>
+                    <span className={`font-mono text-sm font-semibold ${co.status === "approved" ? "text-jx-green-ink" : co.status === "rejected" ? "text-muted-foreground" : "text-amber-600 dark:text-amber-400"}`}>
                       {Number(co.amount) >= 0 ? "+" : ""}{fmt(co.amount)}
                     </span>
                   </div>
@@ -793,7 +793,7 @@ function ChangeOrdersPanel({
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-green-600 hover:text-green-700 hover:bg-green-50"
+                            className="h-7 w-7 text-jx-green-ink hover:text-jx-green-ink hover:bg-jx-green-tint"
                             onClick={() => approveMutation.mutate(co.id)}
                             disabled={approveMutation.isPending}
                             data-testid={`button-approve-co-${co.id}`}
@@ -930,7 +930,7 @@ function CollectionsPanel({ invoice }: { invoice: InvoiceDetail }) {
           {isPaused ? (
             <Badge variant="secondary" className="text-xs"><BellOff className="h-3 w-3 mr-1" />Paused</Badge>
           ) : (
-            <Badge variant="outline" className="text-xs text-green-600 border-green-300"><Bell className="h-3 w-3 mr-1" />Active</Badge>
+            <Badge variant="outline" className="text-xs text-jx-green-ink border-jx-green-tint-2"><Bell className="h-3 w-3 mr-1" />Active</Badge>
           )}
         </div>
         <Button
@@ -1001,7 +1001,7 @@ function CollectionsPanel({ invoice }: { invoice: InvoiceDetail }) {
                     <TableCell>{log.stage}</TableCell>
                     <TableCell>
                       {log.success ? (
-                        <Badge variant="outline" className="text-green-600 border-green-300 text-xs">Sent</Badge>
+                        <Badge variant="outline" className="text-jx-green-ink border-jx-green-tint-2 text-xs">Sent</Badge>
                       ) : (
                         <Badge variant="outline" className="text-red-600 border-red-300 text-xs" title={log.errorMessage ?? ""}>Failed</Badge>
                       )}
@@ -1620,7 +1620,7 @@ export default function InvoiceDetail() {
                         <TableCell>{format(new Date(payment.paymentDate), "MMM d, yyyy")}</TableCell>
                         <TableCell className="capitalize">{payment.paymentMethod.replace("_", " ")}</TableCell>
                         <TableCell className="font-mono text-sm">{payment.referenceNumber || "—"}</TableCell>
-                        <TableCell className="text-right font-mono font-medium text-green-600 dark:text-green-400">
+                        <TableCell className="text-right font-mono font-medium text-jx-green-ink">
                           {fmt(payment.amount)}
                         </TableCell>
                         <TableCell>
@@ -1628,7 +1628,7 @@ export default function InvoiceDetail() {
                             <Popover>
                               <PopoverTrigger asChild>
                                 <button
-                                  className="inline-flex items-center gap-1.5 rounded-full bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800 px-2.5 py-0.5 text-xs font-semibold hover:bg-green-200 dark:hover:bg-green-900/60 transition-colors cursor-pointer"
+                                  className="inline-flex items-center gap-1.5 rounded-full bg-jx-green-tint text-jx-green-ink border border-jx-green-tint-2 px-2.5 py-0.5 text-xs font-semibold hover:bg-jx-green-tint-2 transition-colors cursor-pointer"
                                   data-testid={`badge-bank-confirmed-${payment.id}`}
                                 >
                                   <Landmark className="h-3 w-3" />
@@ -1637,7 +1637,7 @@ export default function InvoiceDetail() {
                               </PopoverTrigger>
                               <PopoverContent className="w-64 p-3" align="end">
                                 <div className="space-y-2">
-                                  <div className="flex items-center gap-1.5 text-xs font-semibold text-green-700 dark:text-green-400 mb-2">
+                                  <div className="flex items-center gap-1.5 text-xs font-semibold text-jx-green-ink mb-2">
                                     <Landmark className="h-3.5 w-3.5" />
                                     Bank Transaction
                                   </div>
@@ -1656,7 +1656,7 @@ export default function InvoiceDetail() {
                                     </div>
                                     <div className="flex justify-between gap-2">
                                       <span className="text-muted-foreground text-xs">Amount</span>
-                                      <span className="text-xs font-mono font-semibold text-green-600 dark:text-green-400">
+                                      <span className="text-xs font-mono font-semibold text-jx-green-ink">
                                         {fmt(Math.abs(Number(payment.plaidTransaction.amount)))}
                                       </span>
                                     </div>

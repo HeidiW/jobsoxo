@@ -1,294 +1,40 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Edit, Package, Plus, Search, Trash2 } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { trackEvent } from "@/lib/analytics";
+import { AlertTriangle, Edit, Package, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import type { Job, JobMaterial } from "@shared/schema";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MaterialFormDialog } from "@/components/materials/material-form-dialog";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { trackEvent } from "@/lib/analytics";
+import type { Job } from "@shared/schema";
+import { filterMaterials, invalidateMaterialTotals, monthlyMaterialSummary, totalMaterialPrice, type MaterialWithJob } from "./materials-logic";
 
-type MaterialWithJob = JobMaterial & { job: Job | null };
-
-type MaterialForm = {
-  jobId: string;
-  name: string;
-  description: string;
-  purchaseDate: string;
-  vendor: string;
-  quantity: string;
-  unit: string;
-  price: string;
-};
-
-const EMPTY_FORM: MaterialForm = {
-  jobId: "",
-  name: "",
-  description: "",
-  purchaseDate: new Date().toISOString().slice(0, 10),
-  vendor: "",
-  quantity: "",
-  unit: "each",
-  price: "",
-};
-
-const UNIT_OPTIONS = [
-  ["each", "Each"],
-  ["oz", "Ounces (oz)"],
-  ["lb", "Pounds (lb)"],
-  ["bag", "Bag"],
-  ["gal", "Gallons (gal)"],
-  ["qt", "Quarts (qt)"],
-  ["ft", "Feet (ft)"],
-  ["sqft", "Square feet (sq ft)"],
-  ["box", "Box"],
-  ["set", "Set"],
-  ["other", "Other"],
+const CARD_TINTS = [
+  { card: "bg-jx-green-tint", ink: "text-jx-green-ink" },
+  { card: "bg-jx-orange-tint", ink: "text-jx-orange-ink" },
+  { card: "bg-jx-blue-tint", ink: "text-jx-blue-ink" },
+  { card: "bg-jx-gold-tint", ink: "text-jx-gold-ink" },
+  { card: "bg-jx-surface", ink: "text-jx-ink-2" },
 ] as const;
 
-function materialToForm(material: MaterialWithJob): MaterialForm {
-  return {
-    jobId: material.jobId ?? "",
-    name: material.name,
-    description: material.description ?? "",
-    purchaseDate: material.purchaseDate.slice(0, 10),
-    vendor: material.vendor ?? "",
-    quantity: material.quantity,
-    unit: material.unit,
-    price: material.price,
-  };
+function money(value: string | number) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value));
 }
-
 function formatDate(value: string | Date | null | undefined) {
   if (!value) return "—";
   const dateValue = typeof value === "string" ? value.slice(0, 10) : value.toISOString().slice(0, 10);
   const [year, month, day] = dateValue.split("-").map(Number);
-  if (!year || !month || !day) return "—";
-  return format(new Date(year, month - 1, day), "MMM d, yyyy");
+  return year && month && day ? format(new Date(year, month - 1, day), "MMM d, yyyy") : "—";
 }
-
-function formatMoney(value: string | number) {
-  return Number(value).toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-  });
-}
-
-function MaterialFormDialog({
-  open,
-  onOpenChange,
-  material,
-  jobs,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  material: MaterialWithJob | null;
-  jobs: Job[];
-}) {
-  const { toast } = useToast();
-  const [form, setForm] = useState<MaterialForm>(material ? materialToForm(material) : EMPTY_FORM);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    if (open) {
-      setForm(material ? materialToForm(material) : { ...EMPTY_FORM, purchaseDate: new Date().toISOString().slice(0, 10) });
-      setErrors({});
-    }
-  }, [open, material]);
-
-  const mutation = useMutation({
-    mutationFn: async () => {
-      const body = {
-        ...form,
-        jobId: form.jobId || null,
-        purchaseDate: form.purchaseDate,
-      };
-      const response = await apiRequest(
-        material ? "PATCH" : "POST",
-        material ? `/api/materials/${material.id}` : "/api/materials",
-        body,
-      );
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
-      trackEvent("material_saved", { action: material ? "updated" : "created" });
-      toast({ title: material ? "Material updated" : "Material added" });
-      onOpenChange(false);
-    },
-    onError: (error: Error) => {
-      toast({ title: "Could not save material", description: error.message, variant: "destructive" });
-    },
-  });
-
-  function update(field: keyof MaterialForm, value: string) {
-    setForm((current) => ({ ...current, [field]: value }));
-    setErrors((current) => ({ ...current, [field]: "" }));
-  }
-
-  function submit(event: React.FormEvent) {
-    event.preventDefault();
-    const nextErrors: Record<string, string> = {};
-    if (!form.name.trim()) nextErrors.name = "Material name is required";
-    if (!form.purchaseDate) nextErrors.purchaseDate = "Purchase date is required";
-    if (!form.quantity || Number(form.quantity) <= 0) nextErrors.quantity = "Quantity must be greater than zero";
-    if (!form.price || Number(form.price) < 0) nextErrors.price = "Price is required";
-    setErrors(nextErrors);
-    if (Object.keys(nextErrors).length === 0) mutation.mutate();
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{material ? "Edit material" : "Add material"}</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={submit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="material-name">Material name *</Label>
-            <Input
-              id="material-name"
-              value={form.name}
-              onChange={(event) => update("name", event.target.value)}
-              placeholder="e.g. Exterior latex paint"
-              data-testid="input-material-name"
-            />
-            {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="material-job">Job</Label>
-            <Select value={form.jobId || "unassigned"} onValueChange={(value) => update("jobId", value === "unassigned" ? "" : value)}>
-              <SelectTrigger id="material-job" data-testid="select-material-job">
-                <SelectValue placeholder="Choose a job" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="unassigned">No job assigned</SelectItem>
-                {jobs.map((job) => (
-                  <SelectItem key={job.id} value={job.id}>{job.title}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="material-description">Description or size details</Label>
-            <Input
-              id="material-description"
-              value={form.description}
-              onChange={(event) => update("description", event.target.value)}
-              placeholder="e.g. White exterior, 2-inch angled sash brush"
-              data-testid="input-material-description"
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="material-date">Purchase date *</Label>
-              <Input
-                id="material-date"
-                type="date"
-                value={form.purchaseDate}
-                onChange={(event) => update("purchaseDate", event.target.value)}
-                data-testid="input-material-purchase-date"
-              />
-              {errors.purchaseDate && <p className="text-xs text-destructive">{errors.purchaseDate}</p>}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="material-vendor">Vendor</Label>
-              <Input
-                id="material-vendor"
-                value={form.vendor}
-                onChange={(event) => update("vendor", event.target.value)}
-                placeholder="e.g. Sherwin-Williams"
-                data-testid="input-material-vendor"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_1.2fr_1fr]">
-            <div className="space-y-2">
-              <Label htmlFor="material-quantity">Quantity *</Label>
-              <Input
-                id="material-quantity"
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={form.quantity}
-                onChange={(event) => update("quantity", event.target.value)}
-                placeholder="1"
-                data-testid="input-material-quantity"
-              />
-              {errors.quantity && <p className="text-xs text-destructive">{errors.quantity}</p>}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="material-unit">Unit *</Label>
-              <Select value={form.unit} onValueChange={(value) => update("unit", value)}>
-                <SelectTrigger id="material-unit" data-testid="select-material-unit">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {UNIT_OPTIONS.map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="material-price">Price *</Label>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-2 text-sm text-muted-foreground">$</span>
-                <Input
-                  id="material-price"
-                  className="pl-7"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={form.price}
-                  onChange={(event) => update("price", event.target.value)}
-                  placeholder="0.00"
-                  data-testid="input-material-price"
-                />
-              </div>
-              {errors.price && <p className="text-xs text-destructive">{errors.price}</p>}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={mutation.isPending} data-testid="button-save-material">
-              {mutation.isPending ? "Saving…" : material ? "Save changes" : "Add material"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
+function SkeletonCard({ tint }: { tint: string }) {
+  return <div aria-hidden="true" className={`animate-pulse min-h-[150px] rounded-[26px] p-5 ${tint}`}><div className="h-4 w-1/2 rounded bg-card/70" /><div className="mt-6 h-8 w-2/3 rounded bg-card/70" /><div className="mt-3 h-3 w-1/3 rounded bg-card/60" /></div>;
 }
 
 export default function Materials() {
@@ -298,198 +44,155 @@ export default function Materials() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<MaterialWithJob | null>(null);
   const [deletingMaterial, setDeletingMaterial] = useState<MaterialWithJob | null>(null);
-
-  const { data: materials = [], isLoading } = useQuery<MaterialWithJob[]>({ queryKey: ["/api/materials"] });
-  const { data: jobs = [] } = useQuery<Job[]>({ queryKey: ["/api/jobs"] });
+  const [deleteError, setDeleteError] = useState("");
+  const { data: materials, isLoading, isError: materialsError, isFetching: materialsFetching, refetch: retryMaterials } = useQuery<MaterialWithJob[]>({ queryKey: ["/api/materials"] });
+  const { data: jobs, isLoading: jobsLoading, isError: jobsError, isFetching: jobsFetching, refetch: retryJobs } = useQuery<Job[]>({ queryKey: ["/api/jobs"] });
+  const safeMaterials = materials ?? [];
+  const safeJobs = jobs ?? [];
+  const now = new Date();
+  const monthName = format(now, "MMMM yyyy");
+  const monthOnly = format(now, "MMMM");
+  const summary = useMemo(() => monthlyMaterialSummary(safeMaterials, now.getFullYear(), now.getMonth()), [safeMaterials, now.getFullYear(), now.getMonth()]);
+  const filteredMaterials = useMemo(() => filterMaterials(safeMaterials, jobFilter, search), [safeMaterials, jobFilter, search]);
+  const filteredTotal = useMemo(() => totalMaterialPrice(filteredMaterials), [filteredMaterials]);
+  const selectedJob = safeJobs.find((job) => job.id === jobFilter);
+  const totalLabel = jobFilter === "unassigned" ? "Unassigned · all dates" : selectedJob ? `${selectedJob.title} · all dates` : search || jobFilter !== "all" ? "Filtered · all dates" : "All purchases · all dates";
+  const activeFilter = jobFilter !== "all" || !!search.trim();
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/materials/${id}`); },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      invalidateMaterialTotals(queryClient);
       trackEvent("material_deleted");
-      toast({ title: "Material deleted" });
+      toast({ title: "Purchase deleted" });
       setDeletingMaterial(null);
+      setDeleteError("");
     },
-    onError: (error: Error) => toast({ title: "Could not delete material", description: error.message, variant: "destructive" }),
+    onError: (error: Error) => {
+      setDeleteError(error.message || "Could not delete this purchase. Try again.");
+      toast({ title: "Could not delete purchase", description: error.message, variant: "destructive" });
+    },
   });
+  function openNew() { setEditingMaterial(null); setDialogOpen(true); }
+  function openEdit(material: MaterialWithJob) { setEditingMaterial(material); setDialogOpen(true); }
+  const openDelete = (material: MaterialWithJob) => { setDeleteError(""); setDeletingMaterial(material); };
+  const closeForm = (open: boolean) => { setDialogOpen(open); if (!open) setEditingMaterial(null); };
 
-  const filteredMaterials = useMemo(() => {
-    const normalized = search.trim().toLowerCase();
-    return materials.filter((material) => {
-      const matchesJob = jobFilter === "all" || material.jobId === jobFilter;
-      const matchesSearch = !normalized
-        || material.name.toLowerCase().includes(normalized)
-        || material.description?.toLowerCase().includes(normalized)
-        || material.vendor?.toLowerCase().includes(normalized)
-        || material.job?.title.toLowerCase().includes(normalized);
-      return matchesJob && matchesSearch;
-    });
-  }, [materials, jobFilter, search]);
-
-  const filteredTotal = useMemo(
-    () => filteredMaterials.reduce((sum, material) => sum + Number(material.price), 0),
-    [filteredMaterials],
-  );
-  const selectedJob = jobFilter === "all" ? null : jobs.find((job) => job.id === jobFilter);
-  const totalLabel = selectedJob ? "Job spending" : search ? "Filtered spending" : "Total spending";
-
-  function openNew() {
-    setEditingMaterial(null);
-    setDialogOpen(true);
-  }
-
-  function openEdit(material: MaterialWithJob) {
-    setEditingMaterial(material);
-    setDialogOpen(true);
-  }
-
-  return (
-    <div className="p-6 md:p-7">
-      <div className="mx-auto max-w-[1280px]">
-        <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Materials</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Track supplies purchased for your jobs.
-            </p>
-          </div>
-          <Button onClick={openNew} data-testid="button-add-material">
-            <Plus className="mr-2 h-4 w-4" /> Add material
-          </Button>
+  return <main className="min-h-[100dvh] min-w-0 px-4 pb-12 pt-7 text-jx-ink sm:px-7 sm:pt-9 xl:px-10">
+    <div className="mx-auto flex w-full max-w-[1440px] min-w-0 flex-col gap-6 sm:gap-7">
+      <header className="flex flex-wrap items-end justify-between gap-5">
+        <div className="min-w-0">
+          <h1 className="font-display text-[48px] !font-bold leading-[.95] tracking-[-.055em] text-jx-ink sm:text-[64px]" data-testid="heading-materials">Materials</h1>
+          <p className="mt-3 text-[15px] text-jx-ink-2 sm:text-[17px]">
+            {isLoading ? "Loading purchase totals…" : materialsError ? "Purchase totals are unavailable" : `${monthName} purchases across ${summary.jobs.length} ${summary.jobs.length === 1 ? "job" : "jobs"}${summary.unassigned.count ? " and unassigned purchases" : ""}`}
+          </p>
         </div>
+        <Button type="button" onClick={openNew} className="min-h-12 rounded-full bg-jx-green px-6 text-xs font-bold tracking-[.08em] text-white hover:bg-jx-green-hover sm:px-7 sm:text-sm" data-testid="button-add-material">
+          <Plus className="mr-2 h-4 w-4" aria-hidden="true" /> LOG PURCHASE
+        </Button>
+      </header>
 
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-          <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              className="pl-9"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search materials, vendors, or jobs…"
-              data-testid="input-search-materials"
-            />
+      <section aria-label={`${monthName} purchase totals`} className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3" data-testid="materials-monthly-summary">
+        {isLoading ? [0, 1, 2].map((item) => <SkeletonCard key={item} tint={item ? "bg-jx-surface" : "bg-jx-blue-tint"} />) : materialsError ? (
+          <div className="col-span-full flex flex-wrap items-center justify-between gap-4 rounded-[24px] bg-jx-orange-tint p-5 text-jx-orange-ink" role="alert" data-testid="materials-error">
+            <div><h2 className="font-display text-xl !font-bold">Purchases didn’t load</h2><p className="mt-1 text-sm">Your monthly totals and purchase list are unavailable. Try again.</p></div>
+            <Button type="button" variant="outline" className="min-h-11 rounded-full border-2 border-current px-5 text-current" onClick={() => void retryMaterials()} disabled={materialsFetching} data-testid="button-retry-materials">{materialsFetching ? "Trying again…" : "Retry"}</Button>
           </div>
-          <Select value={jobFilter} onValueChange={setJobFilter}>
-            <SelectTrigger className="w-full sm:w-[240px]" data-testid="select-filter-material-job">
-              <SelectValue placeholder="Filter by job" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All jobs</SelectItem>
-              {jobs.map((job) => <SelectItem key={job.id} value={job.id}>{job.title}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+        ) : <>
+          <article className="min-h-[164px] rounded-[26px] bg-jx-blue px-6 py-5 text-white sm:px-7">
+            <Package className="h-7 w-7" strokeWidth={1.8} aria-hidden="true" />
+            <p className="mt-5 text-sm font-medium text-white/85">Spent in {monthOnly}</p>
+            <p className="mt-1 font-mono text-[36px] leading-tight tracking-[-.045em] tabular-nums sm:text-[40px]" data-testid="stat-materials-monthly">{money(summary.total)}</p>
+            <p className="mt-1 text-xs text-white/75">{monthName} · {safeMaterials.filter((item) => item.purchaseDate.slice(0, 7) === `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`).length} purchases</p>
+          </article>
+          {summary.jobs.map((job, index) => <article key={job.id} className={`min-h-[164px] rounded-[26px] p-6 sm:px-7 ${CARD_TINTS[index % CARD_TINTS.length].card}`} data-testid={`material-job-summary-${job.id}`}>
+            <h2 className={`line-clamp-2 min-h-10 font-display text-[17px] !font-bold leading-snug tracking-[-.025em] text-jx-ink`}>{job.title}</h2>
+            <p className="mt-1 text-sm text-jx-ink-2">{job.count} {job.count === 1 ? "purchase" : "purchases"} · {monthOnly}</p>
+            <p className={`mt-1 font-mono text-[30px] leading-tight tracking-[-.04em] tabular-nums ${CARD_TINTS[index % CARD_TINTS.length].ink}`} data-testid={`material-job-monthly-total-${job.id}`}>{money(job.total)}</p>
+          </article>)}
+          {summary.unassigned.count > 0 && <article className="min-h-[164px] rounded-[26px] bg-jx-surface p-6 sm:px-7" data-testid="material-job-summary-unassigned">
+            <h2 className="font-display text-[17px] !font-bold text-jx-ink">Unassigned purchases</h2>
+            <p className="mt-2 text-sm text-jx-ink-2">{summary.unassigned.count} {summary.unassigned.count === 1 ? "purchase" : "purchases"} · {monthOnly}</p>
+            <p className="mt-1 font-mono text-[30px] leading-tight tracking-[-.04em] tabular-nums text-jx-ink" data-testid="material-job-monthly-total-unassigned">{money(summary.unassigned.total)}</p>
+          </article>}
+          {summary.jobs.length === 0 && summary.unassigned.count === 0 && <div className="flex min-h-[164px] items-center rounded-[26px] bg-jx-surface px-6 text-sm text-jx-ink-2">No purchases recorded in {monthName} yet.</div>}
+        </>}
+      </section>
+      {!materialsError && !isLoading && <p className="-mt-3 text-xs text-jx-ink-3">Monthly cards include this month only. The purchase table below keeps all dates.</p>}
 
-        <div className="overflow-hidden rounded-xl border bg-card">
-          <div className="flex items-center justify-between border-b bg-muted/40 px-4 py-3">
-            <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {filteredMaterials.length} material{filteredMaterials.length === 1 ? "" : "s"}
-            </span>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{totalLabel}</div>
-                <div className="font-mono text-sm font-semibold text-foreground" data-testid="text-material-total">
-                  {formatMoney(filteredTotal)}
-                </div>
-              </div>
-              {(jobFilter !== "all" || search) && (
-                <button className="text-xs font-medium text-primary hover:underline" onClick={() => { setJobFilter("all"); setSearch(""); }}>
-                  Clear filters
-                </button>
-              )}
-            </div>
+      <section aria-label="Search and filter purchases" className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-full border-2 border-transparent bg-jx-surface px-4 focus-within:border-jx-green sm:max-w-[460px]">
+          <Search className="h-4 w-4 shrink-0 text-jx-ink-3" aria-hidden="true" />
+          <input type="search" aria-label="Search materials, description, vendor, or job" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search materials, vendors, or jobs" className="min-w-0 flex-1 bg-transparent text-sm text-jx-ink outline-none placeholder:text-jx-ink-3" data-testid="input-search-materials" />
+        </div>
+        <Select value={jobFilter} onValueChange={setJobFilter} disabled={jobsLoading || jobsError}>
+          <SelectTrigger className="min-h-12 w-full rounded-full border-2 border-jx-line bg-card px-5 text-jx-ink sm:w-[250px]" data-testid="select-filter-material-job"><SelectValue placeholder={jobsError ? "Jobs unavailable" : "Filter by job"} /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All jobs</SelectItem><SelectItem value="unassigned">Unassigned</SelectItem>{safeJobs.map((job) => <SelectItem key={job.id} value={job.id}>{job.title}</SelectItem>)}</SelectContent>
+        </Select>
+        {jobsLoading && <span role="status" className="text-sm text-jx-ink-2">Loading jobs…</span>}
+        {jobsError && <div role="alert" className="flex items-center gap-2 text-sm text-jx-orange-ink">Job filter unavailable <button type="button" className="min-h-11 underline" onClick={() => void retryJobs()} disabled={jobsFetching}>Retry</button></div>}
+        {activeFilter && <Button type="button" variant="ghost" className="min-h-11 rounded-full px-4 text-jx-ink-2" onClick={() => { setJobFilter("all"); setSearch(""); }}>Clear filters</Button>}
+      </section>
+
+      <section className="min-w-0 overflow-hidden rounded-[24px] border border-jx-line bg-card" data-testid="materials-table-container">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-jx-line bg-jx-surface px-4 py-3.5 sm:px-5">
+          <div><span className="text-sm font-semibold text-jx-ink">{isLoading || materialsError ? "Purchase history" : `${filteredMaterials.length} ${filteredMaterials.length === 1 ? "purchase" : "purchases"}`}</span><span className="ml-2 text-xs text-jx-ink-2">All dates</span></div>
+          <div className="flex items-center gap-3">
+            <div className="text-right"><div className="text-[10px] font-bold uppercase tracking-[.12em] text-jx-ink-3">{totalLabel}</div><div className="font-mono text-base font-semibold tabular-nums text-jx-ink" data-testid="text-material-total">{isLoading || materialsError ? "—" : money(filteredTotal)}</div></div>
           </div>
-
-          {isLoading ? (
-            <div className="py-16 text-center text-sm text-muted-foreground">Loading materials…</div>
-          ) : filteredMaterials.length === 0 ? (
-            <div className="flex flex-col items-center px-6 py-16 text-center">
-              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                <Package className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <h2 className="text-sm font-semibold">{materials.length ? "No materials match your filters" : "No materials yet"}</h2>
-              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                {materials.length ? "Try another search or job filter." : "Add your first purchase to start tracking job materials."}
-              </p>
-              {!materials.length && <Button className="mt-4" variant="outline" onClick={openNew}><Plus className="mr-2 h-4 w-4" /> Add material</Button>}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[800px] text-sm">
-                <thead className="border-b bg-muted/20 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3 font-semibold">Material</th>
-                    <th className="px-4 py-3 font-semibold">Job</th>
-                    <th className="px-4 py-3 font-semibold">Purchased</th>
-                    <th className="px-4 py-3 font-semibold">Quantity</th>
-                    <th className="px-4 py-3 text-right font-semibold">Price</th>
-                    <th className="w-24 px-4 py-3" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {filteredMaterials.map((material) => (
-                    <tr key={material.id} className="transition-colors hover:bg-muted/30" data-testid={`row-material-${material.id}`}>
-                      <td className="px-4 py-3">
-                        <div className="font-medium">{material.name}</div>
-                        <div className="max-w-[280px] truncate text-xs text-muted-foreground">
-                          {[material.description, material.vendor].filter(Boolean).join(" · ") || "No details"}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        {material.job ? <span className="font-medium">{material.job.title}</span> : <span className="text-muted-foreground">Unassigned</span>}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{formatDate(material.purchaseDate)}</td>
-                      <td className="whitespace-nowrap px-4 py-3">{material.quantity} {material.unit}</td>
-                      <td className="px-4 py-3 text-right font-mono font-medium">{formatMoney(material.price)}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => openEdit(material)} aria-label={`Edit ${material.name}`} data-testid={`button-edit-material-${material.id}`}>
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => setDeletingMaterial(material)} aria-label={`Delete ${material.name}`} data-testid={`button-delete-material-${material.id}`}>
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
-      </div>
-
-      <MaterialFormDialog
-        key={editingMaterial?.id ?? "new"}
-        open={dialogOpen}
-        onOpenChange={(open) => { setDialogOpen(open); if (!open) setEditingMaterial(null); }}
-        material={editingMaterial}
-        jobs={jobs}
-      />
-
-      <AlertDialog open={!!deletingMaterial} onOpenChange={(open) => { if (!open) setDeletingMaterial(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete material?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete <strong>{deletingMaterial?.name}</strong> from your materials list. This cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deletingMaterial && deleteMutation.mutate(deletingMaterial.id)}
-              disabled={deleteMutation.isPending}
-              data-testid="button-confirm-delete-material"
-            >
-              {deleteMutation.isPending ? "Deleting…" : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        {isLoading ? <div className="space-y-3 p-5" aria-label="Loading purchases" data-testid="materials-loading">{[0, 1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-xl bg-jx-surface" />)}</div>
+          : materialsError ? <div className="flex min-h-48 flex-col items-center justify-center px-5 text-center text-jx-ink-2"><AlertTriangle className="mb-3 h-6 w-6 text-jx-orange-ink" aria-hidden="true" /><p className="font-semibold text-jx-ink">Purchase history is unavailable</p><p className="mt-1 text-sm">The list couldn’t be loaded. Use Retry above to check again.</p></div>
+          : filteredMaterials.length === 0 ? <div className="flex min-h-56 flex-col items-center justify-center px-6 py-12 text-center" data-testid={safeMaterials.length ? "materials-no-matches" : "materials-empty"}>
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-jx-green-tint text-jx-green-ink">{safeMaterials.length ? <Search className="h-6 w-6" aria-hidden="true" /> : <Package className="h-6 w-6" aria-hidden="true" />}</div>
+            <h2 className="font-display text-2xl !font-bold text-jx-ink">{safeMaterials.length ? "No matching purchases" : "No purchases yet"}</h2>
+            <p className="mt-2 max-w-sm text-sm text-jx-ink-2">{safeMaterials.length ? "Try a different search or job filter. Older purchases remain available in this table." : "Log a material purchase to start tracking what each job costs."}</p>
+            {safeMaterials.length ? <Button type="button" variant="outline" className="mt-4 min-h-11 rounded-full border-2 border-jx-ink px-5" onClick={() => { setJobFilter("all"); setSearch(""); }}>Clear filters</Button> : <Button type="button" className="mt-4 min-h-11 rounded-full bg-jx-green px-5 font-bold text-white" onClick={openNew}><Plus className="mr-2 h-4 w-4" /> Log purchase</Button>}
+          </div> : <div className="relative w-full overflow-x-auto" data-testid="materials-table-scroll">
+            <table className="w-full min-w-[920px] text-sm">
+              <thead className="border-b border-jx-line bg-card text-left text-[11px] font-bold uppercase tracking-[.1em] text-jx-ink-3"><tr>
+                <th className="px-5 py-4">Material</th><th className="px-4 py-4">Job</th><th className="px-4 py-4">Vendor</th><th className="whitespace-nowrap px-4 py-4">Date</th><th className="whitespace-nowrap px-4 py-4 text-right">Qty</th><th className="whitespace-nowrap px-4 py-4 text-right">Price</th><th className="whitespace-nowrap px-4 py-4 text-right">Total</th><th className="w-28 px-4 py-4"><span className="sr-only">Actions</span></th>
+              </tr></thead>
+              <tbody className="divide-y divide-jx-line/70">
+                {filteredMaterials.map((material, index) => {
+                  const tint = CARD_TINTS[index % CARD_TINTS.length];
+                  const qty = Number(material.quantity);
+                  const storedTotal = Number(material.price);
+                  const derivedUnitPrice = qty ? storedTotal / qty : 0;
+                  return <tr key={material.id} className="transition-colors hover:bg-jx-surface/70" data-testid={`row-material-${material.id}`}>
+                    <td className="max-w-[280px] px-5 py-4"><div className="font-semibold text-jx-ink">{material.name}</div>{material.description && <div className="mt-0.5 truncate text-xs text-jx-ink-2">{material.description}</div>}</td>
+                    <td className="px-4 py-4"><span className="inline-flex max-w-[180px] items-center gap-2"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${material.job ? tint.ink.replace("text-", "bg-") : "bg-jx-ink-3"}`} aria-hidden="true" /><span className="truncate font-medium text-jx-ink">{material.job?.title ?? "Unassigned"}</span></span></td>
+                    <td className="max-w-[160px] truncate px-4 py-4 text-jx-ink-2">{material.vendor || "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-jx-ink-2">{formatDate(material.purchaseDate)}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right text-jx-ink">{material.quantity} {material.unit}</td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right"><span className="font-mono text-jx-ink-2" data-testid={`cell-material-unitprice-${material.id}`}>{money(derivedUnitPrice)}</span><span className="mt-0.5 block text-[10px] text-jx-ink-3">calc. / unit</span></td>
+                    <td className="whitespace-nowrap px-4 py-4 text-right font-mono font-semibold tabular-nums text-jx-ink" data-testid={`cell-material-total-${material.id}`}>{money(storedTotal)}</td>
+                    <td className="px-4 py-3"><div className="flex justify-end gap-1">
+                      <Button type="button" variant="ghost" size="icon" className="h-11 w-11 rounded-full" onClick={() => openEdit(material)} aria-label={`Edit ${material.name}`} data-testid={`button-edit-material-${material.id}`}><Edit className="h-4 w-4" aria-hidden="true" /></Button>
+                      <Button type="button" variant="ghost" size="icon" className="h-11 w-11 rounded-full text-jx-orange-ink hover:bg-jx-orange-tint" onClick={() => openDelete(material)} aria-label={`Delete ${material.name}`} data-testid={`button-delete-material-${material.id}`}><Trash2 className="h-4 w-4" aria-hidden="true" /></Button>
+                    </div></td>
+                  </tr>;
+                })}
+              </tbody>
+            </table>
+          </div>}
+      </section>
     </div>
-  );
+
+    <MaterialFormDialog key={editingMaterial?.id ?? "new"} open={dialogOpen} onOpenChange={closeForm} material={editingMaterial} jobs={safeJobs} jobsLoading={jobsLoading} jobsError={jobsError} jobsRetry={() => void retryJobs()} />
+    <AlertDialog open={!!deletingMaterial} onOpenChange={(open) => { if (!open && !deleteMutation.isPending) { setDeletingMaterial(null); setDeleteError(""); } }}>
+      <AlertDialogContent className="rounded-[26px] border-jx-line bg-card text-jx-ink">
+        <AlertDialogHeader>
+          <div className="mb-1 flex h-12 w-12 items-center justify-center rounded-2xl bg-jx-orange-tint text-jx-orange-ink"><Trash2 className="h-5 w-5" aria-hidden="true" /></div>
+          <AlertDialogTitle className="font-display text-2xl !font-bold text-jx-ink">Delete this purchase?</AlertDialogTitle>
+          <AlertDialogDescription className="text-jx-ink-2">Permanently remove <strong className="text-jx-ink">{deletingMaterial?.name}</strong> from the purchase history. This can’t be undone.</AlertDialogDescription>
+        </AlertDialogHeader>
+        {deleteError && <p className="rounded-xl bg-jx-orange-tint px-4 py-3 text-sm text-jx-orange-ink" role="alert">{deleteError}</p>}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deleteMutation.isPending} className="min-h-11 rounded-full" data-testid="button-cancel-delete-material">Cancel</AlertDialogCancel>
+          <AlertDialogAction className="min-h-11 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={deleteMutation.isPending} onClick={(event) => { event.preventDefault(); if (deletingMaterial && !deleteMutation.isPending) { setDeleteError(""); deleteMutation.mutate(deletingMaterial.id); } }} data-testid="button-confirm-delete-material">{deleteMutation.isPending ? "Deleting…" : "Delete purchase"}</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </main>;
 }

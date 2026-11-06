@@ -22,6 +22,8 @@ import {
   type InsertTimeEntry,
   type PayrollRecord,
   type InsertPayrollRecord,
+  type PayrollWorksheet,
+  type InsertPayrollWorksheet,
   type EmployeeDeduction,
   type InsertEmployeeDeduction,
   type PayrollSettings,
@@ -58,6 +60,7 @@ import {
   employeeAssignments,
   timeEntries,
   payrollRecords,
+  payrollWorksheets,
   employeeDeductions,
   payrollSettings,
   settings,
@@ -74,7 +77,7 @@ import {
   plaidTransactions,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, gte, lte, sql, isNull, or, inArray } from "drizzle-orm";
+import { eq, ne, desc, and, gte, lte, sql, isNull, or, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -160,6 +163,13 @@ export interface IStorage {
   getPayrollRecordsByEmployee(employeeId: string): Promise<PayrollRecord[]>;
   createPayrollRecord(record: InsertPayrollRecord): Promise<PayrollRecord>;
   updatePayrollRecord(id: string, updates: Partial<InsertPayrollRecord>): Promise<PayrollRecord | undefined>;
+
+  // Payroll Worksheets (Gusto-assisted)
+  getPayrollWorksheets(): Promise<PayrollWorksheet[]>;
+  getPayrollWorksheet(id: string): Promise<PayrollWorksheet | undefined>;
+  createPayrollWorksheet(worksheet: InsertPayrollWorksheet): Promise<PayrollWorksheet>;
+  updatePayrollWorksheet(id: string, updates: Partial<InsertPayrollWorksheet>): Promise<PayrollWorksheet | undefined>;
+  updateUnconfirmedPayrollWorksheet(id: string, updates: Partial<InsertPayrollWorksheet>): Promise<PayrollWorksheet | undefined>;
 
   // Employee Deductions
   getDeductionsByEmployee(employeeId: string): Promise<EmployeeDeduction[]>;
@@ -590,6 +600,37 @@ export class DatabaseStorage implements IStorage {
 
   async updatePayrollRecord(id: string, updates: Partial<InsertPayrollRecord>): Promise<PayrollRecord | undefined> {
     const [updated] = await db.update(payrollRecords).set(updates).where(eq(payrollRecords.id, id)).returning();
+    return updated || undefined;
+  }
+
+  // Payroll Worksheets (Gusto-assisted)
+  async getPayrollWorksheets(): Promise<PayrollWorksheet[]> {
+    return db.select().from(payrollWorksheets).orderBy(desc(payrollWorksheets.periodStart), desc(payrollWorksheets.createdAt));
+  }
+
+  async getPayrollWorksheet(id: string): Promise<PayrollWorksheet | undefined> {
+    const [worksheet] = await db.select().from(payrollWorksheets).where(eq(payrollWorksheets.id, id));
+    return worksheet || undefined;
+  }
+
+  async createPayrollWorksheet(worksheet: InsertPayrollWorksheet): Promise<PayrollWorksheet> {
+    const [created] = await db.insert(payrollWorksheets).values(worksheet).returning();
+    return created;
+  }
+
+  async updatePayrollWorksheet(id: string, updates: Partial<InsertPayrollWorksheet>): Promise<PayrollWorksheet | undefined> {
+    const [updated] = await db.update(payrollWorksheets)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(payrollWorksheets.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async updateUnconfirmedPayrollWorksheet(id: string, updates: Partial<InsertPayrollWorksheet>): Promise<PayrollWorksheet | undefined> {
+    const [updated] = await db.update(payrollWorksheets)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(eq(payrollWorksheets.id, id), ne(payrollWorksheets.status, "confirmed")))
+      .returning();
     return updated || undefined;
   }
 

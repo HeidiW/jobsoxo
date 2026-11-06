@@ -114,7 +114,7 @@ export default function InvoicePay() {
           <CardContent className="space-y-4">
             {isPaid ? (
               <div className="flex flex-col items-center py-6 gap-3" data-testid="status-paid">
-                <CheckCircle className="h-14 w-14 text-green-500" />
+                <CheckCircle className="h-14 w-14 text-jx-green-ink" />
                 <p className="text-lg font-semibold text-gray-800">All paid — thank you!</p>
                 <p className="text-sm text-gray-500">
                   {paymentSuccess
@@ -132,7 +132,7 @@ export default function InvoicePay() {
                   {Number(data.amountPaid) > 0 && (
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">Already Paid</span>
-                      <span className="font-medium text-green-600" data-testid="text-amount-paid">
+                      <span className="font-medium text-jx-green-ink" data-testid="text-amount-paid">
                         {formatCurrency(data.amountPaid)}
                       </span>
                     </div>

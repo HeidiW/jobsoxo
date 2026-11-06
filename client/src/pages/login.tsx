@@ -94,7 +94,7 @@ type ForgotValues = z.infer<typeof forgotSchema>;
 function PasswordStrength({ password }: { password: string }) {
   if (!password) return null;
   const passed = passwordRules.filter((r) => r.test(password)).length;
-  const colors = ["bg-red-500", "bg-orange-500", "bg-yellow-500", "bg-blue-500", "bg-green-500"];
+  const colors = ["bg-red-500", "bg-orange-500", "bg-yellow-500", "bg-blue-500", "bg-jx-green"];
   const barColor = colors[passed - 1] ?? "bg-muted";
 
   return (
@@ -113,7 +113,7 @@ function PasswordStrength({ password }: { password: string }) {
         {passwordRules.map((rule) => {
           const ok = rule.test(password);
           return (
-            <li key={rule.label} className={`flex items-center gap-1.5 text-xs ${ok ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>
+            <li key={rule.label} className={`flex items-center gap-1.5 text-xs ${ok ? "text-jx-green-ink" : "text-muted-foreground"}`}>
               {ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
               {rule.label}
             </li>
@@ -596,7 +596,7 @@ export default function Login() {
           {/* Sent confirmation */}
           {currentView === "forgot-sent" && (
             <div className="space-y-4 text-center">
-              <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto" />
+              <CheckCircle2 className="h-10 w-10 text-jx-green-ink mx-auto" />
               <p className="text-sm text-muted-foreground">
                 If that account exists and has an email on file, a reset link has been sent. Check your inbox — the link expires in 1 hour.
               </p>
