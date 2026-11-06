@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, date, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, date, boolean, jsonb, json, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -26,6 +26,14 @@ function nonNegativeNumericString(label: string) {
     `${label} must not be negative`
   );
 }
+
+// Login sessions, read and written by connect-pg-simple (server/index.ts).
+// Matches its table.sql; not used through Drizzle.
+export const sessions = pgTable("session", {
+  sid: varchar("sid").primaryKey(),
+  sess: json("sess").notNull(),
+  expire: timestamp("expire", { precision: 6 }).notNull(),
+}, (table) => [index("IDX_session_expire").on(table.expire)]);
 
 // Users table for authentication
 export const users = pgTable("users", {
