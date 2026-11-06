@@ -32,3 +32,9 @@ Enable focus emulation for interactive headless CDP checks instead of assuming t
 **Why:** In this environment, `element.focus()` can change `document.activeElement` while `document.hasFocus()` stays false and React's focus handler does not run. This falsely suggested that address suggestions were broken even with deterministic mocked responses.
 
 **How to apply:** Call `Emulation.setFocusEmulationEnabled({ enabled: true })` for the test session, verify `document.hasFocus()`, and blur/refocus an already-active input before checking focus-dependent UI.
+
+Check browser-tool availability before relying on interactive verification in a new session.
+
+**Why:** A session rejected the documented testing subagent kind, and downloaded Chromium could not run with the available Nix/system library combination. Screenshot capture still worked independently.
+
+**How to apply:** Do not assume screenshot availability implies local Playwright support. Avoid repeated library-path experiments; explicitly report any interactive or dark-mode visual checks that remain unverified.
