@@ -31,6 +31,8 @@ services:
           envVarKey: RENDER_EXTERNAL_URL
       - key: SESSION_SECRET
         generateValue: true
+      - key: SETUP_CODE # Required to create the first admin on an empty database; read it from the dashboard
+        generateValue: true
       - key: ENCRYPTION_KEY # Must be 64 hex chars: `openssl rand -hex 32` (generateValue is base64)
         sync: false
 

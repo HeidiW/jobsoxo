@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { createLinkToken, exchangePublicToken, getAccountInfo, getBalance, getTransactions, isPlaidConfigured } from "./plaid";
 import { seedDemoData } from "./seed";
 import { calendarDay } from "./business-time";
+import { checkSetupCode, setupCodeRequired } from "./setup-code";
 // Function declaration (not const) so it's hoisted and immune to TDZ in circular-dep scenarios.
 // import.meta.url is valid in ESM (dev/tsx) but undefined in CJS bundles (production build).
 // Falls back to process.cwd() path so createRequire can still resolve node_modules.
@@ -142,7 +143,7 @@ export async function registerRoutes(
   app.get("/api/auth/setup-status", async (_req, res) => {
     try {
       const [existing] = await db.select().from(users).limit(1);
-      res.json({ needsSetup: !existing });
+      res.json({ needsSetup: !existing, setupCodeRequired: !existing && setupCodeRequired() });
     } catch (error) {
       res.status(500).json({ error: "Failed to check setup status" });
     }
@@ -162,6 +163,13 @@ export async function registerRoutes(
       const [existing] = await db.select().from(users).limit(1);
       if (existing) {
         return res.status(403).json({ error: "Setup already complete" });
+      }
+      const codeCheck = checkSetupCode(req.body?.setupCode);
+      if (codeCheck === "not_configured") {
+        return res.status(403).json({ error: "Setup is locked. Set SETUP_CODE in the server environment, then enter it here." });
+      }
+      if (codeCheck === "invalid") {
+        return res.status(403).json({ error: "Incorrect setup code" });
       }
       const { username, password } = req.body;
       if (!username || !password) {

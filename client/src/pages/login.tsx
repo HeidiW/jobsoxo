@@ -89,6 +89,7 @@ const setupSchema = z.object({
     .regex(/[a-z]/, "Must contain a lowercase letter")
     .regex(/[^A-Za-z0-9]/, "Must contain a special character (e.g. !@#$%)"),
   confirmPassword: z.string().min(1, "Please confirm your password"),
+  setupCode: z.string().optional(),
 }).refine((d) => d.password === d.confirmPassword, {
   message: "Passwords do not match",
   path: ["confirmPassword"],
@@ -208,7 +209,7 @@ export default function Login() {
     }
   }, []);
 
-  const { data: setupStatus, isLoading: checkingSetup } = useQuery<{ needsSetup: boolean }>({
+  const { data: setupStatus, isLoading: checkingSetup } = useQuery<{ needsSetup: boolean; setupCodeRequired?: boolean }>({
     queryKey: ["/api/auth/setup-status"],
     queryFn: getQueryFn({ on401: "returnNull" }),
     retry: false,
@@ -223,6 +224,7 @@ export default function Login() {
   const activeProviders = PROVIDERS.filter((p) => enabledProviders?.[p.key]);
 
   const isSetup = setupStatus?.needsSetup === true;
+  const setupCodeRequired = isSetup && setupStatus?.setupCodeRequired === true;
 
   // ── Forms ──────────────────────────────────────────────────────────────────
 
@@ -233,7 +235,7 @@ export default function Login() {
 
   const setupForm = useForm<SetupValues>({
     resolver: zodResolver(setupSchema),
-    defaultValues: { username: "", password: "", confirmPassword: "" },
+    defaultValues: { username: "", password: "", confirmPassword: "", setupCode: "" },
   });
 
   const signupForm = useForm<SignupValues>({
@@ -274,6 +276,7 @@ export default function Login() {
       const res = await apiRequest("POST", "/api/auth/register", {
         username: data.username,
         password: data.password,
+        setupCode: data.setupCode,
       });
       return res.json();
     },
@@ -396,7 +399,16 @@ export default function Login() {
           {currentView === "setup" && (
             <>
             <Form {...setupForm}>
-              <form onSubmit={setupForm.handleSubmit((d) => setupMutation.mutate(d))} className="space-y-4">
+              <form
+                onSubmit={setupForm.handleSubmit((d) => {
+                  if (setupCodeRequired && !d.setupCode?.trim()) {
+                    setupForm.setError("setupCode", { message: "Setup code is required" });
+                    return;
+                  }
+                  setupMutation.mutate(d);
+                })}
+                className="space-y-4"
+              >
                 <FormField control={setupForm.control} name="username" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Username or Email</FormLabel>
@@ -425,6 +437,17 @@ export default function Login() {
                     <FormMessage />
                   </FormItem>
                 )} />
+                {setupCodeRequired && (
+                  <FormField control={setupForm.control} name="setupCode" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Setup Code</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="password" placeholder="From your server's SETUP_CODE setting" autoComplete="off" data-testid="input-setup-code" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                )}
                 <Button type="submit" className="w-full" disabled={setupMutation.isPending} data-testid="button-create-account">
                   {setupMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                   Create Account

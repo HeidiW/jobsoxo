@@ -325,6 +325,7 @@ The main variables are below; `.env.example` lists every one the server reads (i
 |---|---|---|
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `SESSION_SECRET` | Yes | Secret for express-session cookie signing (server won't start in production without it) |
+| `SETUP_CODE` | Production | Code required to create the first admin on an empty database; setup is refused in production without it |
 | `ENCRYPTION_KEY` | Yes | 64 hex chars; encrypts stored bank and provider tokens. Production key must be copied exactly when moving hosts |
 | `RESEND_API_KEY` | Yes | Resend API key for sending emails |
 | `TWILIO_ACCOUNT_SID` | Yes | Twilio account SID for SMS |

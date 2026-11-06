@@ -16,8 +16,8 @@ vi.mock("@/lib/queryClient", async (importOriginal) => {
   };
 });
 
-function renderLogin(needsSetup = false, providers = { google: true, microsoft: true, apple: true, yahoo: true }) {
-  queryClient.setQueryData(["/api/auth/setup-status"], { needsSetup });
+function renderLogin(needsSetup = false, providers = { google: true, microsoft: true, apple: true, yahoo: true }, setupCodeRequired = false) {
+  queryClient.setQueryData(["/api/auth/setup-status"], { needsSetup, setupCodeRequired });
   queryClient.setQueryData(["/api/auth/providers"], providers);
   return render(<QueryClientProvider client={queryClient}><Login /></QueryClientProvider>);
 }
@@ -98,6 +98,30 @@ describe("JobsOxo login", () => {
     expect(screen.getByTestId("button-oauth-setup-apple")).toHaveAttribute("href", "/api/auth/apple");
     fireEvent.click(screen.getByTestId("link-setup-forgot-password"));
     expect(screen.getByTestId("button-send-reset")).toBeInTheDocument();
+  });
+
+  it("asks for the setup code when the server requires one and sends it", async () => {
+    vi.mocked(apiRequest).mockResolvedValue(new Response(JSON.stringify({ id: "u1", username: "owner", isAdmin: true })));
+    renderLogin(true, undefined, true);
+    fireEvent.change(screen.getByTestId("input-setup-username"), { target: { value: "owner@example.com" } });
+    fireEvent.change(screen.getByTestId("input-setup-password"), { target: { value: "Setup-Code-123" } });
+    fireEvent.change(screen.getByTestId("input-setup-confirm"), { target: { value: "Setup-Code-123" } });
+
+    fireEvent.click(screen.getByTestId("button-create-account"));
+    expect(await screen.findByText("Setup code is required")).toBeInTheDocument();
+    expect(apiRequest).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByTestId("input-setup-code"), { target: { value: "correct-horse" } });
+    fireEvent.click(screen.getByTestId("button-create-account"));
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledWith("POST", "/api/auth/register", {
+      username: "owner@example.com", password: "Setup-Code-123", setupCode: "correct-horse",
+    }));
+  });
+
+  it("hides the setup code field when no code is required", () => {
+    renderLogin(true);
+    expect(screen.getByTestId("input-setup-username")).toBeInTheDocument();
+    expect(screen.queryByTestId("input-setup-code")).not.toBeInTheDocument();
   });
 
   it("uses the password-reset mutation and renders the sent confirmation", async () => {
