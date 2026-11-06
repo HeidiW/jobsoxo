@@ -1,12 +1,9 @@
 /**
  * Gmail integration.
  *
- * Supports two modes:
- * 1. Per-user OAuth — each user connects their own Gmail account via
- *    GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET. Tokens are stored in the
- *    google_tokens DB table and refreshed automatically.
- * 2. Replit connector (legacy) — app-level shared mailbox via the Replit
- *    connector proxy (REPLIT_CONNECTORS_HOSTNAME + REPL_IDENTITY).
+ * Per-user OAuth — each user connects their own Gmail account via
+ * GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET. Tokens are stored in the
+ * google_tokens DB table and refreshed automatically.
  */
 
 import { storage } from "./storage";
@@ -344,99 +341,4 @@ export async function fetchUserGmailInbox(userId: string, maxResults = 50): Prom
   if (!accessToken) throw new Error("Gmail not connected");
   const labels = await storage.getSyncLabels(userId);
   return fetchGmailInboxWithToken(accessToken, maxResults, labels.length > 0 ? labels : ["INBOX"]);
-}
-
-// ── Replit connector (legacy shared mailbox) ────────────────────────────────
-
-const CONNECTORS_HOST = process.env.REPLIT_CONNECTORS_HOSTNAME;
-const REPL_IDENTITY = process.env.REPL_IDENTITY;
-
-async function getGmailConnection(): Promise<{ id: string } | null> {
-  if (!CONNECTORS_HOST || !REPL_IDENTITY) return null;
-
-  try {
-    const res = await fetch(`https://${CONNECTORS_HOST}/api/v2/connections`, {
-      headers: { "X-Replit-Identity": REPL_IDENTITY },
-    });
-    if (!res.ok) return null;
-
-    const data = (await res.json()) as {
-      connections?: Array<{ id: string; connectorConfigId?: string; displayName?: string }>;
-    };
-
-    const list = data.connections ?? (Array.isArray(data) ? (data as any[]) : []);
-    const conn = list.find(
-      (c) =>
-        c.connectorConfigId?.includes("google-mail") ||
-        c.displayName?.toLowerCase().includes("gmail")
-    );
-    return conn ?? null;
-  } catch {
-    return null;
-  }
-}
-
-async function getGmailAccessToken(): Promise<string | null> {
-  if (!CONNECTORS_HOST || !REPL_IDENTITY) return null;
-
-  const conn = await getGmailConnection();
-  if (!conn) return null;
-
-  try {
-    const res = await fetch(
-      `https://${CONNECTORS_HOST}/api/v2/connection/${conn.id}/token`,
-      { headers: { "X-Replit-Identity": REPL_IDENTITY } }
-    );
-    if (!res.ok) return null;
-
-    const data = (await res.json()) as { access_token?: string; token?: string };
-    return data.access_token ?? data.token ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export async function isGmailConnected(): Promise<boolean> {
-  const token = await getGmailAccessToken();
-  return !!token;
-}
-
-export async function getGmailConnectionId(): Promise<string | null> {
-  const conn = await getGmailConnection();
-  return conn?.id ?? null;
-}
-
-export async function revokeGmailConnection(): Promise<boolean> {
-  if (!CONNECTORS_HOST || !REPL_IDENTITY) return false;
-
-  const conn = await getGmailConnection();
-  if (!conn) return true;
-
-  try {
-    const res = await fetch(
-      `https://${CONNECTORS_HOST}/api/v2/connection/${conn.id}`,
-      {
-        method: "DELETE",
-        headers: { "X-Replit-Identity": REPL_IDENTITY },
-      }
-    );
-    return res.ok || res.status === 404;
-  } catch {
-    return false;
-  }
-}
-
-export function getGmailOAuthUrl(): string | null {
-  if (!CONNECTORS_HOST || !REPL_IDENTITY) return null;
-  return (
-    `https://${CONNECTORS_HOST}/api/v2/authorize` +
-    `?connectorConfigId=ccfg_google-mail_B959E7249792448ABBA58D46AF` +
-    `&replIdentity=${encodeURIComponent(REPL_IDENTITY)}`
-  );
-}
-
-export async function fetchGmailInbox(maxResults = 50): Promise<GmailMessage[]> {
-  const token = await getGmailAccessToken();
-  if (!token) throw new Error("Gmail not connected");
-  return fetchGmailInboxWithToken(token, maxResults);
 }

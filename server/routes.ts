@@ -29,7 +29,6 @@ import { sendInvoiceEmail, processOverdueReminders, sendPasswordResetEmail, send
 import bcrypt from "bcryptjs";
 import { passport, setupOAuthStrategies, getEnabledProviders, callbackUrl } from "./oauth";
 import {
-  isGmailConnected, fetchGmailInbox, revokeGmailConnection, getGmailOAuthUrl,
   buildGmailAuthUrl, exchangeGmailCode, getGmailCallbackUrl,
   isUserGmailConnected, getUserGmailEmail, fetchUserGmailInbox, revokeUserGmailToken,
   fetchGmailLabelsForUser,
@@ -2945,35 +2944,6 @@ export async function registerRoutes(
       res.json({ lastSyncedAt: t ? t.toISOString() : null });
     } catch {
       res.json({ lastSyncedAt: null });
-    }
-  });
-
-  // Initiate Gmail OAuth — returns the connector authorize URL for the frontend
-  // to open in a new tab. This is the runtime equivalent of proposeIntegration:
-  // the Replit connector proxy handles the Google OAuth handshake and stores
-  // the resulting tokens, after which isGmailConnected() returns true.
-  app.get("/api/inbox/connect", requireAdmin, async (req, res) => {
-    const authUrl = getGmailOAuthUrl();
-    if (!authUrl) {
-      return res.status(503).json({
-        error: "Replit connector infrastructure not available in this environment. " +
-               "Connect Gmail from the Replit integrations panel (puzzle-piece icon) instead.",
-        code: "NO_CONNECTOR_HOST",
-      });
-    }
-    res.json({ authUrl });
-  });
-
-  // Disconnect — revokes the OAuth token via the Replit connector proxy AND
-  // clears all cached inbox tasks. After this, isGmailConnected() returns false.
-  app.post("/api/inbox/disconnect", requireAdmin, async (req, res) => {
-    try {
-      const revoked = await revokeGmailConnection();
-      await storage.deleteUserInboxTasks(req.session.userId!);
-      res.json({ disconnected: true, revoked });
-    } catch (error) {
-      console.error("Inbox disconnect error:", error);
-      res.status(500).json({ error: "Failed to disconnect inbox" });
     }
   });
 
