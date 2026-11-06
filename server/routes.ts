@@ -1,6 +1,7 @@
 import { createRequire } from "node:module";
 import { createLinkToken, exchangePublicToken, getAccountInfo, getBalance, getTransactions, isPlaidConfigured } from "./plaid";
 import { seedDemoData } from "./seed";
+import { calendarDay } from "./business-time";
 // Function declaration (not const) so it's hoisted and immune to TDZ in circular-dep scenarios.
 // import.meta.url is valid in ESM (dev/tsx) but undefined in CJS bundles (production build).
 // Falls back to process.cwd() path so createRequire can still resolve node_modules.
@@ -2043,7 +2044,6 @@ export async function registerRoutes(
 
       const { employeeId, date, hoursWorked } = parsed.data;
       // Entry dates are calendar days encoded as UTC; don't use the server's local day.
-      const calendarDay = (value: Date | string) => new Date(value).toISOString().slice(0, 10);
       const day = calendarDay(date);
 
       const employeeEntries = await storage.getTimeEntriesByEmployee(employeeId);

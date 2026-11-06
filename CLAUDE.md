@@ -48,6 +48,7 @@ These protect real payroll, real funds and audit history. Don't relax them witho
 - **Real timestamps** (creation times, snooze expiry) are instants — don't reduce them to a date prefix.
 - Inbox "tomorrow" snooze = next local midnight in the user's browser time zone, computed client-side and sent as an explicit instant. Never rely on server midnight.
 - Don't compute day boundaries with server-local `setHours()`; the server's time zone is not the user's.
+- Server-side "today" (e.g. SMS time entries) is the business day in `America/New_York`: use `businessCalendarDate()` / `calendarDay()` from `server/business-time.ts`. Time entries always store a calendar day as UTC midnight.
 
 ## Forms
 

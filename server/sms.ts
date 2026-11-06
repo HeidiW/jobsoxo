@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { businessCalendarDate, calendarDay } from "./business-time";
 
 export interface SmsConfig {
   accountSid?: string;
@@ -189,17 +190,12 @@ export async function handleInboundSms(from: string, body: string): Promise<stri
 
   const { hours, description, jobRef } = parsed;
 
-  const now = new Date();
-  const dayStart = new Date(now);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(now);
-  dayEnd.setHours(23, 59, 59, 999);
+  // "Today" is the business's calendar day, stored like manual entries (UTC midnight).
+  const entryDate = businessCalendarDate();
+  const day = calendarDay(entryDate);
 
   const entries = await storage.getTimeEntriesByEmployee(employee.id);
-  const sameDayEntries = entries.filter((e) => {
-    const d = new Date(e.date);
-    return d >= dayStart && d <= dayEnd;
-  });
+  const sameDayEntries = entries.filter((e) => calendarDay(e.date) === day);
   const existingHours = sameDayEntries.reduce((sum, e) => sum + parseFloat(e.hoursWorked), 0);
   const newTotal = existingHours + hours;
 
@@ -243,14 +239,14 @@ export async function handleInboundSms(from: string, body: string): Promise<stri
   const entry: import("@shared/schema").InsertTimeEntry = {
     employeeId: employee.id,
     jobId: resolvedJobId,
-    date: now,
+    date: entryDate,
     hoursWorked: String(hours),
     description: entryDescription || "(via SMS)",
     source: "sms",
   };
   await storage.createTimeEntry(entry);
 
-  const dayName = now.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+  const dayName = entryDate.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", timeZone: "UTC" });
   const totalStr = newTotal % 1 === 0 ? String(newTotal) : newTotal.toFixed(1);
   const jobLine = resolvedJobName ? ` on "${resolvedJobName}"` : "";
   const reply = twimlReply(

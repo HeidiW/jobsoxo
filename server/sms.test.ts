@@ -5,6 +5,7 @@ import twilio from "twilio";
 import { buildTestApp } from "./test-helpers";
 import { storage } from "./storage";
 import { normalizePhone, parseHoursMessage, twimlReply } from "./sms";
+import { businessCalendarDate } from "./business-time";
 
 // ── Pure function tests ───────────────────────────────────────────────────────
 
@@ -339,7 +340,7 @@ describe("POST /api/sms/inbound — daily cap exceeded", () => {
     await storage.createTimeEntry({
       employeeId: emp.id,
       jobId: null,
-      date: new Date(),
+      date: businessCalendarDate(),
       hoursWorked: "20",
       description: "earlier shift (via SMS)",
     });
@@ -360,7 +361,7 @@ describe("POST /api/sms/inbound — daily cap exceeded", () => {
     await storage.createTimeEntry({
       employeeId: emp.id,
       jobId: null,
-      date: new Date(),
+      date: businessCalendarDate(),
       hoursWorked: "16",
       description: "earlier shift (via SMS)",
     });
@@ -368,5 +369,54 @@ describe("POST /api/sms/inbound — daily cap exceeded", () => {
     const res = await signedSmsRequest(app, "+15555550301", "8").expect(200);
     expect(res.text).toContain("Logged 8h");
     expect(res.text).toContain("Total today: 24");
+  });
+});
+
+describe("POST /api/sms/inbound — business-local day", () => {
+  let app: Express;
+
+  beforeAll(async () => {
+    process.env.TWILIO_AUTH_TOKEN = SMS_TOKEN;
+    app = await buildTestApp();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("logs an evening text on the New York day it was sent, not the UTC day", async () => {
+    // 9:30pm Monday Mar 9 in New York is 01:30 Tuesday Mar 10 UTC.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-03-10T01:30:00Z"));
+    const emp = await storage.createEmployee({
+      name: "Evening SMS Worker",
+      phone: "+15555550400",
+      dayRate: "200",
+      status: "active",
+    });
+
+    const res = await signedSmsRequest(app, "+15555550400", "6").expect(200);
+    expect(res.text).toContain("for Monday, Mar 9");
+
+    const entries = await storage.getTimeEntriesByEmployee(emp.id);
+    expect(new Date(entries[0].date).toISOString()).toBe("2026-03-09T00:00:00.000Z");
+  });
+
+  it("counts the cap against the New York day in the evening", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-03-10T01:30:00Z"));
+    const emp = await storage.createEmployee({
+      name: "Evening Cap SMS Worker",
+      phone: "+15555550401",
+      dayRate: "200",
+      status: "active",
+    });
+    // Same New York day (Mar 9) → counts; next calendar day (Mar 10) → doesn't.
+    await storage.createTimeEntry({ employeeId: emp.id, jobId: null, date: new Date("2026-03-09T00:00:00Z"), hoursWorked: "10", description: "day shift" });
+    await storage.createTimeEntry({ employeeId: emp.id, jobId: null, date: new Date("2026-03-10T00:00:00Z"), hoursWorked: "20", description: "tomorrow" });
+
+    const res = await signedSmsRequest(app, "+15555550401", "8").expect(200);
+    expect(res.text).toContain("Logged 8h");
+    expect(res.text).toContain("Total today: 18");
   });
 });
