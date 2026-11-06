@@ -6,7 +6,7 @@ Context carried over from a claude.ai chat so a Claude Code session can pick up 
 - Stack: React + Vite client, Express server (TypeScript, tsx), Drizzle ORM on Postgres 16, Vitest tests, `npm run check` for typecheck.
 - Currently runs only on Replit. Planned hosting: Render. Database: considering Supabase Postgres.
 - Integrations: Gusto **Embedded Payroll** (demo company only so far), Plaid (separate bank view, not a payroll dependency), Google/Microsoft/Apple OAuth, per-user Gmail OAuth, Resend, Twilio, Stripe, Cloudflare R2.
-- Existing agent memory lives in `.agents/memory/` — it records product decisions (payroll scope, change orders, schema safety, date handling). Treat it as authoritative and port it into `CLAUDE.md`.
+- Existing agent memory lives in `.agents/memory/` — it records product decisions (payroll scope, change orders, schema safety, date handling). Treat it as authoritative and port it into `CLAUDE.md`. *(Done: ported into `CLAUDE.md` and `.agents/memory/` removed on Nov 6, 2026; the original files are in git history.)*
 
 ## Decisions and open questions from this chat
 
