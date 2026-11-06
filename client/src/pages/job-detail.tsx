@@ -21,6 +21,7 @@ import JobForm from "@/components/job-form";
 import { InvoiceStatusBadge, JobStatusBadge } from "@/components/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatScheduleDate } from "./scheduling-logic";
 
 interface InvoiceWithItems extends Invoice { lineItems: LineItem[] }
 interface JobDetail extends Job {
@@ -34,11 +35,12 @@ type JobDocumentMeta = Omit<JobDocument, "fileData">;
 
 const money = (value: string | number | null | undefined) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value) || 0);
+// Timestamps (createdAt, uploadedAt). Calendar dates use formatScheduleDate.
 const shortDate = (value: string | Date) => format(new Date(value), "MMM d, yyyy");
 const dateRange = (job: Job) => {
   if (!job.startDate && !job.endDate) return "Dates not set";
-  if (job.startDate && job.endDate) return `${shortDate(job.startDate)} – ${shortDate(job.endDate)}`;
-  return job.startDate ? `Starts ${shortDate(job.startDate)}` : `Ends ${shortDate(job.endDate!)}`;
+  if (job.startDate && job.endDate) return `${formatScheduleDate(job.startDate)} – ${formatScheduleDate(job.endDate)}`;
+  return job.startDate ? `Starts ${formatScheduleDate(job.startDate)}` : `Ends ${formatScheduleDate(job.endDate)}`;
 };
 const formatBytes = (bytes: number) =>
   bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -364,8 +366,8 @@ export default function JobDetail() {
                 </div> : invoices.map((invoice) => <div key={invoice.id} className="flex items-center gap-2 rounded-2xl bg-card px-3 py-3">
                   <Link href={`/invoices/${invoice.id}`} className="min-w-0 flex-1 rounded-lg text-jx-ink hover:text-jx-green-ink" data-testid={`button-view-invoice-${invoice.id}`}>
                     <span className="block truncate font-mono text-sm font-semibold">{invoice.invoiceNumber}</span>
-                    <span className="mt-0.5 block text-xs text-jx-ink-2">{shortDate(invoice.issueDate)} · <span className="font-mono">{money(invoice.total)}</span></span>
-                    <span className="mt-1 block text-xs text-jx-ink-2">Due {shortDate(invoice.dueDate)}</span>
+                    <span className="mt-0.5 block text-xs text-jx-ink-2">{formatScheduleDate(invoice.issueDate)} · <span className="font-mono">{money(invoice.total)}</span></span>
+                    <span className="mt-1 block text-xs text-jx-ink-2">Due {formatScheduleDate(invoice.dueDate)}</span>
                     <span className="block text-xs text-jx-ink-2">Balance <span className="font-mono">{money(invoice.balance)}</span></span>
                   </Link>
                   <InvoiceStatusBadge status={invoice.status} />

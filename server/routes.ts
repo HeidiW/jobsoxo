@@ -2043,16 +2043,12 @@ export async function registerRoutes(
       if (!parsed.success) return badRequest(res, parsed.error);
 
       const { employeeId, date, hoursWorked } = parsed.data;
-      const dayStart = new Date(date);
-      dayStart.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(date);
-      dayEnd.setHours(23, 59, 59, 999);
+      // Entry dates are calendar days encoded as UTC; don't use the server's local day.
+      const calendarDay = (value: Date | string) => new Date(value).toISOString().slice(0, 10);
+      const day = calendarDay(date);
 
       const employeeEntries = await storage.getTimeEntriesByEmployee(employeeId);
-      const sameDayEntries = employeeEntries.filter((e) => {
-        const entryDate = new Date(e.date);
-        return entryDate >= dayStart && entryDate <= dayEnd;
-      });
+      const sameDayEntries = employeeEntries.filter((e) => calendarDay(e.date) === day);
 
       const existingTotal = sameDayEntries.reduce((sum, e) => sum + parseFloat(e.hoursWorked), 0);
       const newHours = parseFloat(String(hoursWorked));
