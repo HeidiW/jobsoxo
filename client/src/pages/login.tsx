@@ -200,7 +200,7 @@ export default function Login() {
     if (params.get("oauth_error")) {
       toast({
         title: "Sign-in failed",
-        description: "We couldn't sign you in with that provider. Please try again.",
+        description: "We couldn't sign you in with that provider. If you don't have a JobsOxo account yet, ask your admin for an invite.",
         variant: "destructive",
       });
       // Clean up URL

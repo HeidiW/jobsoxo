@@ -2,11 +2,9 @@ import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { Strategy as OAuth2Strategy } from "passport-oauth2";
 import { db } from "./db";
-import { oauthAccounts } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { oauthAccounts, users } from "@shared/schema";
+import { eq, and, or, sql } from "drizzle-orm";
 import { storage } from "./storage";
-import bcrypt from "bcryptjs";
-import crypto from "crypto";
 
 export type OAuthProvider = "google" | "microsoft" | "apple" | "yahoo";
 
@@ -32,11 +30,20 @@ export function getEnabledProviders(): Record<OAuthProvider, boolean> {
   };
 }
 
-export async function findOrCreateOAuthUser(
+/**
+ * Signs in an existing JobsOxo user with a provider identity. Never creates
+ * accounts: new people join by invite (or first-time setup), so a stranger's
+ * Google/Yahoo login must not grant access to the business's data.
+ *
+ * Returns the user when the identity is already linked, or when the provider
+ * has verified an email matching a user's email or email-style username (the
+ * identity is then linked). Otherwise returns null.
+ */
+export async function findOAuthUser(
   provider: string,
   providerId: string,
   email: string | null,
-  displayName: string | null,
+  emailVerified: boolean,
 ) {
   const [existing] = await db
     .select()
@@ -44,43 +51,28 @@ export async function findOrCreateOAuthUser(
     .where(and(eq(oauthAccounts.provider, provider), eq(oauthAccounts.providerId, providerId)));
 
   if (existing) {
-    return storage.getUser(existing.userId);
+    return (await storage.getUser(existing.userId)) ?? null;
   }
 
-  let user = email ? await storage.getUserByEmail(email) : null;
+  // An unverified email could belong to anyone, so it can't claim an account.
+  if (!email || !emailVerified) return null;
 
-  if (!user) {
-    const base =
-      (email
-        ? email.split("@")[0].replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 20)
-        : null) ||
-      displayName?.replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 20) ||
-      "user";
-
-    let username = base;
-    let attempt = 0;
-    while (await storage.getUserByUsername(username)) {
-      attempt++;
-      username = `${base}${attempt}`;
-    }
-
-    const randomPass = crypto.randomBytes(32).toString("hex");
-    const hash = await bcrypt.hash(randomPass, 10);
-    user = await storage.createUser({
-      username,
-      password: hash,
-      email: email ?? undefined,
-    });
-  }
+  const normalized = email.trim().toLowerCase();
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(or(eq(sql`lower(${users.email})`, normalized), eq(sql`lower(${users.username})`, normalized)))
+    .limit(1);
+  if (!user) return null;
 
   await db.insert(oauthAccounts).values({
-    userId: user!.id,
+    userId: user.id,
     provider,
     providerId,
-    email: email ?? null,
+    email,
   });
 
-  return user!;
+  return user;
 }
 
 export function setupOAuthStrategies() {
@@ -99,12 +91,10 @@ export function setupOAuthStrategies() {
         async (_at, _rt, profile, done) => {
           try {
             const email = profile.emails?.[0]?.value ?? null;
-            const user = await findOrCreateOAuthUser(
-              "google",
-              profile.id,
-              email,
-              profile.displayName,
-            );
+            const verified =
+              (profile.emails?.[0] as { verified?: boolean } | undefined)?.verified === true ||
+              (profile._json as { email_verified?: boolean } | undefined)?.email_verified === true;
+            const user = await findOAuthUser("google", profile.id, email, verified);
             done(null, user ?? false);
           } catch (e) {
             done(e as Error);
@@ -137,12 +127,9 @@ export function setupOAuthStrategies() {
           try {
             const email =
               profile.emails?.[0]?.value ?? profile._json?.mail ?? null;
-            const user = await findOrCreateOAuthUser(
-              "microsoft",
-              profile.id,
-              email,
-              profile.displayName,
-            );
+            // Microsoft doesn't reliably verify emails ("common" tenant), so
+            // only an already-linked identity can sign in.
+            const user = await findOAuthUser("microsoft", profile.id, email, false);
             done(null, user ?? false);
           } catch (e) {
             done(e as Error);
@@ -177,7 +164,8 @@ export function setupOAuthStrategies() {
           try {
             const sub = idToken?.sub as string;
             const email = (idToken?.email as string) ?? null;
-            const user = await findOrCreateOAuthUser("apple", sub, email, null);
+            const verified = idToken?.email_verified === true || idToken?.email_verified === "true";
+            const user = await findOAuthUser("apple", sub, email, verified);
             done(null, user ?? false);
           } catch (e) {
             done(e as Error);
@@ -216,11 +204,11 @@ export function setupOAuthStrategies() {
                   "base64url",
                 ).toString("utf8"),
               );
-              const user = await findOrCreateOAuthUser(
+              const user = await findOAuthUser(
                 "yahoo",
                 payload.sub,
                 payload.email ?? null,
-                payload.name ?? null,
+                payload.email_verified === true,
               );
               return done(null, user ?? false);
             }
@@ -229,11 +217,11 @@ export function setupOAuthStrategies() {
               { headers: { Authorization: `Bearer ${accessToken}` } },
             );
             const info = (await resp.json()) as any;
-            const user = await findOrCreateOAuthUser(
+            const user = await findOAuthUser(
               "yahoo",
               info.sub,
               info.email ?? null,
-              info.name ?? null,
+              info.email_verified === true,
             );
             done(null, user ?? false);
           } catch (e) {
