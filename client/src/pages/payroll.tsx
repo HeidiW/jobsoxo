@@ -2104,7 +2104,7 @@ export default function Payroll() {
                 <span style={{ width: "68px", flexShrink: 0, textAlign: "center" }}>Source</span>
                 <span style={{ width: "80px", flexShrink: 0, textAlign: "right" }}>Hours</span>
                 <span style={{ width: "96px", flexShrink: 0, textAlign: "right" }}>Pay</span>
-                <span style={{ width: "160px", flexShrink: 0 }}>Description</span>
+                <span style={{ width: "160px", flexShrink: 0, paddingLeft: "16px", boxSizing: "border-box" }}>Description</span>
                 <span style={{ width: "28px", flexShrink: 0 }}></span>
               </div>
 
@@ -2140,7 +2140,7 @@ export default function Payroll() {
                     </span>
                     <span className="font-mono" style={{ width: "80px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 600 }}>{Number(entry.hoursWorked).toFixed(1)} hrs</span>
                     <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "12.5px" }}>{fmtFull(Number(entry.hoursWorked) * Number(entry.employee?.dayRate ?? 0))}</span>
-                    <span style={{ width: "160px", flexShrink: 0, fontSize: "12px", color: "var(--faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.description || "—"}</span>
+                    <span style={{ width: "160px", flexShrink: 0, paddingLeft: "16px", boxSizing: "border-box", fontSize: "12px", color: "var(--faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.description || "—"}</span>
                     <span style={{ width: "28px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
                       <button onClick={() => setDeleteTimeEntryId(entry.id)} style={{ border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "2px", display: "flex" }} data-testid={`button-delete-time-${entry.id}`}>
                         <Trash2 style={{ width: "14px", height: "14px" }} />
@@ -2182,7 +2182,7 @@ export default function Payroll() {
                 <span style={{ width: "140px", flexShrink: 0 }}>Employee</span>
                 <span style={{ width: "78px", flexShrink: 0, textAlign: "center" }}>Status</span>
                 <span style={{ width: "64px", flexShrink: 0, textAlign: "right" }}>Hours</span>
-                <span style={{ flex: 1, minWidth: 0 }}>Message</span>
+                <span style={{ flex: 1, minWidth: 0, paddingLeft: "16px" }}>Message</span>
               </div>
 
               {smsLoading && <div style={{ padding: "40px", textAlign: "center" as const, color: "var(--faint)", fontSize: "13px" }}>Loading SMS log…</div>}
