@@ -293,10 +293,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByUsernameOrEmail(identifier: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(
-      or(eq(users.username, identifier), eq(users.email, identifier))
+    const trimmed = identifier.trim();
+    if (!trimmed) return undefined;
+    const [exact] = await db.select().from(users).where(
+      or(eq(users.username, trimmed), eq(users.email, trimmed))
     );
-    return user || undefined;
+    if (exact) return exact;
+    // Ignore case, but refuse to guess if that matches more than one account.
+    const normalized = trimmed.toLowerCase();
+    const matches = await db.select().from(users).where(
+      or(eq(sql`lower(${users.username})`, normalized), eq(sql`lower(${users.email})`, normalized))
+    ).limit(2);
+    return matches.length === 1 ? matches[0] : undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {

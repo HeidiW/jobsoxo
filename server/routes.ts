@@ -149,6 +149,14 @@ export async function registerRoutes(
     }
   });
 
+  // Usernames are trimmed; an email-style username is also saved as the
+  // account email so password reset can reach it.
+  function newUserIdentity(rawUsername: unknown): { username: string; email?: string } | null {
+    if (typeof rawUsername !== "string" || !rawUsername.trim()) return null;
+    const username = rawUsername.trim();
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(username) ? { username, email: username } : { username };
+  }
+
   function validatePassword(password: string): string | null {
     if (password.length < 10) return "Password must be at least 10 characters";
     if (!/[A-Z]/.test(password)) return "Password must contain an uppercase letter";
@@ -171,14 +179,15 @@ export async function registerRoutes(
       if (codeCheck === "invalid") {
         return res.status(403).json({ error: "Incorrect setup code" });
       }
-      const { username, password } = req.body;
-      if (!username || !password) {
+      const { password } = req.body;
+      const identity = newUserIdentity(req.body.username);
+      if (!identity || !password) {
         return res.status(400).json({ error: "Username and password required" });
       }
       const pwErr = validatePassword(password);
       if (pwErr) return res.status(400).json({ error: pwErr });
       const hash = await bcrypt.hash(password, 10);
-      const user = await storage.createUser({ username, password: hash, isAdmin: true });
+      const user = await storage.createUser({ ...identity, password: hash, isAdmin: true });
       req.session.userId = user.id;
       res.status(201).json({ id: user.id, username: user.username, isAdmin: user.isAdmin });
     } catch (error) {
@@ -190,8 +199,9 @@ export async function registerRoutes(
   // Invite-based signup — requires a valid unused invite code
   app.post("/api/auth/signup", async (req, res) => {
     try {
-      const { username, password, inviteCode } = req.body;
-      if (!username || !password || !inviteCode) {
+      const { password, inviteCode } = req.body;
+      const identity = newUserIdentity(req.body.username);
+      if (!identity || !password || !inviteCode) {
         return res.status(400).json({ error: "Username, password, and invite code are required" });
       }
       const pwErr = validatePassword(password);
@@ -199,8 +209,12 @@ export async function registerRoutes(
       const invite = await storage.getInviteByCode(inviteCode.trim().toUpperCase());
       if (!invite) return res.status(400).json({ error: "Invalid invite code" });
       if (invite.usedAt) return res.status(400).json({ error: "This invite code has already been used" });
+      // Sign-in ignores case, so "Bob" and "bob" can't both exist.
+      if (await storage.getUserByUsernameOrEmail(identity.username)) {
+        return res.status(409).json({ error: "Username already taken" });
+      }
       const hash = await bcrypt.hash(password, 10);
-      const user = await storage.createUser({ username, password: hash, isAdmin: false });
+      const user = await storage.createUser({ ...identity, password: hash, isAdmin: false });
       await storage.markInviteUsed(invite.code, user.id);
       req.session.userId = user.id;
       res.status(201).json({ id: user.id, username: user.username, isAdmin: user.isAdmin });
@@ -214,7 +228,7 @@ export async function registerRoutes(
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { username, password } = req.body;
-      if (!username || !password) {
+      if (typeof username !== "string" || !username.trim() || typeof password !== "string" || !password) {
         return res.status(400).json({ error: "Username and password required" });
       }
       const user = await storage.getUserByUsernameOrEmail(username);
@@ -273,7 +287,7 @@ export async function registerRoutes(
   app.post("/api/auth/forgot-password", async (req, res) => {
     try {
       const { username } = req.body;
-      if (!username) return res.status(400).json({ error: "Username or email required" });
+      if (typeof username !== "string" || !username.trim()) return res.status(400).json({ error: "Username or email required" });
 
       const user = await storage.getUserByUsernameOrEmail(username);
       // Always respond the same way to prevent username enumeration
