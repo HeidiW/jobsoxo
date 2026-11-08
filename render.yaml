@@ -99,6 +99,6 @@ databases:
   - name: jobsoxo-db
     region: virginia
     plan: 0.1c-256mb # Smallest paid plan; free databases expire
-    postgresMajorVersion: "16" # Matches Replit and local dev
+    postgresMajorVersion: "16" # Matches local dev
     databaseName: jobsoxo
     ipAllowList: [] # Private network only; the web service connects internally

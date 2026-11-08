@@ -333,7 +333,7 @@ The main variables are below; `.env.example` lists every one the server reads (i
 | `TWILIO_PHONE_NUMBER` | Yes | Twilio outbound phone number |
 | `GOOGLE_CLIENT_ID` | Yes | Google OAuth client ID (sign-in + Gmail) |
 | `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth client secret |
-| `APP_URL` | Yes | Public base URL (e.g. `https://yourapp.replit.app`) |
+| `APP_URL` | Yes | Public base URL (e.g. `https://jobsoxo.onrender.com`) |
 | `YAHOO_CLIENT_ID` | Optional | Yahoo OAuth client ID |
 | `YAHOO_CLIENT_SECRET` | Optional | Yahoo OAuth client secret |
 | `MICROSOFT_CLIENT_ID` | Optional | Microsoft OAuth client ID |
@@ -354,15 +354,14 @@ constructs one canonical redirect URI from `APP_URL`:
 Before connecting a document, complete this checklist for every environment:
 
 1. Set `APP_URL` to that environment's public application URL, including the
-   `https://` scheme. Do not use a localhost URL or a Replit preview URL for a
-   published deployment.
+   `https://` scheme. Do not use a localhost URL for a published deployment.
 2. In Google Cloud Console, open **APIs & Services → Credentials**, select the
    OAuth 2.0 Client ID used by `GOOGLE_CLIENT_ID`, and add the exact URI
    `<APP_URL>/api/google-docs/callback` under **Authorized redirect URIs**.
 3. Register the development and published values separately when they have
    different public hosts. For example:
-   `https://your-dev-host.replit.dev/api/google-docs/callback` and
-   `https://yourapp.replit.app/api/google-docs/callback`.
+   `http://localhost:5050/api/google-docs/callback` and
+   `https://jobsoxo.onrender.com/api/google-docs/callback`.
 4. Keep `APP_URL` and the registered host in sync after changing domains.
    Trailing slashes on `APP_URL` are normalized by the application, but the
    callback path and host must still match exactly.

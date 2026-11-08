@@ -21,7 +21,7 @@
  *
  *   1. Generate a new 64-hex key:
  *        openssl rand -hex 32
- *      Store the result securely (e.g. in Replit Secrets).
+ *      Store the result securely (e.g. in Render's environment variables).
  *
  *   2. In your secret manager / deployment config set:
  *        ENCRYPTION_KEY_PREVIOUS = <current ENCRYPTION_KEY value>

@@ -8,7 +8,6 @@ Schema changes ship as versioned SQL migrations in `migrations/`, generated from
 | `npm run db:generate -- --name <what_changed>` | Diff `shared/schema.ts` against the last snapshot and write `migrations/NNNN_<name>.sql` |
 | `npm run db:migrate` | Apply any migrations the database hasn't recorded yet |
 | `npm run db:baseline` | Mark `0000_baseline` as applied on a database that already has the schema (see below) |
-| `npm run db:push` | Sync schema directly with no migration file. Replit dev workspace only, until cutover |
 
 All of them need `DATABASE_URL`.
 
@@ -37,8 +36,8 @@ DATABASE_URL=postgresql://localhost/jobsoxo_test npm run db:migrate
 
 ## Existing databases (baseline)
 
-Databases created with `drizzle-kit push`, including Replit's and any restored
-`pg_dump` of them, already have every table but no migration history.
+Databases created with `drizzle-kit push` (such as the old Replit database) or
+restored from a `pg_dump` of one already have every table but no migration history.
 Running `db:migrate` there would try to create tables that exist.
 
 `npm run db:baseline` records `0000_baseline` as applied without running it. It
@@ -60,22 +59,11 @@ diff <(pg_dump -s -O -x -n public "$RESTORED_URL" | grep -v '^--\|^\\\(un\)\?res
 Resolve any difference before baselining, either by fixing the copy or by
 generating a migration that brings it in line.
 
-## Moving to Render
+## Production (Render)
 
-While the app is on Replit, Replit Publish manages production schema changes
-and `scripts/post-merge.sh` still runs `db:push` in the Replit workspace. Keep
-committing a generated migration with every schema change anyway, so the
-history is complete at cutover.
-
-At cutover:
-
-1. `pg_dump` the Replit production database and restore it into the new Postgres.
-2. Compare the restored copy with a migrated reference database (above).
-3. `DATABASE_URL=<new database> npm run db:baseline`.
-4. Set Render's pre-deploy command to `npm run db:migrate`. Don't run
-   migrations from server startup.
-5. Change `scripts/post-merge.sh` from `db:push` to `db:migrate` (or remove it
-   with `.replit`) and stop using `db:push` against shared databases.
+Render runs `npm run db:migrate` as the pre-deploy command (see `render.yaml`),
+so migrations apply before each new version starts. Don't run migrations from
+server startup, and don't use `drizzle-kit push` against shared databases.
 
 `migrations/development/` holds a hand-written development repair script. It is
 not part of the migration journal and must not be run by deploys.

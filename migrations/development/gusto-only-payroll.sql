@@ -1,5 +1,5 @@
 -- Development-only, additive repair for the merged Gusto schema.
--- Replit Publish manages managed-production schema changes; do not run this
+-- Production schema changes go through versioned migrations; do not run this
 -- file in a deployment build or from server startup.
 BEGIN;
 CREATE TABLE IF NOT EXISTS gusto_integrations (

@@ -2699,9 +2699,8 @@ export async function registerRoutes(
 
   // ── Inbox (Gmail) ─────────────────────────────────────────────────────────
   //
-  // Security model: Gmail is connected at the Replit project level (one OAuth
-  // token per Repl). Access to sync is therefore restricted to admin users only
-  // so that the connected mailbox is never exposed to non-admin accounts.
+  // Each user connects their own Gmail (per-user OAuth). Actions that touch
+  // every user's inbox, such as syncing all connected users, are admin-only.
 
   function requireAdmin(req: Request, res: Response, next: NextFunction) {
     storage.getUser(req.session.userId!).then((user) => {

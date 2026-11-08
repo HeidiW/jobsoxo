@@ -2,8 +2,8 @@ import { Link } from "wouter";
 import { ArrowLeft, ScrollText } from "lucide-react";
 
 const COMPANY = "JobsOxo";
-const APP_URL = "https://jobsoxo.replit.app";
-const CONTACT_EMAIL = "support@jobsoxo.replit.app";
+const APP_URL = "https://jobsoxo.onrender.com";
+const CONTACT_EMAIL = "heidi@jobsoxo.com";
 const EFFECTIVE_DATE = "20 June 2025";
 
 export default function Terms() {

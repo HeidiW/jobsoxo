@@ -97,8 +97,8 @@ calculation. No local tax estimate substitutes for a missing provider result.
 The schema repair is additive and repeatable:
 `migrations/development/gusto-only-payroll.sql`. It creates missing Gusto tables
 and adds the required columns without dropping data. It is a development repair,
-not a production startup or deployment-build migration. Managed production
-schema changes belong to Replit Publish's schema review.
+not a production startup or deployment-build migration. Production schema
+changes ship as versioned migrations (see `docs/database-migrations.md`).
 
 Automated tests cover authorization, encrypted token refresh, idempotency,
 Plaid-outage independence, asynchronous calculation/submission, changed-review

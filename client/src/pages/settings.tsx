@@ -1393,7 +1393,7 @@ export default function SettingsPage() {
               <p className="font-medium">SMS not yet configured</p>
               <p>Add your <code className="rounded bg-muted px-1 text-xs font-mono">TWILIO_ACCOUNT_SID</code>, <code className="rounded bg-muted px-1 text-xs font-mono">TWILIO_AUTH_TOKEN</code>, and <code className="rounded bg-muted px-1 text-xs font-mono">TWILIO_PHONE_NUMBER</code> secrets, then point your Twilio number's incoming-SMS webhook to:</p>
               <code className="block rounded bg-muted px-2 py-1 text-xs font-mono break-all">
-                https://your-domain.replit.app/api/sms/inbound
+                {window.location.origin}/api/sms/inbound
               </code>
             </div>
           )}

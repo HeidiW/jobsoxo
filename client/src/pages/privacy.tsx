@@ -2,9 +2,9 @@ import { Link } from "wouter";
 import { ArrowLeft, Shield } from "lucide-react";
 
 const COMPANY = "JobsOxo";
-const APP_URL = "https://jobsoxo.replit.app";
-const CONTACT_EMAIL = "support@jobsoxo.replit.app";
-const EFFECTIVE_DATE = "20 June 2025";
+const APP_URL = "https://jobsoxo.onrender.com";
+const CONTACT_EMAIL = "heidi@jobsoxo.com";
+const EFFECTIVE_DATE = "8 November 2026";
 
 export default function Privacy() {
   return (
@@ -85,8 +85,8 @@ export default function Privacy() {
                 <p>Used for Google sign-in and optional Gmail inbox access. Governed by <a href="https://policies.google.com/privacy" className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">Google's Privacy Policy</a>. Our use of Gmail data complies with the <a href="https://developers.google.com/terms/api-services-user-data-policy" className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
               </div>
               <div className="border rounded-lg p-4 space-y-1">
-                <p className="font-medium text-foreground">Replit (replit.com)</p>
-                <p>The application is hosted on Replit's infrastructure. Your data is stored on Replit-managed servers. See <a href="https://replit.com/privacy" className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">Replit's Privacy Policy</a>.</p>
+                <p className="font-medium text-foreground">Render (render.com)</p>
+                <p>The application and its database are hosted on Render's infrastructure in the United States. Your data is stored on Render-managed servers. See <a href="https://render.com/privacy" className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">Render's Privacy Policy</a>.</p>
               </div>
             </div>
           </section>

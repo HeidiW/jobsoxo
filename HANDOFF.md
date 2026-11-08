@@ -1,5 +1,7 @@
 # JobsOxo — handoff from claude.ai (Nov 6, 2026)
 
+> **Completed Nov 8, 2026.** The app runs on Render and Replit is retired. This file is kept for history; `CLAUDE.md` is the current guide.
+
 Context carried over from a claude.ai chat so a Claude Code session can pick up where it left off. Put this file in the repo root and tell Claude Code: "Read HANDOFF.md and .agents/memory/MEMORY.md first."
 
 ## Where the project stands
