@@ -388,6 +388,57 @@ describe("Gusto payroll workspace", () => {
     expect(fetchMock.mock.calls.some(([url]) => url === "/api/gusto/employees/import")).toBe(false);
   });
 
+  const roster = [
+    { id: "e-wait", name: "Heidi Williams", ready: false, gustoEmployeeId: "g1", onboardingStatus: "self_onboarding_invited", paymentMethodStatus: "incomplete", blockers: ["Gusto onboarding is incomplete", "Gusto direct deposit setup is incomplete"] },
+    { id: "e-stale", name: "Old Link", ready: false, gustoEmployeeId: "g2", onboardingStatus: "unknown", paymentMethodStatus: "unknown", blockers: ["Gusto onboarding is incomplete"] },
+    { id: "e-dd", name: "Heidi Williams-Foy", ready: false, gustoEmployeeId: "g3", onboardingStatus: "complete", paymentMethodStatus: "incomplete", blockers: ["Gusto direct deposit setup is incomplete"] },
+    { id: "e-ok", name: "Maria Lopez", ready: true, gustoEmployeeId: "g4", onboardingStatus: "complete", paymentMethodStatus: "complete" },
+  ];
+  function renderRoster() {
+    const status = { configured: true, available: true, companyId: "company-1", environment: "production", onboardingComplete: true };
+    // Actions refetch these; this test client has no default queryFn, so give the keys one.
+    queryClient.setQueryDefaults(["/api/gusto/status"], { queryFn: async () => status });
+    queryClient.setQueryDefaults(["/api/gusto/employees/readiness"], { queryFn: async () => ({ employees: roster }) });
+    queryClient.setQueryData(["/api/gusto/status"], status);
+    queryClient.setQueryData(["/api/gusto/payroll-runs"], { runs: [] });
+    queryClient.setQueryData(["/api/gusto/employees/readiness"], { employees: roster });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <GustoPayrollWorkspace records={[]} period={null} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("says what each employee is waiting on in plain words", async () => {
+    renderRoster();
+    expect(await screen.findByTestId("readiness-e-wait")).toHaveTextContent("Invitation sent — waiting for the employee to finish");
+    expect(screen.getByTestId("readiness-e-stale")).toHaveTextContent("Not found in Gusto — the link may be stale");
+    expect(screen.getByTestId("readiness-e-dd")).toHaveTextContent("Direct deposit not set up");
+    expect(screen.getByTestId("readiness-e-ok")).toHaveTextContent("Ready for payroll");
+    // The checklist row names them with the same wording.
+    expect(screen.getByTestId("checklist-employee_management-detail")).toHaveTextContent("1 of 4 ready · Heidi Williams: Invitation sent");
+  });
+
+  it("can resend an invitation or take over the onboarding of an invited employee", async () => {
+    renderRoster();
+    fireEvent.click(await screen.findByTestId("button-gusto-resend-e-wait"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/employees/e-wait/gusto-invite/resend", expect.objectContaining({ method: "POST" })));
+    expect(screen.getByTestId("button-gusto-take-over-e-wait")).toBeInTheDocument();
+  });
+
+  it("can unlink an employee Gusto no longer knows", async () => {
+    renderRoster();
+    fireEvent.click(await screen.findByTestId("button-gusto-unlink-e-stale"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/employees/e-stale/gusto-link", expect.objectContaining({ method: "DELETE" })));
+  });
+
+  it("opens Gusto's employee management to fix direct deposit", async () => {
+    renderRoster();
+    fireEvent.click(await screen.findByTestId("button-gusto-fix-e-dd"));
+    expect(await screen.findByTitle("Manage employees")).toBeInTheDocument();
+    expect(JSON.parse(fetchMock.mock.calls.find(([url]) => url === "/api/gusto/flows")![1].body)).toEqual({ flowType: "employee_management" });
+  });
+
   it("never offers simulated deposits outside demo", async () => {
     queryClient.setQueryData(["/api/gusto/status"], {
       configured: true, available: true, companyId: "company-1", environment: "production", onboardingComplete: true,

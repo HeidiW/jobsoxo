@@ -152,7 +152,11 @@ export async function employeeReadiness(userId: string) {
     if (mapping && mapping.onboardingStatus !== "complete") blockers.push("Gusto onboarding is incomplete");
     if (mapping && mapping.paymentMethodStatus !== "complete") blockers.push("Gusto direct deposit setup is incomplete");
     if (employee.employmentType !== "w2") blockers.push("Contractors require Gusto contractor payroll, not W-2 payroll");
-    return { id: employee.id, name: employee.name, ready: blockers.length === 0, blockers, gustoEmployeeId: mapping?.gustoEmployeeId ?? null };
+    return {
+      id: employee.id, name: employee.name, ready: blockers.length === 0, blockers, gustoEmployeeId: mapping?.gustoEmployeeId ?? null,
+      // Gusto's own states, so the UI can say "invitation sent" or "not found" instead of a generic blocker.
+      onboardingStatus: mapping?.onboardingStatus ?? null, paymentMethodStatus: mapping?.paymentMethodStatus ?? null,
+    };
   });
 }
 

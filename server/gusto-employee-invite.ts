@@ -130,3 +130,57 @@ export async function inviteEmployeeToGusto(
     .where(eq(gustoEmployeeMappings.employeeId, employeeId));
   return { status, gustoEmployeeId: gustoEmployee.uuid, onboardingStatus, withholding };
 }
+
+async function linkedGustoEmployee(userId: string, employeeId: string) {
+  const integration = await companyIntegration(userId);
+  const [mapping] = await db.select().from(gustoEmployeeMappings).where(eq(gustoEmployeeMappings.employeeId, employeeId));
+  if (!mapping) throw new GustoProviderError("This employee isn't linked to Gusto yet. Invite them first.", 409, "not_linked");
+  const call = <T = any>(path: string, options: { method?: string; body?: unknown } = {}) => gustoRequest<T>(path, { userId, ...options });
+  const gustoEmployee = await call(`/v1/employees/${mapping.gustoEmployeeId}`);
+  return { integration, mapping, call, gustoEmployee, path: `/v1/employees/${mapping.gustoEmployeeId}` };
+}
+
+async function recordOnboardingStatus(employeeId: string, onboardingStatus: string) {
+  await db.update(gustoEmployeeMappings)
+    .set({ onboardingStatus, lastSyncedAt: new Date(), updatedAt: new Date() })
+    .where(eq(gustoEmployeeMappings.employeeId, employeeId));
+}
+
+/**
+ * Send Gusto's self-onboarding invitation again. Gusto only moves to
+ * "invited" from the un-invited states, so an outstanding invite is cancelled
+ * and re-issued, which gives the employee a fresh email.
+ */
+export async function resendGustoInvitation(userId: string, employeeId: string) {
+  const { call, gustoEmployee, path } = await linkedGustoEmployee(userId, employeeId);
+  const status = String(gustoEmployee?.onboarding_status ?? "");
+  if (status === "onboarding_completed") throw new GustoProviderError("This employee has already finished Gusto onboarding.", 409, "already_onboarded");
+  if (INVITED.has(status)) {
+    await call(`${path}/onboarding_status`, { method: "PUT", body: { onboarding_status: "admin_onboarding_incomplete" } });
+  }
+  await call(`${path}/onboarding_status`, { method: "PUT", body: { onboarding_status: "self_onboarding_invited" } });
+  await recordOnboardingStatus(employeeId, "self_onboarding_invited");
+  return { onboardingStatus: "self_onboarding_invited" };
+}
+
+/**
+ * Cancel the employee's self-onboarding so the admin can finish their details
+ * in Gusto's screens instead of waiting for them.
+ */
+export async function takeOverGustoOnboarding(userId: string, employeeId: string) {
+  const { call, gustoEmployee, path } = await linkedGustoEmployee(userId, employeeId);
+  const status = String(gustoEmployee?.onboarding_status ?? "");
+  if (status === "onboarding_completed") throw new GustoProviderError("This employee has already finished Gusto onboarding.", 409, "already_onboarded");
+  if (status !== "admin_onboarding_incomplete") {
+    await call(`${path}/onboarding_status`, { method: "PUT", body: { onboarding_status: "admin_onboarding_incomplete" } });
+  }
+  await recordOnboardingStatus(employeeId, "admin_onboarding_incomplete");
+  return { onboardingStatus: "admin_onboarding_incomplete" };
+}
+
+/** Remove a JobsOxo→Gusto link. Nothing in Gusto is changed. */
+export async function unlinkGustoEmployee(employeeId: string) {
+  const deleted = await db.delete(gustoEmployeeMappings).where(eq(gustoEmployeeMappings.employeeId, employeeId)).returning();
+  if (deleted.length === 0) throw new GustoProviderError("This employee isn't linked to Gusto.", 404, "not_linked");
+  return { unlinked: true };
+}

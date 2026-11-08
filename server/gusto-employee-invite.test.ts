@@ -13,7 +13,7 @@ vi.mock("./gusto-client", async (importOriginal) => ({
   gustoRequest: vi.fn(),
 }));
 const { gustoRequest, GustoProviderError } = await import("./gusto-client");
-const { gustoCompensation, inviteEmployeeToGusto } = await import("./gusto-employee-invite");
+const { gustoCompensation, inviteEmployeeToGusto, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } = await import("./gusto-employee-invite");
 
 const companyId = "company-invite-1";
 const base = `/v1/companies/${companyId}`;
@@ -217,4 +217,54 @@ describe("POST /api/employees with inviteToGusto", () => {
     expect(res.body.gustoInvite).toBeUndefined();
     expect(gustoRequest).not.toHaveBeenCalled();
   });
+
+describe("Gusto employee actions after an invite", () => {
+  async function invited() {
+    const userId = await connect();
+    const person = await employee();
+    await inviteEmployeeToGusto(userId, person.id);
+    vi.mocked(gustoRequest).mockClear();
+    return { userId, person };
+  }
+  const statusPuts = () => calls("PUT", /\/onboarding_status$/).map(([, o]: any[]) => o.body.onboarding_status);
+  const mappingOf = async (employeeId: string) => (await db.select().from(gustoEmployeeMappings).where(eq(gustoEmployeeMappings.employeeId, employeeId)))[0];
+
+  it("resends by cancelling and re-issuing the invitation", async () => {
+    const { userId, person } = await invited();
+
+    const result = await resendGustoInvitation(userId, person.id);
+
+    expect(result).toEqual({ onboardingStatus: "self_onboarding_invited" });
+    expect(statusPuts()).toEqual(["admin_onboarding_incomplete", "self_onboarding_invited"]);
+    expect((await mappingOf(person.id)).onboardingStatus).toBe("self_onboarding_invited");
+  });
+
+  it("lets the admin take over a self-onboarding", async () => {
+    const { userId, person } = await invited();
+
+    const result = await takeOverGustoOnboarding(userId, person.id);
+
+    expect(result).toEqual({ onboardingStatus: "admin_onboarding_incomplete" });
+    expect(statusPuts()).toEqual(["admin_onboarding_incomplete"]);
+    expect((await mappingOf(person.id)).onboardingStatus).toBe("admin_onboarding_incomplete");
+  });
+
+  it("refuses to resend or take over once onboarding is complete", async () => {
+    const { userId, person } = await invited();
+    gusto.employees[0].onboarding_status = "onboarding_completed";
+
+    await expect(resendGustoInvitation(userId, person.id)).rejects.toMatchObject({ code: "already_onboarded" });
+    await expect(takeOverGustoOnboarding(userId, person.id)).rejects.toMatchObject({ code: "already_onboarded" });
+    expect(statusPuts()).toEqual([]);
+  });
+
+  it("unlinks without touching Gusto, and says so if there was no link", async () => {
+    const { person } = await invited();
+
+    expect(await unlinkGustoEmployee(person.id)).toEqual({ unlinked: true });
+    expect(await mappingOf(person.id)).toBeUndefined();
+    expect(gustoRequest).not.toHaveBeenCalled();
+    await expect(unlinkGustoEmployee(person.id)).rejects.toMatchObject({ status: 404 });
+  });
+});
 });

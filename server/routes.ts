@@ -4,7 +4,7 @@ import { seedDemoData } from "./seed";
 import { calendarDay } from "./business-time";
 import { invoiceRecipients } from "@shared/client-emails";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
-import { inviteEmployeeToGusto } from "./gusto-employee-invite";
+import { inviteEmployeeToGusto, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } from "./gusto-employee-invite";
 import { GustoConfigurationError, GustoProviderError } from "./gusto-client";
 import { COMPANY_FIELD_LABELS, REQUIRED_COMPANY_FIELDS, isCompanyFieldFilled } from "@shared/company-setup";
 // Function declaration (not const) so it's hoisted and immune to TDZ in circular-dep scenarios.
@@ -2012,19 +2012,25 @@ export async function registerRoutes(
     }
   });
 
-  // Add an existing employee to Gusto payroll (or retry a failed invite).
-  app.post("/api/employees/:id/gusto-invite", requireAdmin, async (req, res) => {
-    try {
-      res.json(await inviteEmployeeToGusto(req.session.userId!, req.params.id));
-    } catch (error) {
-      if (error instanceof GustoProviderError || error instanceof GustoConfigurationError) {
-        const status = error instanceof GustoProviderError ? error.status : 409;
-        return res.status(status >= 400 && status < 600 ? status : 502).json({ error: error.message, code: (error as GustoProviderError).code });
+  // Gusto employee actions: invite (or retry), resend the invitation, take
+  // over a self-onboarding, or drop a stale link.
+  const gustoEmployeeAction = (label: string, run: (userId: string, employeeId: string) => Promise<unknown>) =>
+    async (req: Request, res: Response) => {
+      try {
+        res.json(await run(req.session.userId!, req.params.id));
+      } catch (error) {
+        if (error instanceof GustoProviderError || error instanceof GustoConfigurationError) {
+          const status = error instanceof GustoProviderError ? error.status : 409;
+          return res.status(status >= 400 && status < 600 ? status : 502).json({ error: error.message, code: (error as GustoProviderError).code });
+        }
+        console.error(`${label} error:`, error);
+        res.status(500).json({ error: `${label} failed` });
       }
-      console.error("Gusto invite error:", error);
-      res.status(500).json({ error: "Gusto invitation failed" });
-    }
-  });
+    };
+  app.post("/api/employees/:id/gusto-invite", requireAdmin, gustoEmployeeAction("Gusto invitation", (userId, id) => inviteEmployeeToGusto(userId, id)));
+  app.post("/api/employees/:id/gusto-invite/resend", requireAdmin, gustoEmployeeAction("Resending the Gusto invitation", resendGustoInvitation));
+  app.post("/api/employees/:id/gusto-onboarding/take-over", requireAdmin, gustoEmployeeAction("Taking over Gusto onboarding", takeOverGustoOnboarding));
+  app.delete("/api/employees/:id/gusto-link", requireAdmin, gustoEmployeeAction("Unlinking from Gusto", (_userId, id) => unlinkGustoEmployee(id)));
 
   app.patch("/api/employees/:id", async (req, res) => {
     try {

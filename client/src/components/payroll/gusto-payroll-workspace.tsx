@@ -24,7 +24,22 @@ type GustoStatus = GustoDemoSetupStatus & {
   fundingAccount?: { id: string; status: string; accountMask?: string; name?: string } | null;
   onboardingComplete?: boolean; blockers?: string[]; error?: string; environment?: string;
 };
-type GustoReadiness = { employees?: Array<{ id: string; name?: string; ready: boolean; blockers?: string[]; gustoEmployeeId?: string | null }> };
+type ReadinessEmployee = { id: string; name?: string; ready: boolean; blockers?: string[]; gustoEmployeeId?: string | null; onboardingStatus?: string | null; paymentMethodStatus?: string | null };
+type GustoReadiness = { employees?: ReadinessEmployee[] };
+
+/** Gusto's state for an employee in plain words, plus which action fixes it. */
+function describeEmployee(e: ReadinessEmployee): { text: string; action: "invite" | "waiting" | "not_found" | "finish_onboarding" | "direct_deposit" | "contractor" | "ready" } {
+  if (e.ready) return { text: "Ready for payroll", action: "ready" };
+  if ((e.blockers ?? []).some(b => /contractor/i.test(b))) return { text: "Contractor — not W-2 payroll", action: "contractor" };
+  if (!e.gustoEmployeeId) return { text: "Not in Gusto yet", action: "invite" };
+  const status = e.onboardingStatus ?? "";
+  if (status === "unknown") return { text: "Not found in Gusto — the link may be stale", action: "not_found" };
+  if (status.startsWith("self_onboarding_invited")) return { text: "Invitation sent — waiting for the employee to finish", action: "waiting" };
+  if (status === "self_onboarding_completed_by_employee" || status === "self_onboarding_awaiting_admin_review") return { text: "Employee finished — review in Gusto", action: "finish_onboarding" };
+  if (status !== "complete") return { text: "Gusto onboarding incomplete", action: "finish_onboarding" };
+  if (e.paymentMethodStatus !== "complete") return { text: "Direct deposit not set up", action: "direct_deposit" };
+  return { text: e.blockers?.join(", ") || "Gusto setup needed", action: "finish_onboarding" };
+}
 type GustoRun = {
   id: string; status: string; providerStatus?: string; error?: string; blockers?: string[];
   periodStart?: string; periodEnd?: string; payDate?: string; expectedDebit?: number; expectedDebitDate?: string;
@@ -137,7 +152,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
           : /contractor/i.test(blocker) ? "contractor, not W-2 payroll"
             : blocker;
   const nameBlockers = (people: typeof readinessEmployees) =>
-    people.map(e => `${e.name || "Employee"}: ${shortBlocker(e.blockers?.[0] ?? "Gusto setup needed")}`).join(" · ");
+    people.map(e => `${e.name || "Employee"}: ${e.gustoEmployeeId ? describeEmployee(e).text : shortBlocker(e.blockers?.[0] ?? "Gusto setup needed")}`).join(" · ");
   const unlinked = readinessEmployees.filter(e => !e.gustoEmployeeId);
   const notReady = readinessEmployees.filter(e => !e.ready);
   const companyStepsLeft = (status?.blockers ?? []).filter(b => b.startsWith("Complete Gusto setup")).length;
@@ -464,18 +479,34 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
             {readinessQuery.isLoading ? <p style={{ color: "var(--muted)", fontSize: "12px" }}>Checking Gusto employee setup…</p>
               : readinessQuery.isError ? <p role="alert" style={{ color: "var(--jx-orange-ink)", fontSize: "12px" }}>Gusto employee readiness could not load. Retry after syncing the company.</p>
                 : readyEmployees.length === 0 ? <p style={{ color: "var(--muted)", fontSize: "12px", marginBottom: 0 }}>No Gusto employees are linked yet.</p>
-                  : readyEmployees.map(employee => <div key={employee.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", padding: "8px 0", borderTop: "1px solid var(--panel-bd)", fontSize: "12px" }}>
-                    <span>{employee.name || "Employee"}{employee.gustoEmployeeId ? <span style={{ color: "var(--muted)" }}> · Gusto linked</span> : ""}</span>
-                    <span style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "flex-end", textAlign: "right" }}>
-                      <span style={{ color: employee.ready ? "var(--jx-green-ink)" : "var(--jx-orange-ink)" }}>{employee.ready ? "Gusto payment method ready" : (employee.blockers?.join(", ") || "Gusto setup needed")}</span>
-                      {!employee.gustoEmployeeId && status?.companyId && <button type="button" style={buttonStyle} disabled={busy}
-                        onClick={async () => {
-                          const result = await perform<{ status?: string }>("POST", `/api/employees/${employee.id}/gusto-invite`);
-                          if (result?.status) toast({ title: result.status === "invited" ? `Gusto invitation sent to ${employee.name ?? "employee"}` : `${employee.name ?? "Employee"} is linked to Gusto` });
-                        }}
-                        data-testid={`button-gusto-invite-${employee.id}`}>Invite to Gusto</button>}
-                    </span>
-                  </div>)}
+                  : readyEmployees.map(employee => {
+                    const state = describeEmployee(employee);
+                    const name = employee.name ?? "Employee";
+                    const act = (label: string, method: string, path: string, done: string, testId: string) => (
+                      <button type="button" style={buttonStyle} disabled={busy} data-testid={`${testId}-${employee.id}`}
+                        onClick={async () => { const result = await perform(method, path); if (result !== null) toast({ title: done }); }}>{label}</button>
+                    );
+                    return <div key={employee.id} data-testid={`readiness-${employee.id}`} data-action={state.action} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: "1px solid var(--panel-bd)", fontSize: "12px", flexWrap: "wrap" }}>
+                      <span>{name}</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "flex-end", textAlign: "right", flexWrap: "wrap" }}>
+                        <span style={{ color: state.action === "ready" ? "var(--jx-green-ink)" : "var(--jx-orange-ink)" }}>{state.text}</span>
+                        {status?.companyId && state.action === "invite" && act("Invite to Gusto", "POST", `/api/employees/${employee.id}/gusto-invite`, `Gusto invitation sent to ${name}`, "button-gusto-invite")}
+                        {status?.companyId && state.action === "waiting" && <>
+                          {act("Resend invitation", "POST", `/api/employees/${employee.id}/gusto-invite/resend`, `Invitation re-sent to ${name}`, "button-gusto-resend")}
+                          <button type="button" style={buttonStyle} disabled={busy} data-testid={`button-gusto-take-over-${employee.id}`}
+                            onClick={async () => {
+                              const result = await perform("POST", `/api/employees/${employee.id}/gusto-onboarding/take-over`);
+                              if (result !== null) { toast({ title: `You can now finish ${name}'s details in Gusto` }); void openFlow("add_employees", "Add employees in Gusto"); }
+                            }}>Finish for them instead</button>
+                        </>}
+                        {status?.companyId && state.action === "not_found" && act("Unlink", "DELETE", `/api/employees/${employee.id}/gusto-link`, `${name} unlinked from Gusto`, "button-gusto-unlink")}
+                        {status?.companyId && state.action === "finish_onboarding" && <button type="button" style={buttonStyle} disabled={busy} data-testid={`button-gusto-fix-${employee.id}`}
+                          onClick={() => void openFlow("add_employees", "Add employees in Gusto")}>Fix in Gusto</button>}
+                        {status?.companyId && state.action === "direct_deposit" && <button type="button" style={buttonStyle} disabled={busy} data-testid={`button-gusto-fix-${employee.id}`}
+                          onClick={() => void openFlow("employee_management", "Manage employees")}>Fix in Gusto</button>}
+                      </span>
+                    </div>;
+                  })}
           </div>
 
           {reviewMismatches.length > 0 && <div role="alert" style={{ ...panel, borderColor: "var(--jx-gold)", color: "var(--jx-gold-ink)", fontSize: "12px" }}>
