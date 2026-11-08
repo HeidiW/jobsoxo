@@ -1,4 +1,5 @@
-import { companyIntegration, syncCompany, verifyDemoFunding } from "./gusto-company";
+import { companyIntegration, syncCompany, syncEmployees, verifyDemoFunding } from "./gusto-company";
+import { storage } from "./storage";
 import { GustoProviderError, gustoEnvironment, gustoRequest } from "./gusto-client";
 import { businessDay } from "./business-time";
 
@@ -128,39 +129,15 @@ export async function fillDemoCompany(userId: string) {
   });
 
   await run("Employees", "add_employees", async () => {
-    if (!locationId) {
-      const locations = await call<any[]>(`${company}/locations`);
-      locationId = Array.isArray(locations) ? locations[0]?.uuid : undefined;
-    }
-    if (!locationId) throw new Error("Add the company address first");
-    const existing = await call<any[]>(`${company}/employees`);
-    const existingEmails = new Set((Array.isArray(existing) ? existing : []).map((e: any) => String(e.email ?? "").toLowerCase()));
-    const hireDate = addDays(businessDay(), -14);
-    let added = 0;
-    for (const sample of SAMPLE_EMPLOYEES) {
-      if (existingEmails.has(sample.email)) continue;
-      const employee = await call(`${company}/employees`, {
-        method: "POST",
-        body: {
-          first_name: sample.first_name, last_name: sample.last_name, email: sample.email,
-          date_of_birth: sample.date_of_birth, ssn: sample.ssn, self_onboarding: false,
-        },
-      });
-      const employeePath = `/v1/employees/${employee.uuid}`;
-      await call(`${employeePath}/home_addresses`, { method: "POST", body: { ...sample.home, effective_date: hireDate } });
-      await call(`${employeePath}/work_addresses`, { method: "POST", body: { location_uuid: locationId, effective_date: hireDate } });
-      const job = await call(`${employeePath}/jobs`, { method: "POST", body: { title: sample.title, hire_date: hireDate } });
-      const compensation = (job?.compensations ?? []).find((c: any) => c.uuid === job?.current_compensation_uuid) ?? job?.compensations?.[0];
-      if (compensation?.uuid) {
-        await call(`/v1/compensations/${compensation.uuid}`, {
-          method: "PUT", body: { version: compensation.version, rate: sample.rate, payment_unit: "Hour", flsa_status: "Nonexempt" },
-        });
-      }
-      const paymentMethod = await call(`${employeePath}/payment_method`);
-      await call(`${employeePath}/payment_method`, { method: "PUT", body: { version: paymentMethod?.version, type: "Check" } });
-      added += 1;
-    }
-    return added === 0 ? "Sample employees already on file" : `Added ${added} employee${added === 1 ? "" : "s"}`;
+    const outcome = await ensureSampleEmployeesInGusto(call, company, locationId);
+    if (outcome.failures.length) throw new Error(outcome.failures.join("; "));
+    return outcome.summary;
+  });
+
+  await run("JobsOxo employees", null, async () => {
+    const created = await ensureSampleEmployeesInJobsOxo();
+    await syncEmployees(userId);
+    return created ? `Added ${created} and linked to Gusto` : "Already on file; linked to Gusto";
   });
 
   await run("Signatory", null, async () => {
@@ -182,4 +159,130 @@ export async function fillDemoCompany(userId: string) {
   }
 
   return { results, status: await syncCompany(userId) };
+}
+
+type GustoCall = <T = any>(path: string, options?: { method?: string; body?: unknown }) => Promise<T>;
+
+/** Direct deposit to a demo bank account; JobsOxo only treats direct deposit as payroll-ready. */
+async function ensureDirectDeposit(call: GustoCall, employeeUuid: string, accountNumber: string) {
+  const method = await call(`/v1/employees/${employeeUuid}/payment_method`);
+  if (method?.type === "Direct Deposit" && Array.isArray(method.splits) && method.splits.length > 0) return;
+  await call(`/v1/employees/${employeeUuid}/bank_accounts`, {
+    method: "POST", body: { name: "Checking", routing_number: "102001017", account_number: accountNumber, account_type: "Checking" },
+  });
+}
+
+/**
+ * Makes sure both sample employees exist in Gusto with direct deposit, and
+ * tries to finish their onboarding. Per-employee failures are collected so one
+ * employee's problem doesn't stop the other.
+ */
+async function ensureSampleEmployeesInGusto(call: GustoCall, company: string, knownLocationId?: string) {
+  let locationId = knownLocationId;
+  if (!locationId) {
+    const locations = await call<any[]>(`${company}/locations`);
+    locationId = Array.isArray(locations) ? locations[0]?.uuid : undefined;
+  }
+  if (!locationId) throw new Error("Add the company address first");
+  const existing = await call<any[]>(`${company}/employees?page=1&per=100`);
+  const byEmail = new Map((Array.isArray(existing) ? existing : []).map((e: any) => [String(e.email ?? "").toLowerCase(), e]));
+  const hireDate = addDays(businessDay(), -14);
+  const failures: string[] = [];
+  let added = 0;
+
+  for (const [index, sample] of SAMPLE_EMPLOYEES.entries()) {
+    const name = `${sample.first_name} ${sample.last_name}`;
+    try {
+      let employee = byEmail.get(sample.email);
+      if (!employee) {
+        employee = await call(`${company}/employees`, {
+          method: "POST",
+          body: {
+            first_name: sample.first_name, last_name: sample.last_name, email: sample.email,
+            date_of_birth: sample.date_of_birth, ssn: sample.ssn, self_onboarding: false,
+          },
+        });
+        const employeePath = `/v1/employees/${employee.uuid}`;
+        await call(`${employeePath}/home_addresses`, { method: "POST", body: { ...sample.home, effective_date: hireDate } });
+        await call(`${employeePath}/work_addresses`, { method: "POST", body: { location_uuid: locationId, effective_date: hireDate } });
+        const job = await call(`${employeePath}/jobs`, { method: "POST", body: { title: sample.title, hire_date: hireDate } });
+        const compensation = (job?.compensations ?? []).find((c: any) => c.uuid === job?.current_compensation_uuid) ?? job?.compensations?.[0];
+        if (compensation?.uuid) {
+          await call(`/v1/compensations/${compensation.uuid}`, {
+            method: "PUT", body: { version: compensation.version, rate: sample.rate, payment_unit: "Hour", flsa_status: "Nonexempt" },
+          });
+        }
+        added += 1;
+      }
+      await ensureDirectDeposit(call, employee.uuid, `00098765432${index}`);
+      if (employee.onboarding_status !== "onboarding_completed") {
+        try {
+          await call(`/v1/employees/${employee.uuid}/onboarding_status`, { method: "PUT", body: { onboarding_status: "onboarding_completed" } });
+        } catch (error) {
+          failures.push(`${name}: onboarding not finished (${describeFailure(error)}); finish it in Gusto with Manage employees`);
+        }
+      }
+    } catch (error) {
+      failures.push(`${name}: ${describeFailure(error)}`);
+    }
+  }
+  const summary = added === 0 ? "Sample employees already on file; direct deposit set" : `Added ${added} employee${added === 1 ? "" : "s"} with direct deposit`;
+  return { summary, failures };
+}
+
+/** Creates the JobsOxo employees that match the Gusto samples (by email), if missing. */
+async function ensureSampleEmployeesInJobsOxo(): Promise<number> {
+  const local = await storage.getEmployees();
+  const emails = new Set(local.map((e) => e.email?.toLowerCase()).filter(Boolean));
+  let created = 0;
+  for (const sample of SAMPLE_EMPLOYEES) {
+    if (emails.has(sample.email)) continue;
+    await storage.createEmployee({
+      name: `${sample.first_name} ${sample.last_name}`, email: sample.email, position: sample.title,
+      dayRate: (Number(sample.rate) * 8).toFixed(2), payType: "hourly", employmentType: "w2",
+      stateCode: "NY", status: "active", hireDate: new Date(`${addDays(businessDay(), -14)}T00:00:00Z`),
+    });
+    created += 1;
+  }
+  return created;
+}
+
+/**
+ * Demo only: sets up the sample employees in Gusto (direct deposit, finished
+ * onboarding) and in JobsOxo, then links them so payroll can be tested.
+ */
+export async function setUpSampleEmployees(userId: string) {
+  const integration = await companyIntegration(userId);
+  if (integration.environment !== "demo" || gustoEnvironment() !== "demo") {
+    throw new GustoProviderError("Sample employees can only be added for demo companies.", 409, "demo_only");
+  }
+  const company = `/v1/companies/${integration.companyId}`;
+  const call: GustoCall = (path, options = {}) => gustoRequest(path, { userId, ...options });
+  const results: SampleStep[] = [];
+
+  try {
+    const outcome = await ensureSampleEmployeesInGusto(call, company);
+    results.push({ step: "Gusto employees", status: outcome.failures.length ? "failed" : "done", detail: [outcome.summary, ...outcome.failures].join("; ") });
+  } catch (error) {
+    results.push({ step: "Gusto employees", status: "failed", detail: describeFailure(error) });
+  }
+
+  try {
+    const created = await ensureSampleEmployeesInJobsOxo();
+    results.push({ step: "JobsOxo employees", status: "done", detail: created ? `Added ${created}` : "Already on file" });
+  } catch (error) {
+    results.push({ step: "JobsOxo employees", status: "failed", detail: describeFailure(error) });
+  }
+
+  try {
+    const linked = await syncEmployees(userId);
+    const sampleIds = new Set((await storage.getEmployees()).filter((e) => SAMPLE_EMPLOYEES.some((s) => s.email === e.email?.toLowerCase())).map((e) => e.id));
+    const samples = linked.filter((row) => sampleIds.has(row.employeeId));
+    const ready = samples.filter((row) => row.onboardingStatus === "complete" && row.paymentMethodStatus === "complete").length;
+    results.push({ step: "Link and check readiness", status: ready === SAMPLE_EMPLOYEES.length ? "done" : "failed", detail: `${ready} of ${SAMPLE_EMPLOYEES.length} ready for payroll` });
+  } catch (error) {
+    results.push({ step: "Link and check readiness", status: "failed", detail: describeFailure(error) });
+  }
+
+  return { results };
 }

@@ -252,6 +252,29 @@ describe("Gusto payroll workspace", () => {
     expect(results).toHaveTextContent("→ Sign documents — still needed: Review and sign with Complete company setup");
   });
 
+  it("adds and links the sample employees, showing readiness", async () => {
+    const fallback = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => url === "/api/gusto/demo-company/sample-employees"
+      ? Promise.resolve(jsonResponse({ results: [
+        { step: "Gusto employees", status: "done", detail: "Sample employees already on file; direct deposit set" },
+        { step: "JobsOxo employees", status: "done", detail: "Added 2" },
+        { step: "Link and check readiness", status: "done", detail: "2 of 2 ready for payroll" },
+      ] }))
+      : fallback(url, init));
+    queryClient.setQueryData(["/api/gusto/status"], { configured: true, available: true, companyId: "company-1", environment: "demo", onboardingComplete: true });
+    queryClient.setQueryData(["/api/gusto/payroll-runs"], { runs: [] });
+    queryClient.setQueryData(["/api/gusto/employees/readiness"], { employees: [] });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <GustoPayrollWorkspace records={[]} period={null} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByTestId("button-gusto-sample-employees"));
+    const results = await screen.findByTestId("gusto-sample-employee-results");
+    expect(results).toHaveTextContent("✓ Link and check readiness: 2 of 2 ready for payroll");
+  });
+
   it("never offers simulated deposits outside demo", async () => {
     queryClient.setQueryData(["/api/gusto/status"], {
       configured: true, available: true, companyId: "company-1", environment: "production", onboardingComplete: true,
@@ -268,6 +291,7 @@ describe("Gusto payroll workspace", () => {
     expect(await screen.findByTestId("button-gusto-verify-funding")).toBeInTheDocument();
     expect(screen.queryByTestId("button-gusto-test-deposits")).not.toBeInTheDocument();
     expect(screen.queryByTestId("button-gusto-sample-data")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("button-gusto-sample-employees")).not.toBeInTheDocument();
   });
 
   it("hides setup steps that are already done", async () => {

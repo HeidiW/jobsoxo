@@ -45,6 +45,20 @@ const flowLabels: Array<{ type: FlowType; label: string }> = [
   { type: "payroll_history", label: "Gusto payroll history" },
   { type: "run_payroll", label: "Open Gusto payroll" },
 ];
+/** Per-step outcome of a demo sample-data action. */
+function SampleResults({ title, steps, testId }: { title: string; steps: SampleStep[]; testId: string }) {
+  return (
+    <div role="status" data-testid={testId} style={{ marginTop: "10px", padding: "10px", borderRadius: "8px", background: "var(--track)", fontSize: "12px" }}>
+      <div style={{ fontWeight: 700, marginBottom: "4px" }}>{title}</div>
+      {steps.map(item => <div key={item.step} data-testid={`sample-step-${item.status}`}>
+        <strong>{{ done: "✓", skipped: "–", failed: "✕", manual: "→" }[item.status]} {item.step}</strong>
+        {item.status === "manual" ? " — still needed" : item.status === "failed" ? " — failed" : ""}
+        {item.detail ? `: ${item.detail}` : ""}
+      </div>)}
+    </div>
+  );
+}
+
 const pendingStatuses = new Set(["calculating", "submitting", "submission_pending", "processing", "unknown", "cancelling", "submitted"]);
 const money = (value?: number | null) => typeof value === "number"
   ? value.toLocaleString("en-US", { style: "currency", currency: "USD" }) : "—";
@@ -63,6 +77,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
   const [payDate, setPayDate] = useState("");
   const [busy, setBusy] = useState(false);
   const [sampleSteps, setSampleSteps] = useState<SampleStep[] | null>(null);
+  const [employeeSampleSteps, setEmployeeSampleSteps] = useState<SampleStep[] | null>(null);
   const [flowUrl, setFlowUrl] = useState("");
   const [flowTitle, setFlowTitle] = useState("");
   const [flowBeforeWarning, setFlowBeforeWarning] = useState<FlowType | null>(null);
@@ -284,14 +299,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                   {status.fundingAccount?.status === "verified" && <p role="note" style={{ color: "var(--muted)", fontSize: "11px", margin: "5px 0 0" }}>Gusto currently reports this funding account as verified. This status is read-only here; any verification steps or changes take place in Gusto.</p>}
                   {status.error && <div role="status" style={{ color: "var(--jx-orange-ink)", fontSize: "12px", marginTop: "5px" }}>{status.error}</div>}
                   {status.blockers?.map((blocker, index) => <div key={`${blocker}-${index}`} style={{ color: "var(--jx-orange-ink)", fontSize: "12px", marginTop: "4px" }}><AlertTriangle aria-hidden="true" style={{ width: "12px", height: "12px", verticalAlign: "middle", marginRight: "5px" }} />{blocker}</div>)}
-                  {sampleSteps && <div role="status" data-testid="gusto-sample-results" style={{ marginTop: "10px", padding: "10px", borderRadius: "8px", background: "var(--track)", fontSize: "12px" }}>
-                    <div style={{ fontWeight: 700, marginBottom: "4px" }}>Sample data results</div>
-                    {sampleSteps.map(item => <div key={item.step} data-testid={`sample-step-${item.status}`}>
-                      <strong>{{ done: "✓", skipped: "–", failed: "✕", manual: "→" }[item.status]} {item.step}</strong>
-                      {item.status === "manual" ? " — still needed" : item.status === "failed" ? " — failed" : ""}
-                      {item.detail ? `: ${item.detail}` : ""}
-                    </div>)}
-                  </div>}
+                  {sampleSteps && <SampleResults title="Sample data results" steps={sampleSteps} testId="gusto-sample-results" />}
                 </div>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
@@ -358,6 +366,16 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: 700 }}><Users aria-hidden="true" style={{ width: "15px", height: "15px" }} />Gusto employee setup</div>
               <div style={{ display: "flex", gap: "7px", flexWrap: "wrap" }}>
+                {status.environment === "demo" && status.companyId && <button
+                  type="button" style={buttonStyle} disabled={busy}
+                  onClick={async () => {
+                    const result = await perform<{ results?: SampleStep[] }>("POST", "/api/gusto/demo-company/sample-employees");
+                    if (result?.results) setEmployeeSampleSteps(result.results);
+                    await queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+                  }}
+                  data-testid="button-gusto-sample-employees"
+                  title="Demo only: adds the two sample employees in Gusto and JobsOxo and links them"
+                >Add sample employees</button>}
                 <button type="button" style={buttonStyle} disabled={busy || !status.configured} onClick={() => void openFlow("add_employees", "Add employees in Gusto")}>Add employees</button>
                 <button type="button" style={buttonStyle} disabled={busy} onClick={async () => {
                   const result = await perform("POST", "/api/gusto/employees/sync");
@@ -369,6 +387,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                 }}>Sync Gusto payment methods</button>
               </div>
             </div>
+            {employeeSampleSteps && <SampleResults title="Sample employee results" steps={employeeSampleSteps} testId="gusto-sample-employee-results" />}
             {readinessQuery.isLoading ? <p style={{ color: "var(--muted)", fontSize: "12px" }}>Checking Gusto employee setup…</p>
               : readinessQuery.isError ? <p role="alert" style={{ color: "var(--jx-orange-ink)", fontSize: "12px" }}>Gusto employee readiness could not load. Retry after syncing the company.</p>
                 : readyEmployees.length === 0 ? <p style={{ color: "var(--muted)", fontSize: "12px", marginBottom: 0 }}>No Gusto employees are linked yet.</p>
