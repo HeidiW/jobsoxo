@@ -69,4 +69,14 @@ describe("sign-in identity", () => {
       .expect(409);
     expect(res.body.error).toBe("Username already taken");
   });
+
+  it("returns admin status on sign-in, matching /api/auth/me", async () => {
+    // The client stores the login response as the current user; without
+    // isAdmin, admins saw Settings locked until the cache refreshed.
+    await storage.createUser({ username: "admin@example.com", password: await bcrypt.hash(PASSWORD, 4), isAdmin: true });
+    await storage.createUser({ username: "member@example.com", password: await bcrypt.hash(PASSWORD, 4), isAdmin: false });
+
+    expect((await login(app, "admin@example.com").expect(200)).body).toMatchObject({ username: "admin@example.com", isAdmin: true });
+    expect((await login(app, "member@example.com").expect(200)).body).toMatchObject({ isAdmin: false });
+  });
 });

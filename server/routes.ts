@@ -236,7 +236,8 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Invalid username or password" });
       }
       req.session.userId = user.id;
-      res.json({ id: user.id, username: user.username });
+      // Same shape as /api/auth/me: the client stores this as the signed-in user.
+      res.json({ id: user.id, username: user.username, displayName: user.displayName, isAdmin: user.isAdmin });
     } catch (error) {
       console.error("Login error:", error);
       res.status(500).json({ error: "Failed to log in" });
