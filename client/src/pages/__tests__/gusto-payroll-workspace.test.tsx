@@ -195,7 +195,7 @@ describe("Gusto payroll workspace", () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "Complete company setup" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Complete company setup" }));
     const iframe = await screen.findByTitle("Complete company setup");
     expect(iframe).toHaveAttribute("src", "https://flows.gusto-demo.com/flows/company-onboarding");
     expect(iframe).toHaveAttribute("sandbox", "allow-forms allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox");
@@ -275,6 +275,36 @@ describe("Gusto payroll workspace", () => {
     expect(results).toHaveTextContent("✓ Link and check readiness: 2 of 2 ready for payroll");
   });
 
+  it("shows each Gusto setup task as done (green) or to do (red)", async () => {
+    queryClient.setQueryData(["/api/gusto/status"], {
+      configured: true, available: true, companyId: "company-1", environment: "demo", onboardingComplete: true,
+      fundingAccount: { id: "bank-1", status: "awaiting_deposits" },
+    });
+    queryClient.setQueryData(["/api/gusto/payroll-runs"], { runs: [] });
+    queryClient.setQueryData(["/api/gusto/employees/readiness"], { employees: [
+      { id: "e1", name: "Alexander Hamilton", ready: true, gustoEmployeeId: "g1" },
+      { id: "e2", name: "Maria Lopez", ready: false, gustoEmployeeId: "g2", blockers: ["Gusto onboarding is incomplete"] },
+    ] });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <GustoPayrollWorkspace records={[]} period={null} />
+      </QueryClientProvider>,
+    );
+
+    const state = (type: string) => screen.getByTestId(`checklist-${type}`);
+    await screen.findByTestId("gusto-setup-checklist");
+    expect(state("company_onboarding")).toHaveAttribute("data-state", "done");
+    expect(state("company_onboarding")).toHaveTextContent("Done");
+    expect(state("add_bank_info")).toHaveAttribute("data-state", "done");
+    expect(state("verify_bank_info")).toHaveAttribute("data-state", "todo");
+    expect(state("verify_bank_info")).toHaveTextContent("To do");
+    expect(state("add_employees")).toHaveAttribute("data-state", "done");
+    expect(state("employee_management")).toHaveAttribute("data-state", "todo");
+    // Tools that aren't tasks stay as plain buttons.
+    expect(screen.getByRole("button", { name: "Gusto payroll history" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Gusto payroll" })).toBeInTheDocument();
+  });
+
   it("never offers simulated deposits outside demo", async () => {
     queryClient.setQueryData(["/api/gusto/status"], {
       configured: true, available: true, companyId: "company-1", environment: "production", onboardingComplete: true,
@@ -325,7 +355,7 @@ describe("Gusto payroll workspace", () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "Complete company setup" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Complete company setup" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/gusto/flows", expect.objectContaining({ method: "POST" })));
     expect(screen.queryByTitle("Complete company setup")).not.toBeInTheDocument();
   });

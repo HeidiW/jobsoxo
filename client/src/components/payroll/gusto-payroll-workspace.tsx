@@ -114,6 +114,18 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
   });
   const run = runQuery.data ?? selectedRun;
   const status = statusQuery.data;
+
+  // Setup tasks show done (green) or to do (red); null while the data loads.
+  const readinessEmployees = readinessQuery.data?.employees ?? [];
+  const employeesKnown = readinessQuery.isSuccess;
+  const setupChecklist: Array<{ type: FlowType; label: string; done: boolean | null }> = [
+    { type: "company_onboarding", label: "Complete company setup", done: status ? status.onboardingComplete === true : null },
+    { type: "add_bank_info", label: "Set up Gusto funding", done: status ? !!status.fundingAccount : null },
+    { type: "verify_bank_info", label: "Verify funding in Gusto", done: status ? status.fundingAccount?.status === "verified" : null },
+    { type: "add_employees", label: "Add employees in Gusto", done: employeesKnown ? readinessEmployees.length > 0 && readinessEmployees.every(e => !!e.gustoEmployeeId) : null },
+    { type: "employee_management", label: "Manage employees", done: employeesKnown ? readinessEmployees.length > 0 && readinessEmployees.every(e => e.ready) : null },
+  ];
+  const otherFlows = flowLabels.filter(flow => !setupChecklist.some(item => item.type === flow.type));
   const runStatus = run?.status ?? "";
   const pending = pendingStatuses.has(runStatus);
   const readyEmployees = readinessQuery.data?.employees ?? [];
@@ -460,8 +472,25 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
         </button>)}</div>
       </details>}
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }} aria-label="Gusto hosted workflows">
-        {flowLabels.map(flow => <button key={flow.type} type="button" style={buttonStyle} disabled={busy || status?.configured !== true} onClick={() => void openFlow(flow.type, flow.label)}>{flow.label}</button>)}
+      <div style={panel} aria-label="Gusto setup checklist" data-testid="gusto-setup-checklist">
+        <div style={{ fontSize: "12px", fontWeight: 700, marginBottom: "4px" }}>Gusto setup checklist</div>
+        <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+          {setupChecklist.map((item, index) => {
+            const tone = item.done === null ? "var(--muted)" : item.done ? "var(--jx-green)" : "hsl(var(--destructive))";
+            const state = item.done === null ? "Checking…" : item.done ? "Done" : "To do";
+            return <li key={item.type} data-testid={`checklist-${item.type}`} data-state={item.done === null ? "unknown" : item.done ? "done" : "todo"}
+              style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: index ? "1px solid var(--panel-bd)" : "none" }}>
+              <span aria-hidden="true" style={{ width: "10px", height: "10px", borderRadius: "50%", background: tone, flexShrink: 0 }} />
+              <span style={{ flex: 1, fontSize: "12px" }}>{item.label}</span>
+              <span style={{ fontSize: "11px", fontWeight: 700, color: tone, minWidth: "54px", textAlign: "right" }}>{state}</span>
+              <button type="button" style={buttonStyle} disabled={busy || status?.configured !== true}
+                aria-label={`Open ${item.label}`} onClick={() => void openFlow(item.type, item.label)}>Open</button>
+            </li>;
+          })}
+        </ul>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "7px", marginTop: "10px" }} aria-label="Other Gusto tools">
+          {otherFlows.map(flow => <button key={flow.type} type="button" style={buttonStyle} disabled={busy || status?.configured !== true} onClick={() => void openFlow(flow.type, flow.label)}>{flow.label}</button>)}
+        </div>
       </div>
 
       <Dialog open={!!flowUrl} onOpenChange={open => { if (!open) closeFlow(); }}>
