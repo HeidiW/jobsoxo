@@ -130,6 +130,7 @@ const employeeFormSchema = z.object({
   taxAllowances: z.string().optional(),
   stateCode: z.string().optional(),
   taxpayerIdNumber: z.string().optional(),
+  inviteToGusto: z.boolean().optional(),
 });
 const timeEntryFormSchema = z.object({
   employeeId: z.string().min(1, "Employee is required"),
@@ -477,10 +478,17 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
       taxAllowances: (employee as any)?.taxAllowances?.toString() || "0",
       stateCode: (employee as any)?.stateCode || "NY",
       taxpayerIdNumber: (employee as any)?.taxpayerIdNumber || "",
+      inviteToGusto: true,
     },
   });
   const watchPayType = form.watch("payType");
   const watchEmpType = form.watch("employmentType");
+  // Offer Gusto's self-onboarding invite for new W-2 employees when Gusto is
+  // connected (the status call is admin-only; members never see the option).
+  const gustoStatus = useQuery<{ companyId?: string; configured?: boolean }>({ queryKey: ["/api/gusto/status"], retry: false, staleTime: 30_000 });
+  const canInviteToGusto = !isEdit && watchEmpType === "w2" && !!gustoStatus.data?.companyId;
+  const watchInvite = form.watch("inviteToGusto");
+  const watchEmail = form.watch("email");
 
   const mutation = useMutation({
     mutationFn: async (data: EmployeeFormValues) => {
@@ -491,12 +499,27 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
         taxAllowances: parseInt(data.taxAllowances || "0"),
         annualSalary: data.annualSalary ? String(parseFloat(data.annualSalary)) : null,
       };
-      const res = await apiRequest(isEdit ? "PATCH" : "POST", isEdit ? `/api/employees/${employee.id}` : "/api/employees", payload);
+      const res = await apiRequest(isEdit ? "PATCH" : "POST", isEdit ? `/api/employees/${employee.id}` : "/api/employees",
+        { ...payload, inviteToGusto: canInviteToGusto && data.inviteToGusto === true });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (saved: { email?: string | null; gustoInvite?: { status: string; error?: string } }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
-      toast({ title: isEdit ? "Employee updated" : "Employee added" });
+      queryClient.invalidateQueries({ queryKey: ["/api/gusto/employees/readiness"] });
+      const invite = saved?.gustoInvite;
+      if (invite?.status === "failed") {
+        toast({
+          title: "Employee added, but the Gusto invitation failed",
+          description: `${invite.error ?? "Gusto didn't accept the request."} You can retry from Gusto employee setup on the Payroll page.`,
+          variant: "destructive",
+        });
+      } else if (invite?.status === "invited") {
+        toast({ title: "Employee added and invited to Gusto", description: `Gusto emailed ${saved.email} to enter their tax and bank details.` });
+      } else if (invite) {
+        toast({ title: "Employee added and linked to Gusto", description: "They were already in Gusto, so no new invitation was sent." });
+      } else {
+        toast({ title: isEdit ? "Employee updated" : "Employee added" });
+      }
       if (!isEdit) onClose();
     },
     onError: (error: Error) => {
@@ -509,7 +532,13 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(d => mutation.mutate(d))} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+      <form onSubmit={form.handleSubmit(d => {
+        if (canInviteToGusto && d.inviteToGusto && !d.email?.trim()) {
+          form.setError("email", { message: "Email is required to invite to Gusto payroll" });
+          return;
+        }
+        mutation.mutate(d);
+      })} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
         {/* Basic info */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
           <FormField control={form.control} name="firstName" render={({ field }) => (
@@ -634,6 +663,18 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
             <AlertTriangle style={{ width: "14px", height: "14px", color: "#b45309", flexShrink: 0, marginTop: "1px" }} />
             <p style={{ fontSize: "12px", color: "#92400e", margin: 0 }}>1099 contractors — no tax is withheld. They receive gross pay minus deductions.</p>
           </div>
+        )}
+
+        {canInviteToGusto && (
+          <FormField control={form.control} name="inviteToGusto" render={({ field }) => (
+            <label style={{ display: "flex", gap: "10px", alignItems: "flex-start", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", padding: "10px 12px", cursor: "pointer" }}>
+              <input type="checkbox" checked={field.value === true} onChange={(event) => field.onChange(event.target.checked)} style={{ marginTop: "2px" }} data-testid="checkbox-invite-to-gusto" />
+              <span style={{ fontSize: "12px", color: "#14532d" }}>
+                <strong>Invite to Gusto payroll</strong><br />
+                Adds them in Gusto and emails{watchInvite && watchEmail ? ` ${watchEmail}` : " them"} to enter their own tax and bank details. Requires an email address.
+              </span>
+            </label>
+          )} />
         )}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "4px" }}>

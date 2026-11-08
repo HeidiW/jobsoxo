@@ -4,6 +4,8 @@ import { seedDemoData } from "./seed";
 import { calendarDay } from "./business-time";
 import { invoiceRecipients } from "@shared/client-emails";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
+import { inviteEmployeeToGusto } from "./gusto-employee-invite";
+import { GustoConfigurationError, GustoProviderError } from "./gusto-client";
 import { COMPANY_FIELD_LABELS, REQUIRED_COMPANY_FIELDS, isCompanyFieldFilled } from "@shared/company-setup";
 // Function declaration (not const) so it's hoisted and immune to TDZ in circular-dep scenarios.
 // import.meta.url is valid in ESM (dev/tsx) but undefined in CJS bundles (production build).
@@ -1990,10 +1992,37 @@ export async function registerRoutes(
       if (!parsed.success) return badRequest(res, parsed.error);
       const employee = await storage.createEmployee(parsed.data);
       await storage.seedDefaultOnboardingItems(employee.id);
+      // Optionally add them to Gusto and send Gusto's self-onboarding invite.
+      // The employee is saved either way; an invite problem is reported, not fatal.
+      if (req.body?.inviteToGusto === true) {
+        try {
+          const invite = await inviteEmployeeToGusto(req.session.userId!, employee.id, {
+            firstName: req.body.firstName, lastName: req.body.lastName,
+          });
+          return res.status(201).json({ ...employee, gustoInvite: invite });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Gusto invitation failed";
+          return res.status(201).json({ ...employee, gustoInvite: { status: "failed", error: message } });
+        }
+      }
       res.status(201).json(employee);
     } catch (error) {
       console.error("Create employee error:", error);
       res.status(500).json({ error: "Failed to create employee" });
+    }
+  });
+
+  // Add an existing employee to Gusto payroll (or retry a failed invite).
+  app.post("/api/employees/:id/gusto-invite", requireAdmin, async (req, res) => {
+    try {
+      res.json(await inviteEmployeeToGusto(req.session.userId!, req.params.id));
+    } catch (error) {
+      if (error instanceof GustoProviderError || error instanceof GustoConfigurationError) {
+        const status = error instanceof GustoProviderError ? error.status : 409;
+        return res.status(status >= 400 && status < 600 ? status : 502).json({ error: error.message, code: (error as GustoProviderError).code });
+      }
+      console.error("Gusto invite error:", error);
+      res.status(500).json({ error: "Gusto invitation failed" });
     }
   });
 

@@ -326,6 +326,24 @@ describe("Gusto payroll workspace", () => {
     expect(results).toHaveTextContent("→ Set a day rate — still needed: Gusto didn't share pay for Sammy Lee");
   });
 
+  it("offers Invite to Gusto for employees who aren't linked yet", async () => {
+    queryClient.setQueryData(["/api/gusto/status"], { configured: true, available: true, companyId: "company-1", environment: "production", onboardingComplete: true });
+    queryClient.setQueryData(["/api/gusto/payroll-runs"], { runs: [] });
+    queryClient.setQueryData(["/api/gusto/employees/readiness"], { employees: [
+      { id: "e-linked", name: "Linked Person", ready: true, gustoEmployeeId: "g1" },
+      { id: "e-new", name: "New Hire", ready: false, gustoEmployeeId: null, blockers: ["Employee is not synchronized to this Gusto company"] },
+    ] });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <GustoPayrollWorkspace records={[]} period={null} />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.queryByTestId("button-gusto-invite-e-linked")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByTestId("button-gusto-invite-e-new"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/employees/e-new/gusto-invite", expect.objectContaining({ method: "POST" })));
+  });
+
   it("never offers simulated deposits outside demo", async () => {
     queryClient.setQueryData(["/api/gusto/status"], {
       configured: true, available: true, companyId: "company-1", environment: "production", onboardingComplete: true,

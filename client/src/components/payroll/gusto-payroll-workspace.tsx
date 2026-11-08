@@ -422,7 +422,15 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                 : readyEmployees.length === 0 ? <p style={{ color: "var(--muted)", fontSize: "12px", marginBottom: 0 }}>No Gusto employees are linked yet.</p>
                   : readyEmployees.map(employee => <div key={employee.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", padding: "8px 0", borderTop: "1px solid var(--panel-bd)", fontSize: "12px" }}>
                     <span>{employee.name || "Employee"}{employee.gustoEmployeeId ? <span style={{ color: "var(--muted)" }}> · Gusto linked</span> : ""}</span>
-                    <span style={{ color: employee.ready ? "var(--jx-green-ink)" : "var(--jx-orange-ink)", textAlign: "right" }}>{employee.ready ? "Gusto payment method ready" : (employee.blockers?.join(", ") || "Gusto setup needed")}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "flex-end", textAlign: "right" }}>
+                      <span style={{ color: employee.ready ? "var(--jx-green-ink)" : "var(--jx-orange-ink)" }}>{employee.ready ? "Gusto payment method ready" : (employee.blockers?.join(", ") || "Gusto setup needed")}</span>
+                      {!employee.gustoEmployeeId && status?.companyId && <button type="button" style={buttonStyle} disabled={busy}
+                        onClick={async () => {
+                          const result = await perform<{ status?: string }>("POST", `/api/employees/${employee.id}/gusto-invite`);
+                          if (result?.status) toast({ title: result.status === "invited" ? `Gusto invitation sent to ${employee.name ?? "employee"}` : `${employee.name ?? "Employee"} is linked to Gusto` });
+                        }}
+                        data-testid={`button-gusto-invite-${employee.id}`}>Invite to Gusto</button>}
+                    </span>
                   </div>)}
           </div>
 
