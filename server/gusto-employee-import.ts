@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { gustoEmployeeMappings } from "@shared/schema";
-import { allGustoEmployees, companyIntegration, syncEmployees } from "./gusto-company";
+import { allGustoEmployees, companyIntegration, syncCompany, syncEmployees } from "./gusto-company";
 import { gustoRequest } from "./gusto-client";
 import { storage } from "./storage";
 
@@ -77,4 +77,11 @@ export async function importGustoEmployees(userId: string) {
 
   const synced = await syncEmployees(userId);
   return { imported, needsRate, alreadyInJobsOxo, linked: synced.length };
+}
+
+/** "Sync readiness": refresh company status and pull in anyone new in Gusto. */
+export async function syncCompanyAndImport(userId: string) {
+  const status = await syncCompany(userId);
+  const imported = await importGustoEmployees(userId);
+  return { ...status, imported };
 }

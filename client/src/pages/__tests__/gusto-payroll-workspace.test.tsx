@@ -344,6 +344,46 @@ describe("Gusto payroll workspace", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/employees/e-new/gusto-invite", expect.objectContaining({ method: "POST" })));
   });
 
+  it("imports from Gusto automatically when the Add employees screen closes", async () => {
+    const fallback = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => url === "/api/gusto/employees/import"
+      ? Promise.resolve(jsonResponse({ imported: ["Rosa Diaz"], needsRate: [], alreadyInJobsOxo: 0, linked: 1 }))
+      : fallback(url, init));
+    queryClient.setQueryData(["/api/gusto/status"], { configured: true, available: true, companyId: "company-1", environment: "production", onboardingComplete: true });
+    queryClient.setQueryData(["/api/gusto/payroll-runs"], { runs: [] });
+    queryClient.setQueryData(["/api/gusto/employees/readiness"], { employees: [] });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <GustoPayrollWorkspace records={[]} period={null} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add employees" }));
+    await screen.findByTitle("Add employees in Gusto");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/gusto/employees/import", expect.objectContaining({ method: "POST" })));
+    expect(await screen.findByTestId("gusto-import-results")).toHaveTextContent("Imported from Gusto: Rosa Diaz");
+  });
+
+  it("doesn't import when a non-employee Gusto screen closes", async () => {
+    queryClient.setQueryData(["/api/gusto/status"], { configured: true, available: true, companyId: "company-1", environment: "demo", onboardingComplete: false });
+    queryClient.setQueryData(["/api/gusto/payroll-runs"], { runs: [] });
+    queryClient.setQueryData(["/api/gusto/employees/readiness"], { employees: [] });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <GustoPayrollWorkspace records={[]} period={null} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByTestId("button-gusto-complete-setup"));
+    await screen.findByTitle("Complete company setup");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    await waitFor(() => expect(screen.queryByTitle("Complete company setup")).not.toBeInTheDocument());
+    expect(fetchMock.mock.calls.some(([url]) => url === "/api/gusto/employees/import")).toBe(false);
+  });
+
   it("never offers simulated deposits outside demo", async () => {
     queryClient.setQueryData(["/api/gusto/status"], {
       configured: true, available: true, companyId: "company-1", environment: "production", onboardingComplete: true,

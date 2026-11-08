@@ -9,7 +9,7 @@ vi.mock("./gusto-client", async (importOriginal) => ({
   gustoRequest: vi.fn(),
 }));
 const { gustoRequest } = await import("./gusto-client");
-const { importGustoEmployees, payFromGustoJob } = await import("./gusto-employee-import");
+const { importGustoEmployees, payFromGustoJob, syncCompanyAndImport } = await import("./gusto-employee-import");
 
 const companyId = "company-import-1";
 let gustoEmployees: any[];
@@ -19,6 +19,9 @@ function fakeGusto() {
     const method = options.method ?? "GET";
     if (method === "GET" && path.startsWith(`/v1/companies/${companyId}/employees`)) return gustoEmployees;
     if (method === "GET" && path === `/v1/companies/${companyId}/locations`) return [{ uuid: "loc-1", state: "NY", filing_address: true }];
+    if (method === "GET" && path === `/v1/companies/${companyId}`) return { uuid: companyId, name: "Crystal Grove LLP" };
+    if (method === "GET" && path === `/v1/companies/${companyId}/onboarding_status`) return { onboarding_completed: true, onboarding_steps: [] };
+    if (method === "GET" && path === `/v1/companies/${companyId}/bank_accounts`) return [{ uuid: "bank-1", verification_status: "verified" }];
     if (method === "GET" && /^\/v1\/employees\/[\w-]+\/payment_method$/.test(path)) return { type: "Direct Deposit", splits: [{ uuid: "s1" }] };
     throw new Error(`Unexpected Gusto request: ${method} ${path}`);
   });
@@ -90,5 +93,13 @@ describe("importGustoEmployees", () => {
 
     expect(again.imported).toEqual([]);
     expect((await storage.getEmployees()).filter((e) => e.name === "Rosa Diaz")).toHaveLength(1);
+  });
+
+  it("Sync readiness refreshes company status and imports new Gusto employees", async () => {
+    const result = await syncCompanyAndImport(await connect());
+
+    expect(result).toMatchObject({ companyId, onboardingComplete: true, fundingAccount: { status: "verified" } });
+    expect(result.imported.imported).toEqual(["Rosa Diaz", "Sammy Lee", "Ann Existing"]);
+    expect(await byName("Rosa Diaz")).toBeDefined();
   });
 });
