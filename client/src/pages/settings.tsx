@@ -49,6 +49,7 @@ import {
   Link2,
   Search,
   X,
+  ShieldCheck,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { useState, useEffect, useMemo, useRef } from "react";
@@ -486,6 +487,84 @@ function BusinessBankAccountCard({ canManage }: { canManage: boolean }) {
   );
 }
 
+type TeamMember = { id: string; username: string; displayName: string | null; email: string | null; isAdmin: boolean };
+
+export function TeamMembers() {
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const { data: members = [], isLoading } = useQuery<TeamMember[]>({ queryKey: ["/api/users"] });
+
+  const adminMutation = useMutation({
+    mutationFn: async ({ id, isAdmin }: { id: string; isAdmin: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/users/${id}/admin`, { isAdmin });
+      return res.json();
+    },
+    onSuccess: (_data, { isAdmin }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      toast({ title: isAdmin ? "Admin access granted" : "Admin access removed" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Couldn't change admin access", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" });
+    },
+  });
+
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading people...</p>;
+
+  return (
+    <div className="space-y-2" data-testid="team-members">
+      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">People</p>
+      {members.map((member) => {
+        const isSelf = member.id === user?.id;
+        return (
+          <div key={member.id} className="flex items-center justify-between p-3 rounded-md bg-muted/50 gap-3" data-testid={`member-row-${member.id}`}>
+            <div className="min-w-0">
+              <span className="text-sm font-medium truncate">{member.displayName || member.username}</span>
+              {member.displayName && <span className="ml-2 text-xs text-muted-foreground">{member.username}</span>}
+              {isSelf && <span className="ml-2 text-xs text-muted-foreground">(you)</span>}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {member.isAdmin && (
+                <Badge variant="secondary" className="gap-1" data-testid={`badge-admin-${member.id}`}>
+                  <ShieldCheck className="h-3 w-3" />
+                  Admin
+                </Badge>
+              )}
+              {!member.isAdmin && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => adminMutation.mutate({ id: member.id, isAdmin: true })}
+                  disabled={adminMutation.isPending}
+                  data-testid={`button-make-admin-${member.id}`}
+                >
+                  Make admin
+                </Button>
+              )}
+              {member.isAdmin && !isSelf && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => adminMutation.mutate({ id: member.id, isAdmin: false })}
+                  disabled={adminMutation.isPending}
+                  data-testid={`button-remove-admin-${member.id}`}
+                >
+                  Remove admin
+                </Button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      <p className="text-xs text-muted-foreground">
+        Admins can change company settings, manage invites and run payroll. Everyone can see clients, jobs and invoices.
+      </p>
+    </div>
+  );
+}
+
 function InvitePanel() {
   const { toast } = useToast();
   const [label, setLabel] = useState("");
@@ -540,10 +619,12 @@ function InvitePanel() {
           Team Access
         </CardTitle>
         <CardDescription>
-          Generate single-use invite codes so others can create an account on your JobsOxo site
+          Manage who has admin access, and generate single-use invite codes so others can create an account on your JobsOxo site
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <TeamMembers />
+        <Separator />
         {/* Create new invite */}
         <div className="flex gap-2">
           <input

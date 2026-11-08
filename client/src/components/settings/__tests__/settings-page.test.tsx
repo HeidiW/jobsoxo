@@ -99,6 +99,7 @@ describe("Settings page", () => {
       });
       if (url === "/api/sms/config") return response({ phoneNumber: null });
       if (url === "/api/invites") return response([]);
+      if (url === "/api/users") return response([]);
       if (url === "/api/auth/profile" && init?.method === "PATCH") {
         profilePatches.push(JSON.parse(String(init.body)));
         return response({});

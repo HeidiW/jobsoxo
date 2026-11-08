@@ -79,6 +79,9 @@ import {
 import { db } from "./db";
 import { eq, ne, desc, and, gte, lte, sql, isNull, or, inArray } from "drizzle-orm";
 
+export type TeamMember = Pick<User, "id" | "username" | "displayName" | "email" | "isAdmin">;
+export type SetUserAdminResult = "ok" | "not_found" | "last_admin";
+
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
@@ -91,6 +94,8 @@ export interface IStorage {
   clearResetToken(userId: string): Promise<void>;
   updateUserPassword(userId: string, passwordHash: string): Promise<void>;
   updateUserDisplayName(userId: string, displayName: string): Promise<User>;
+  listTeamMembers(): Promise<TeamMember[]>;
+  setUserAdmin(userId: string, isAdmin: boolean): Promise<SetUserAdminResult>;
 
   // Clients
   getClients(): Promise<Client[]>;
@@ -327,6 +332,25 @@ export class DatabaseStorage implements IStorage {
 
   async updateUserPassword(userId: string, passwordHash: string): Promise<void> {
     await db.update(users).set({ password: passwordHash }).where(eq(users.id, userId));
+  }
+
+  async listTeamMembers(): Promise<TeamMember[]> {
+    return db
+      .select({ id: users.id, username: users.username, displayName: users.displayName, email: users.email, isAdmin: users.isAdmin })
+      .from(users)
+      .orderBy(desc(users.isAdmin), users.username);
+  }
+
+  async setUserAdmin(userId: string, isAdmin: boolean): Promise<SetUserAdminResult> {
+    return db.transaction(async (tx) => {
+      // Lock admin rows so concurrent demotions can't remove the last admin.
+      const admins = await tx.select({ id: users.id }).from(users).where(eq(users.isAdmin, true)).for("update");
+      const [target] = await tx.select({ id: users.id, isAdmin: users.isAdmin }).from(users).where(eq(users.id, userId)).for("update");
+      if (!target) return "not_found";
+      if (!isAdmin && target.isAdmin && admins.length <= 1) return "last_admin";
+      await tx.update(users).set({ isAdmin }).where(eq(users.id, userId));
+      return "ok";
+    });
   }
 
   async updateUserDisplayName(userId: string, displayName: string): Promise<User> {

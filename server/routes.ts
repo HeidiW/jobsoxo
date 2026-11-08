@@ -2697,6 +2697,31 @@ export async function registerRoutes(
     }
   });
 
+  // Team members and admin role (admin only)
+  app.get("/api/users", requireAdmin, async (_req, res) => {
+    try {
+      res.json(await storage.listTeamMembers());
+    } catch (error) {
+      res.status(500).json({ error: "Failed to get team members" });
+    }
+  });
+
+  app.patch("/api/users/:id/admin", requireAdmin, async (req, res) => {
+    if (typeof req.body?.isAdmin !== "boolean") {
+      return res.status(400).json({ error: "isAdmin must be true or false" });
+    }
+    try {
+      const result = await storage.setUserAdmin(req.params.id, req.body.isAdmin);
+      if (result === "not_found") return res.status(404).json({ error: "User not found" });
+      if (result === "last_admin") {
+        return res.status(409).json({ error: "There must be at least one admin. Make someone else an admin first." });
+      }
+      res.json({ id: req.params.id, isAdmin: req.body.isAdmin });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to update admin access" });
+    }
+  });
+
   // ── Inbox (Gmail) ─────────────────────────────────────────────────────────
   //
   // Each user connects their own Gmail (per-user OAuth). Actions that touch
