@@ -18,11 +18,13 @@ import { Button } from "@/components/ui/button";
 import { apiRequest, ApiError, queryClient } from "@/lib/queryClient";
 import { formatPhone } from "@/lib/formatPhone";
 import { useToast } from "@/hooks/use-toast";
+import { EmailListEditor } from "@/components/email-list-editor";
 
 const clientFormSchema = z.object({
   name: z.string().trim().min(1, "Client name is required"),
   generalContractorName: z.string().optional(),
   email: z.string().email("Enter a valid email").optional().or(z.literal("")),
+  additionalEmails: z.array(z.string().email()),
   phone: z.string().optional(),
   address: z.string().optional(),
   city: z.string().optional(),
@@ -48,6 +50,7 @@ export function ClientForm({
       name: client?.name ?? "",
       generalContractorName: client?.generalContractorName ?? "",
       email: client?.email ?? "",
+      additionalEmails: client?.additionalEmails ?? [],
       phone: client?.phone ?? "",
       address: client?.address ?? "",
       city: client?.city ?? "",
@@ -159,7 +162,7 @@ export function ClientForm({
             render={({ field }) => (
               <FormItem className="min-w-0 space-y-1.5">
                 <FormLabel htmlFor="client-email" className="text-[13px] font-semibold text-jx-ink">
-                  Email
+                  Primary email
                 </FormLabel>
                 <FormControl>
                   <Input
@@ -201,6 +204,26 @@ export function ClientForm({
             )}
           />
         </div>
+
+        <FormField
+          control={form.control}
+          name="additionalEmails"
+          render={({ field }) => (
+            <FormItem className="min-w-0 space-y-1.5">
+              <FormLabel className="text-[13px] font-semibold text-jx-ink">Additional emails</FormLabel>
+              <p className="text-[13px] text-jx-ink-3">
+                Other people at this company who should receive invoices, such as accounts payable or the project manager.
+              </p>
+              <EmailListEditor
+                value={field.value}
+                onChange={field.onChange}
+                exclude={form.watch("email") ? [form.watch("email")!] : []}
+                testIdPrefix="client-additional-emails"
+              />
+              <FormMessage />
+            </FormItem>
+          )}
+        />
 
         <FormField
           control={form.control}

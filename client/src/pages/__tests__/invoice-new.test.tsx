@@ -17,6 +17,13 @@ vi.mock("wouter", async (original) => ({
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: state.toast }) }));
 vi.mock("@/lib/analytics", () => ({ trackEvent: vi.fn() }));
 
+// jsdom has no ResizeObserver; Radix checkboxes (email recipients) measure with it.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
 const client = { id: "client-1", name: "Northline Construction", address: "12 Test Street", email: "test@example.invalid" };
 const job = { id: "job-1", clientId: client.id, client, title: "Hotel restoration", referenceCodes: [{ label: "PO", code: "PO-100" }] };
 const parsed = {
@@ -30,6 +37,8 @@ let fetchMock: ReturnType<typeof vi.fn>;
 let failures: Set<string>;
 let googleConnected: boolean;
 let rejectSave: boolean;
+let clientRecord: Record<string, unknown>;
+let clientPatches: Array<Record<string, unknown>>;
 
 function mount() {
   return render(<QueryClientProvider client={queryClient}><InvoiceNew /></QueryClientProvider>);
@@ -50,10 +59,17 @@ describe("New invoice redesign", () => {
   beforeEach(() => {
     queryClient.clear(); state.navigate.mockReset(); state.toast.mockReset();
     state.search = "jobId=job-1"; failures = new Set(); googleConnected = false; rejectSave = false;
+    clientRecord = { ...client }; clientPatches = [];
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (failures.has(path)) return Response.json({ error: "Unavailable" }, { status: 503 });
-      if (path === "/api/clients") return Response.json([client]);
+      if (path === "/api/clients") return Response.json([clientRecord]);
+      if (path === `/api/clients/${client.id}` && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body));
+        clientPatches.push(body);
+        clientRecord = { ...clientRecord, ...body };
+        return Response.json(clientRecord);
+      }
       if (path === "/api/jobs") return Response.json([job]);
       if (path === "/api/settings") return Response.json({ companyName: "Test Builder", companyAddress: "1 Business Street", invoiceTerms: "Net 30" });
       if (path === "/api/google-docs/status") return Response.json({ connected: googleConnected, email: null });
@@ -96,6 +112,54 @@ describe("New invoice redesign", () => {
     expect(payload.lineItems[0]).toMatchObject({ description: "Finish plaster walls", quantity: 2, rate: 125, amount: 250 });
     expect(payload.lineItems[0]).not.toHaveProperty("id");
     await waitFor(() => expect(state.navigate).toHaveBeenCalledWith("/invoices/new-invoice"));
+  });
+
+  it("ticks every client email and saves the recipients that stay ticked", async () => {
+    clientRecord = { ...client, additionalEmails: ["ap@northline.test", "pm@northline.test"] };
+    mount(); await ready(); await addItem();
+    for (const email of [client.email, "ap@northline.test", "pm@northline.test"]) {
+      expect(await screen.findByTestId(`checkbox-recipient-${email}`)).toHaveAttribute("aria-checked", "true");
+    }
+
+    await userEvent.click(screen.getByTestId("checkbox-recipient-pm@northline.test"));
+    await userEvent.click(screen.getByTestId("button-save-draft"));
+
+    await waitFor(() => expect(creates()).toHaveLength(1));
+    expect(JSON.parse(creates()[0][1].body as string).recipientEmails).toEqual([client.email, "ap@northline.test"]);
+  });
+
+  it("won't save when every email is unticked", async () => {
+    mount(); await ready(); await addItem();
+    await userEvent.click(await screen.findByTestId(`checkbox-recipient-${client.email}`));
+    await userEvent.click(screen.getByTestId("button-save-draft"));
+
+    await waitFor(() => expect(state.toast).toHaveBeenCalledWith(expect.objectContaining({ title: "No email recipients" })));
+    expect(creates()).toHaveLength(0);
+  });
+
+  it("adds a new email to the client and sends to it", async () => {
+    mount(); await ready(); await addItem();
+    fireEvent.change(await screen.findByTestId("input-add-recipient"), { target: { value: "billing@northline.test" } });
+    await userEvent.click(screen.getByTestId("button-add-recipient"));
+
+    await waitFor(() => expect(clientPatches).toEqual([{ additionalEmails: ["billing@northline.test"] }]));
+    expect(await screen.findByTestId("checkbox-recipient-billing@northline.test")).toHaveAttribute("aria-checked", "true");
+
+    await userEvent.click(screen.getByTestId("button-save-draft"));
+    await waitFor(() => expect(creates()).toHaveLength(1));
+    expect(JSON.parse(creates()[0][1].body as string).recipientEmails).toEqual([client.email, "billing@northline.test"]);
+  });
+
+  it("rejects an invalid or duplicate email without saving it", async () => {
+    mount(); await ready();
+    fireEvent.change(await screen.findByTestId("input-add-recipient"), { target: { value: "not-an-email" } });
+    await userEvent.click(screen.getByTestId("button-add-recipient"));
+    expect(await screen.findByText("Enter a valid email")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("input-add-recipient"), { target: { value: client.email.toUpperCase() } });
+    await userEvent.click(screen.getByTestId("button-add-recipient"));
+    expect(await screen.findByText("That email is already listed")).toBeInTheDocument();
+    expect(clientPatches).toHaveLength(0);
   });
 
   it("preserves send=true, server field errors and the unsaved form on failure", async () => {

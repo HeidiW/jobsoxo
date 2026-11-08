@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import { clientEmailOptions } from "@shared/client-emails";
+import { InvoiceRecipients } from "@/components/invoices/invoice-recipients";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import {
@@ -86,6 +88,7 @@ const invoiceFormSchema = z.object({
   notes: z.string().optional(),
   termsAndConditions: z.string().optional(),
   taxRate: z.string().optional(),
+  recipientEmails: z.array(z.string()),
 });
 
 type InvoiceFormValues = z.infer<typeof invoiceFormSchema>;
@@ -399,10 +402,12 @@ export default function InvoiceNew() {
       notes: "",
       termsAndConditions: settings?.invoiceTerms || "Payment is due within 30 days. Late payments may incur additional fees.",
       taxRate: "0",
+      recipientEmails: [],
     },
   });
 
   const selectedClientId = form.watch("clientId");
+  const recipientEmails = form.watch("recipientEmails");
   const selectedJobId = form.watch("jobId");
   const taxRate = parseFloat(form.watch("taxRate") || "0");
   const notes = form.watch("notes") || "";
@@ -443,6 +448,15 @@ export default function InvoiceNew() {
 
   const filteredJobs = jobs;
   const selectedClient = clients?.find((c) => c.id === selectedClientId);
+
+  // Choosing a client ticks all of its email addresses; later additions to the
+  // client don't reset the choices made for this invoice.
+  const selectedClientLoaded = !!selectedClient;
+  useEffect(() => {
+    if (!selectedClient) return;
+    form.setValue("recipientEmails", clientEmailOptions(selectedClient));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClientId, selectedClientLoaded]);
   const selectedJob = selectedJobId ? jobs?.find((j) => j.id === selectedJobId) : null;
 
   const subtotal = lineItems.reduce((s, i) => s + i.amount, 0);
@@ -619,6 +633,10 @@ export default function InvoiceNew() {
   const onSubmit = (data: InvoiceFormValues, send = false) => {
     if (lineItems.length === 0) {
       toast({ title: "No line items", description: "Add at least one line item to the invoice.", variant: "destructive" });
+      return;
+    }
+    if (clientEmailOptions(selectedClient).length > 0 && data.recipientEmails.length === 0) {
+      toast({ title: "No email recipients", description: "Tick at least one email address to send this invoice to.", variant: "destructive" });
       return;
     }
     createInvoiceMutation.mutate({ formData: data, send });
@@ -825,12 +843,14 @@ export default function InvoiceNew() {
                               </div>
                             </div>
                           )}
-                          {selectedClient.email && (
-                            <div>
-                              <label style={labelStyle}>Email</label>
-                              <div style={{ ...inputStyle, background: "#f8fafc", fontSize: "13px", color: "#475569" }}>{selectedClient.email}</div>
-                            </div>
-                          )}
+                          <div>
+                            <label style={labelStyle}>Send invoice to</label>
+                            <InvoiceRecipients
+                              client={selectedClient}
+                              value={recipientEmails}
+                              onChange={(emails) => form.setValue("recipientEmails", emails, { shouldDirty: true })}
+                            />
+                          </div>
                         </>
                       )}
                     </div>

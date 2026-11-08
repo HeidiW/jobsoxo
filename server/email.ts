@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { invoiceRecipients } from "@shared/client-emails";
 import { db } from "./db";
 import { invoices, clients, jobs } from "@shared/schema";
 import { eq, and, sql, lte } from "drizzle-orm";
@@ -96,11 +97,11 @@ export interface EmailConfig {
 
 export async function sendInvoiceEmail(
   invoiceId: string,
-  toEmail: string,
+  toEmails: string[],
   config: EmailConfig
 ): Promise<{ success: boolean; error?: string }> {
   if (!config.apiKey) {
-    console.log(`[Email] Would send invoice ${invoiceId} to ${toEmail} (no API key configured)`);
+    console.log(`[Email] Would send invoice ${invoiceId} to ${toEmails.join(", ")} (no API key configured)`);
     return { success: true };
   }
 
@@ -133,7 +134,7 @@ export async function sendInvoiceEmail(
         },
         body: JSON.stringify({
           from: config.fromEmail || fromHeader(settings?.companyName || "Invoicing"),
-          to: [toEmail],
+          to: toEmails,
           subject,
           html: body,
         }),
@@ -148,7 +149,7 @@ export async function sendInvoiceEmail(
       return { success: true };
     }
 
-    console.log(`[Email] Email would be sent to ${toEmail} with subject: ${subject}`);
+    console.log(`[Email] Email would be sent to ${toEmails.join(", ")} with subject: ${subject}`);
     return { success: true };
   } catch (error) {
     console.error("[Email] Send error:", error);
@@ -170,7 +171,8 @@ export async function sendPaymentReminder(
     }
 
     const client = await storage.getClient(invoice.clientId);
-    if (!client?.email) {
+    const recipients = invoiceRecipients(invoice, client);
+    if (!client || recipients.length === 0) {
       console.log(`[Reminder] No email for client ${client?.name || invoice.clientId}`);
       return { success: false, error: "No client email" };
     }
@@ -201,7 +203,7 @@ export async function sendPaymentReminder(
         },
         body: JSON.stringify({
           from: config.fromEmail || fromHeader(settings?.companyName || "Invoicing"),
-          to: [client.email],
+          to: recipients,
           subject,
           html: body,
         }),
@@ -213,7 +215,7 @@ export async function sendPaymentReminder(
         return { success: false, error: `Reminder send failed: ${response.status}` };
       }
     } else {
-      console.log(`[Reminder] Would send reminder ${reminderNumber} for invoice ${invoice.invoiceNumber} to ${client.email}`);
+      console.log(`[Reminder] Would send reminder ${reminderNumber} for invoice ${invoice.invoiceNumber} to ${recipients.join(", ")}`);
     }
 
     // NOTE: stage advancement (reminderCount / lastReminderSent) is handled
@@ -634,11 +636,11 @@ export async function sendDirectDepositEmail(
 
 export async function sendChangeOrderEmail(
   invoiceId: string,
-  toEmail: string,
+  toEmails: string[],
   config: EmailConfig
 ): Promise<{ success: boolean; error?: string }> {
   if (!config.apiKey) {
-    console.log(`[Email] Would send change order for ${invoiceId} to ${toEmail} (no API key)`);
+    console.log(`[Email] Would send change order for ${invoiceId} to ${toEmails.join(", ")} (no API key)`);
     return { success: true };
   }
 
@@ -795,7 +797,7 @@ export async function sendChangeOrderEmail(
         },
         body: JSON.stringify({
           from: config.fromEmail || fromHeader(companyName),
-          to: [toEmail],
+          to: toEmails,
           subject,
           html,
         }),
@@ -810,7 +812,7 @@ export async function sendChangeOrderEmail(
       return { success: true };
     }
 
-    console.log(`[ChangeOrder] Would send to ${toEmail}: ${subject}`);
+    console.log(`[ChangeOrder] Would send to ${toEmails.join(", ")}: ${subject}`);
     return { success: true };
   } catch (error) {
     console.error("[ChangeOrder] Send error:", error);

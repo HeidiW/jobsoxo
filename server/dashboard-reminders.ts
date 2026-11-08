@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import { storage } from "./storage";
 import { sendPaymentReminder } from "./email";
+import { invoiceRecipients } from "@shared/client-emails";
 
 // An explicit follow-up must not re-send the invoice through /send: that
 // action changes its status and would reset a partially paid invoice.
@@ -20,7 +21,7 @@ export const sendDashboardReminder: RequestHandler = async (req, res) => {
       return;
     }
     const client = await storage.getClient(invoice.clientId);
-    if (!client?.email) {
+    if (invoiceRecipients(invoice, client).length === 0) {
       res.status(400).json({ error: "Client has no email address on file" });
       return;
     }

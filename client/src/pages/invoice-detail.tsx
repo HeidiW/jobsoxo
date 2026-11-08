@@ -21,6 +21,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { invoiceRecipients } from "@shared/client-emails";
+import { InvoiceRecipients } from "@/components/invoices/invoice-recipients";
 import { formatPhone } from "@/lib/formatPhone";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -705,8 +707,8 @@ function ChangeOrdersPanel({
       const res = await apiRequest("POST", `/api/invoices/${invoiceId}/send-change-order`);
       return res.json();
     },
-    onSuccess: (data: { sentTo: string }) => {
-      toast({ title: "Change order emailed", description: `Sent to ${data.sentTo}.` });
+    onSuccess: (data: { sentTo: string[] }) => {
+      toast({ title: "Change order emailed", description: `Sent to ${data.sentTo.join(", ")}.` });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -883,6 +885,65 @@ type ReminderLog = {
   success: boolean;
   errorMessage: string | null;
 };
+
+/** Which client addresses this invoice, its reminders and change orders go to. Saves on each change. */
+export function SendsToPanel({ invoice }: { invoice: InvoiceDetail }) {
+  const { toast } = useToast();
+  const recipients = invoiceRecipients(invoice, invoice.client);
+  const detailKey = ["/api/invoices", invoice.id];
+
+  const saveRecipients = useMutation({
+    mutationFn: async (recipientEmails: string[]) => {
+      const res = await apiRequest("PATCH", `/api/invoices/${invoice.id}`, { recipientEmails });
+      return res.json();
+    },
+    onMutate: async (recipientEmails) => {
+      await queryClient.cancelQueries({ queryKey: detailKey });
+      const previous = queryClient.getQueryData<InvoiceDetail>(detailKey);
+      queryClient.setQueryData<InvoiceDetail>(detailKey, (old) => (old ? { ...old, recipientEmails } : old));
+      return { previous };
+    },
+    onError: (err: Error, _emails, context) => {
+      if (context?.previous) queryClient.setQueryData(detailKey, context.previous);
+      toast({ title: "Couldn't update recipients", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" });
+    },
+    onSuccess: () => {
+      toast({ title: "Recipients updated" });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: detailKey });
+    },
+  });
+
+  const onChange = (emails: string[]) => {
+    if (emails.length === 0) {
+      toast({ title: "Keep at least one recipient", description: "This invoice needs an email address to send to.", variant: "destructive" });
+      return;
+    }
+    saveRecipients.mutate(emails);
+  };
+
+  return (
+    <Card className="mt-4 print:hidden" data-testid="panel-sends-to">
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-2">
+          <Mail className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-base">Sends to</CardTitle>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          The invoice, payment reminders and change orders go to these addresses.
+        </p>
+      </CardHeader>
+      <CardContent>
+        {invoice.status === "paid" ? (
+          <p className="text-sm" data-testid="text-sends-to">{recipients.join(", ") || "No email address on file"}</p>
+        ) : (
+          <InvoiceRecipients client={invoice.client} value={recipients} onChange={onChange} />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function CollectionsPanel({ invoice }: { invoice: InvoiceDetail }) {
   const { toast } = useToast();
@@ -1589,6 +1650,9 @@ export default function InvoiceDetail() {
           settings={settings}
           coApprovedTotal={coApprovedTotal}
         />
+
+        {/* ── Recipients ── */}
+        <SendsToPanel invoice={invoice} />
 
         {/* ── Change Orders panel ── */}
         <ChangeOrdersPanel

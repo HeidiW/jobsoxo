@@ -2,6 +2,7 @@ import { sql, relations } from "drizzle-orm";
 import { pgTable, text, varchar, integer, decimal, timestamp, date, boolean, jsonb, json, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { emailListSchema } from "./client-emails";
 
 function numericString(label: string) {
   return z
@@ -86,6 +87,8 @@ export const clients = pgTable("clients", {
   name: text("name").notNull(),
   generalContractorName: text("general_contractor_name"),
   email: text("email"),
+  // Other contacts at the company (e.g. accounts payable); `email` is the primary.
+  additionalEmails: jsonb("additional_emails").$type<string[]>().default([]).notNull(),
   phone: text("phone"),
   address: text("address"),
   city: text("city"),
@@ -100,7 +103,9 @@ export const clientsRelations = relations(clients, ({ many }) => ({
   invoices: many(invoices),
 }));
 
-export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true });
+export const insertClientSchema = createInsertSchema(clients)
+  .omit({ id: true, createdAt: true })
+  .extend({ additionalEmails: emailListSchema.optional() });
 export type InsertClient = z.infer<typeof insertClientSchema>;
 export type Client = typeof clients.$inferSelect;
 
@@ -238,6 +243,9 @@ export const invoices = pgTable("invoices", {
   remindersPaused: boolean("reminders_paused").default(false).notNull(),
   payToken: text("pay_token").unique(),
   payTokenExpiresAt: timestamp("pay_token_expires_at"),
+  // Addresses this invoice, its reminders and change orders are sent to.
+  // Null for older invoices, which fall back to the client's primary email.
+  recipientEmails: jsonb("recipient_emails").$type<string[]>(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -268,6 +276,7 @@ export const insertInvoiceSchema = createInsertSchema(invoices)
     amountPaid: z.coerce.string().optional(),
     balance: nonNegativeNumericString("Balance"),
     remindersPaused: z.boolean().optional(),
+    recipientEmails: emailListSchema.optional().nullable(),
   });
 export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
 export type Invoice = typeof invoices.$inferSelect;

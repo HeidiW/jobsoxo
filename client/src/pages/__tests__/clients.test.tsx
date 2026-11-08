@@ -115,6 +115,29 @@ describe("Clients redesign", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("saves additional emails for company contacts", async () => {
+    mount(); await ready();
+    await userEvent.click(screen.getByTestId("button-add-client"));
+    change("input-client-name", "Northline Construction");
+    change("input-client-email", "main@northline.test");
+
+    for (const email of ["ap@northline.test", "pm@northline.test"]) {
+      change("client-additional-emails-input", email);
+      await userEvent.click(screen.getByTestId("client-additional-emails-add"));
+    }
+    // The primary email can't be repeated as an additional one.
+    change("client-additional-emails-input", "MAIN@northline.test");
+    await userEvent.click(screen.getByTestId("client-additional-emails-add"));
+    expect(await screen.findByText("That email is already listed")).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId("client-additional-emails-remove-pm@northline.test"));
+
+    await userEvent.click(screen.getByTestId("button-save-client"));
+    await waitFor(() => expect(writes("POST")).toHaveLength(1));
+    expect(JSON.parse(writes("POST")[0][1].body as string)).toMatchObject({
+      email: "main@northline.test", additionalEmails: ["ap@northline.test"],
+    });
+  });
+
   it("prefills edit, keeps field errors and edits on save failure, then persists the correction", async () => {
     mount(); await ready(); await openMenu();
     await userEvent.click(screen.getByTestId("button-edit-client-client-1"));

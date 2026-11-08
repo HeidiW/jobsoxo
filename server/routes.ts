@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { createLinkToken, exchangePublicToken, getAccountInfo, getBalance, getTransactions, isPlaidConfigured } from "./plaid";
 import { seedDemoData } from "./seed";
 import { calendarDay } from "./business-time";
+import { invoiceRecipients } from "@shared/client-emails";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
 import { COMPANY_FIELD_LABELS, REQUIRED_COMPANY_FIELDS, isCompanyFieldFilled } from "@shared/company-setup";
 // Function declaration (not const) so it's hoisted and immune to TDZ in circular-dep scenarios.
@@ -1425,7 +1426,7 @@ export async function registerRoutes(
   });
 
   const createInvoiceInputSchema = insertInvoiceSchema
-    .pick({ clientId: true, jobId: true, taxRate: true, dueDate: true, notes: true, termsAndConditions: true })
+    .pick({ clientId: true, jobId: true, taxRate: true, dueDate: true, notes: true, termsAndConditions: true, recipientEmails: true })
     .extend({
       lineItems: z.array(z.object({
         category: z.string(),
@@ -1566,6 +1567,7 @@ export async function registerRoutes(
         dueDate: invoiceData.dueDate,
         notes: invoiceData.notes || null,
         termsAndConditions: invoiceData.termsAndConditions || null,
+        recipientEmails: invoiceData.recipientEmails?.length ? invoiceData.recipientEmails : null,
         amountPaid: "0",
         reminderCount: 0,
       });
@@ -1595,8 +1597,9 @@ export async function registerRoutes(
 
       if (send) {
         const client = await storage.getClient(invoice.clientId);
-        if (client?.email && process.env.RESEND_API_KEY) {
-          const emailResult = await sendInvoiceEmail(invoice.id, client.email, {
+        const recipients = invoiceRecipients(invoice, client);
+        if (recipients.length > 0 && process.env.RESEND_API_KEY) {
+          const emailResult = await sendInvoiceEmail(invoice.id, recipients, {
             apiKey: process.env.RESEND_API_KEY,
             provider: "resend",
           });
@@ -1657,14 +1660,15 @@ export async function registerRoutes(
       }
       
       const client = await storage.getClient(invoice.clientId);
-      if (!client?.email) {
+      const recipients = invoiceRecipients(invoice, client);
+      if (recipients.length === 0) {
         return res.status(400).json({ error: "Client has no email address on file" });
       }
       if (!process.env.RESEND_API_KEY) {
         return res.status(500).json({ error: "Email service is not configured" });
       }
 
-      const emailResult = await sendInvoiceEmail(req.params.id, client.email, {
+      const emailResult = await sendInvoiceEmail(req.params.id, recipients, {
         apiKey: process.env.RESEND_API_KEY,
         provider: "resend",
       });
@@ -1690,14 +1694,15 @@ export async function registerRoutes(
       if (!invoice) return res.status(404).json({ error: "Invoice not found" });
 
       const client = await storage.getClient(invoice.clientId);
-      if (!client?.email) {
+      const recipients = invoiceRecipients(invoice, client);
+      if (recipients.length === 0) {
         return res.status(400).json({ error: "Client has no email address on file" });
       }
       if (!process.env.RESEND_API_KEY) {
         return res.status(500).json({ error: "Email service is not configured" });
       }
 
-      const result = await sendChangeOrderEmail(req.params.id, client.email, {
+      const result = await sendChangeOrderEmail(req.params.id, recipients, {
         apiKey: process.env.RESEND_API_KEY,
         provider: "resend",
       });
@@ -1706,7 +1711,7 @@ export async function registerRoutes(
         return res.status(502).json({ error: result.error || "Failed to send email" });
       }
 
-      res.json({ success: true, sentTo: client.email });
+      res.json({ success: true, sentTo: recipients });
     } catch (error) {
       console.error("Send change order email error:", error);
       res.status(500).json({ error: "Failed to send change order email" });
