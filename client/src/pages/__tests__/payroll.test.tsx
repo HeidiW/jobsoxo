@@ -32,27 +32,32 @@ describe("Payroll presentation", () => {
   it("shows an unavailable history warning and retries without blocking Gusto", async () => {
     let fails = true;
     show(() => fails);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load or refresh local payroll history");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load or refresh pay run history");
     expect(screen.getByRole("region", { name: "Gusto payroll workspace" })).toBeInTheDocument();
-    expect(screen.queryByText("No local payroll records yet")).not.toBeInTheDocument();
     fails = false;
-    fireEvent.click(screen.getByRole("button", { name: "Retry loading local payroll history" }));
-    await screen.findByText("No local payroll records yet");
+    fireEvent.click(screen.getByRole("button", { name: "Retry loading pay run history" }));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    fireEvent.click(screen.getByTestId("tab-history"));
+    await screen.findByText("No pay runs yet");
   });
 
   it("keeps empty local summaries distinct from provider totals and preserves section controls", async () => {
     show(() => false);
-    await screen.findByText("No local payroll records yet");
+    expect(await screen.findByRole("region", { name: "Gusto payroll workspace" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("tab-history"));
+    await screen.findByText("No pay runs yet");
     expect(screen.getByTestId("stat-net")).toHaveTextContent("—");
-    expect(screen.getByText(/Gusto calculates actual payroll amounts and payment status/)).toBeInTheDocument();
+    expect(screen.getByText(/Gusto calculates the actual pay, taxes and payment status/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /mark.*paid|confirm.*funding/i })).toBeNull();
-    for (const name of ["employees", "time", "smslog", "settings"]) {
+    for (const name of ["employees", "time", "smslog", "history", "bank", "settings"]) {
       fireEvent.click(screen.getByTestId(`tab-${name}`));
       expect(screen.getByTestId(`tab-${name}`)).toHaveAttribute("aria-pressed", "true");
       expect(screen.getByTestId("tab-payroll")).toHaveAttribute("aria-pressed", "false");
     }
-    fireEvent.click(screen.getByTestId("tab-payroll"));
+    // The bank view is independent of payroll, so it lives on its own tab.
+    fireEvent.click(screen.getByTestId("tab-bank"));
     expect(screen.getByRole("region", { name: "Independent bank balance view" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("tab-payroll"));
+    expect(screen.queryByRole("region", { name: "Independent bank balance view" })).toBeNull();
   });
 });

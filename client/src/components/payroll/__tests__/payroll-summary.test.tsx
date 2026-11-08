@@ -9,8 +9,8 @@ describe("PayrollSummary", () => {
       { label: "Local net estimate", value: "$1,240", testId: "local-net", tone: "gold" },
     ]} />);
 
-    expect(screen.getByRole("region", { name: "Local payroll summary" })).toBeTruthy();
-    expect(screen.getByText(/Reference estimates only/)).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Pay run history summary" })).toBeTruthy();
+    expect(screen.getByText(/Estimates from JobsOxo records/)).toBeTruthy();
     expect(screen.getByTestId("local-net").textContent).toBe("$1,240");
   });
 

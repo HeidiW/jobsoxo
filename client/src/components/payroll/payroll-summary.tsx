@@ -12,10 +12,10 @@ export function PayrollSummary({ items, loading }: { items: PayrollSummaryItem[]
   const icons = [CircleDollarSign, UsersRound, Landmark, CalendarDays, Clock3];
 
   return (
-    <section className="payroll-summary" aria-label="Local payroll summary" data-testid="payroll-summary">
+    <section className="payroll-summary" aria-label="Pay run history summary" data-testid="payroll-summary">
       <div className="payroll-summary__intro">
-        <span className="payroll-eyebrow">Local payroll history</span>
-        <p>Reference estimates only. Gusto calculates actual payroll amounts and payment status.</p>
+        <span className="payroll-eyebrow">Pay run history</span>
+        <p>Estimates from JobsOxo records. Gusto calculates the actual pay, taxes and payment status.</p>
       </div>
       <div className="payroll-summary__grid">
         {items.map((item, index) => {

@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { formatPhone } from "@/lib/formatPhone";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -32,6 +32,10 @@ import { parseScheduleDate } from "./scheduling-logic";
 import type { Employee, TimeEntry, PayrollRecord, Job, SmsAttempt } from "@shared/schema";
 import GustoBankView from "@/components/payroll/gusto-bank-view";
 import GustoOnlyWorkspace from "@/components/payroll/gusto-payroll-workspace";
+import { PayrollStatus } from "@/components/payroll/payroll-status";
+import { payrollNextStep, payrollStatusItems, type GustoStatusLite, type ReadinessLite } from "@/components/payroll/payroll-next-step";
+import { useAuth } from "@/hooks/use-auth";
+import { hasWorksheetAccess } from "@/lib/app-shell";
 import { PayrollSummary } from "@/components/payroll/payroll-summary";
 import "@/components/payroll/payroll-redesign.css";
 export { default as GustoPayrollWorkspace } from "@/components/payroll/gusto-payroll-workspace";
@@ -894,7 +898,7 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
               <span>
                 <button type="submit" disabled={mutation.isPending || overlapping.length > 0} style={{ display: "flex", alignItems: "center", gap: "7px", padding: "9px 18px", border: "none", background: "#2563eb", borderRadius: "9px", fontSize: "13px", fontWeight: 700, color: "#fff", cursor: "pointer", fontFamily: "inherit", opacity: (mutation.isPending || overlapping.length > 0) ? 0.6 : 1 }} data-testid="button-run-payroll-submit">
                   <Play style={{ width: "14px", height: "14px" }} />
-                  {mutation.isPending ? "Preparing…" : "Prepare local records"}
+                  {mutation.isPending ? "Preparing…" : "Prepare pay run"}
                 </button>
               </span>
             </TooltipTrigger>
@@ -1374,7 +1378,7 @@ const SMS_STATUS: Record<string, { bg: string; fg: string; label: string }> = {
 };
 
 // ── Section tab types ─────────────────────────────────────────────────────────
-type Section = "payroll" | "employees" | "time" | "smslog" | "settings";
+type Section = "payroll" | "employees" | "time" | "smslog" | "history" | "bank" | "settings";
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Payroll() {
@@ -1397,6 +1401,12 @@ export default function Payroll() {
   const [rangeExportRecords, setRangeExportRecords] = useState<PayrollRecordWithEmployee[]>([]);
   const [rangeExportPeriod, setRangeExportPeriod] = useState<{ start: string; end: string }>({ start: "", end: "" });
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isAdmin = !!user?.isAdmin;
+
+  // Gusto status and readiness are admin-only; members see a simpler header.
+  const gustoStatusQuery = useQuery<GustoStatusLite>({ queryKey: ["/api/gusto/status"], enabled: isAdmin, retry: false, staleTime: 30_000 });
+  const readinessQuery = useQuery<ReadinessLite>({ queryKey: ["/api/gusto/employees/readiness"], enabled: isAdmin, retry: false, staleTime: 30_000 });
 
   const employeeQuery = useQuery<EmployeeWithStats[]>({ queryKey: ["/api/employees"] });
   const { data: employees, isLoading: empLoading } = employeeQuery;
@@ -1409,10 +1419,12 @@ export default function Payroll() {
   const smsQuery = useQuery<SmsAttempt[]>({ queryKey: ["/api/sms/attempts"] });
   const { data: smsAttempts = [], isLoading: smsLoading } = smsQuery;
   const sectionData = {
-    payroll: { query: payrollQuery, label: "local payroll history" },
+    payroll: { query: payrollQuery, label: "pay run history" },
+    history: { query: payrollQuery, label: "pay run history" },
     employees: { query: employeeQuery, label: "employees" },
-    time: { query: timeQuery, label: "time entries" },
-    smslog: { query: smsQuery, label: "SMS log" },
+    time: { query: timeQuery, label: "hours" },
+    smslog: { query: smsQuery, label: "text messages" },
+    bank: null,
     settings: null,
   }[activeSection];
 
@@ -1587,12 +1599,35 @@ export default function Payroll() {
   });
 
   const SECTION_TABS: { key: Section; label: string; badge?: number | null }[] = [
-    { key: "payroll",   label: "Pay run" },
+    { key: "payroll",   label: "Run payroll" },
     { key: "employees", label: "Employees" },
-    { key: "time",      label: "Time entries", badge: smsEntryCount > 0 ? smsEntryCount : null },
-    { key: "smslog",    label: "SMS log" },
-    { key: "settings",  label: "Settings" },
+    { key: "time",      label: "Hours", badge: smsEntryCount > 0 ? smsEntryCount : null },
+    { key: "smslog",    label: "Text messages" },
+    { key: "history",   label: "History" },
+    { key: "bank",      label: "Bank" },
+    { key: "settings",  label: "Payroll settings" },
   ];
+
+  // The header's one primary action, from Gusto status and employee readiness.
+  const statusInput = {
+    isAdmin,
+    statusLoaded: gustoStatusQuery.isSuccess || gustoStatusQuery.isError,
+    status: gustoStatusQuery.data,
+    readinessLoaded: readinessQuery.isSuccess || readinessQuery.isError,
+    readiness: readinessQuery.data,
+  };
+  const nextStep = payrollNextStep(statusInput);
+  const statusItems = payrollStatusItems({ ...statusInput, periodLabel: currentPeriod ? periodLabel(currentPeriod.start, currentPeriod.end) : null });
+  const scrollToWorkspace = () => {
+    setActiveSection("payroll");
+    requestAnimationFrame(() => document.getElementById("gusto-workspace")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
+  const runNextStep = () => {
+    if (nextStep.target === "time_dialog") setIsTimeEntryDialogOpen(true);
+    else if (nextStep.target === "employee_dialog") { setEditingEmployee(null); setIsEmployeeDialogOpen(true); }
+    else if (nextStep.target === "run_dialog") setIsRunPayrollOpen(true);
+    else if (nextStep.target === "workspace") scrollToWorkspace();
+  };
 
   const TH: React.CSSProperties = {
     fontSize: "10.5px", fontWeight: 700, letterSpacing: ".04em",
@@ -1607,7 +1642,7 @@ export default function Payroll() {
       {/* ── Dialogs ── */}
       <Dialog open={isRunPayrollOpen} onOpenChange={o => { if (!o) setIsRunPayrollOpen(false); }}>
         <DialogContent className="max-w-md !flex flex-col max-h-[90dvh] overflow-hidden">
-          <DialogHeader className="shrink-0"><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>Prepare local payroll records</DialogTitle></DialogHeader>
+          <DialogHeader className="shrink-0"><DialogTitle style={{ fontSize: "17px", fontWeight: 800 }}>Prepare pay run</DialogTitle></DialogHeader>
           <div className="flex-1 overflow-y-auto min-h-0">
             <RunPayrollForm onClose={() => setIsRunPayrollOpen(false)} />
           </div>
@@ -1761,11 +1796,11 @@ export default function Payroll() {
               </p>
             </div>
             <div className="payroll-page-header-actions" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <button onClick={() => setIsTimeEntryDialogOpen(true)} style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-log-hours">
-                Log hours</button>
+              {nextStep.target !== "time_dialog" && <button onClick={() => setIsTimeEntryDialogOpen(true)} style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-log-hours">
+                Log hours</button>}
               <button onClick={() => { setEditingEmployee(null); setIsEmployeeDialogOpen(true); }} style={{ display: "flex", alignItems: "center", gap: "7px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-add-employee">
                 <Plus style={{ width: "14px", height: "14px" }} /> Add employee</button>
-              {activeSection === "payroll" && periods.length > 1 && (
+              {(activeSection === "payroll" || activeSection === "history") && periods.length > 1 && (
                 <div style={{ display: "flex", alignItems: "center", gap: "2px", background: "var(--track)", border: "1px solid var(--panel-bd)", borderRadius: "9px", padding: "3px" }}>
                   <button onClick={() => setPeriodIdx(i => Math.min(i + 1, periods.length - 1))} disabled={periodIdx >= periods.length - 1}
                     style={{ border: "none", background: "none", cursor: "pointer", width: "30px", height: "28px", borderRadius: "7px", color: "var(--muted)", display: "flex", alignItems: "center", justifyContent: "center", opacity: periodIdx >= periods.length - 1 ? 0.3 : 1 }}>
@@ -1780,7 +1815,7 @@ export default function Payroll() {
                   </button>
                 </div>
               )}
-              {activeSection === "payroll" && (payrollRecords?.length ?? 0) > 0 && (
+              {activeSection === "history" && (payrollRecords?.length ?? 0) > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button style={{ display: "flex", alignItems: "center", gap: "6px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)", borderRadius: "9px", padding: "9px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-export-payroll">
@@ -1804,8 +1839,8 @@ export default function Payroll() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-              <button onClick={() => setIsRunPayrollOpen(true)} style={{ display: "flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "9px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 1px 2px rgba(37,99,235,.3)" }} data-testid="button-run-payroll">
-                Prepare local records</button>
+              <button onClick={runNextStep} disabled={nextStep.target === "none"} style={{ display: "flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "9px 16px", fontSize: "13px", fontWeight: 600, cursor: nextStep.target === "none" ? "default" : "pointer", fontFamily: "inherit", boxShadow: "0 1px 2px rgba(37,99,235,.3)", opacity: nextStep.target === "none" ? 0.7 : 1 }} data-testid="button-next-step" data-step={nextStep.key}>
+                {nextStep.label}</button>
             </div>
           </div>
 
@@ -1813,7 +1848,7 @@ export default function Payroll() {
             <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-jx-orange-tint p-5 text-jx-orange-ink">
               <p className="text-sm">
                 Could not load or refresh {sectionData.label}. Any previously loaded values are not updated.
-                {activeSection === "payroll" && " Gusto payroll remains independent of this local history."}
+                {(activeSection === "payroll" || activeSection === "history") && " Gusto payroll is unaffected."}
               </p>
               <Button type="button" variant="outline" className="rounded-full" onClick={() => void sectionData.query.refetch()} disabled={sectionData.query.isFetching}>
                 Retry loading {sectionData.label}
@@ -1821,14 +1856,10 @@ export default function Payroll() {
             </div>
           )}
 
-          {/* ── 5-stat strip ── */}
-          <PayrollSummary loading={payrollLoading} items={[
-            { label: "Local net estimate", value: currentPeriod ? fmt(netTotal) : "—", testId: "stat-net", tone: "gold", detail: "Historical reference · not provider totals" },
-            { label: "Gross this period", value: currentPeriod ? fmt(gross) : "—", testId: "stat-gross" },
-            { label: "Tax withheld", value: currentPeriod ? fmt(taxTotal) : "—", testId: "stat-tax", detail: "Local record only" },
-            { label: "Overtime hours", value: currentPeriod ? (otHrs > 0 ? `${otHrs.toFixed(0)} hrs` : "0 hrs") : "—", testId: "stat-ot", tone: otHrs > 0 ? "amber" : undefined },
-            { label: "Crew on payroll", value: currentPeriod ? String(crewCount) : "—", testId: "stat-crew" },
-          ]} />
+          {/* ── Status strip ── */}
+          <PayrollStatus items={statusItems} note={isAdmin
+            ? "Gusto calculates pay, taxes and payment status. JobsOxo supplies the hours."
+            : "Payroll is run by an admin. You can log hours and view pay runs here."} />
 
           {/* ── Section tabs ── */}
           <div className="payroll-section-tabs" style={{ display: "flex", gap: "4px", marginBottom: "16px" }}>
@@ -1853,14 +1884,33 @@ export default function Payroll() {
                 </button>
               );
             })}
+            {hasWorksheetAccess(isAdmin) && (
+              <Link href="/payroll/worksheet" data-testid="tab-worksheet" className="no-underline"
+                style={{ display: "inline-flex", alignItems: "center", gap: "7px", fontFamily: "inherit", fontSize: "13px", fontWeight: 600, padding: "7px 13px", borderRadius: "8px", border: "1px solid var(--panel-bd)", background: "var(--panel)", color: "var(--muted)" }}>
+                <ClipboardList style={{ width: "12px", height: "12px" }} /> Worksheet
+              </Link>
+            )}
           </div>
 
           {/* ══════════════════════════════════════════════════════════════════ */}
-          {/* ── PAY RUN TABLE ── */}
+          {/* ── RUN PAYROLL (Gusto) ── */}
           {activeSection === "payroll" && (
+            <div id="gusto-workspace">
+              <GustoOnlyWorkspace records={currentRecords} period={currentPeriod} />
+            </div>
+          )}
+
+          {/* ── HISTORY (local pay run records) ── */}
+          {activeSection === "history" && (
             <>
-            <GustoBankView />
-            <GustoOnlyWorkspace records={currentRecords} period={currentPeriod} />
+          <PayrollSummary loading={payrollLoading} items={[
+            { label: "Estimated take-home", value: currentPeriod ? fmt(netTotal) : "—", testId: "stat-net", tone: "gold" },
+            { label: "Gross pay", value: currentPeriod ? fmt(gross) : "—", testId: "stat-gross" },
+            { label: "Tax withheld (estimate)", value: currentPeriod ? fmt(taxTotal) : "—", testId: "stat-tax" },
+            { label: "Overtime hours", value: currentPeriod ? (otHrs > 0 ? `${otHrs.toFixed(0)} hrs` : "0 hrs") : "—", testId: "stat-ot", tone: otHrs > 0 ? "amber" : undefined },
+            { label: "Crew paid", value: currentPeriod ? String(crewCount) : "—", testId: "stat-crew" },
+          ]} />
+
             <div className="payroll-table-shell payroll-inline-panel" style={{ background: "var(--panel)", border: "1px solid var(--panel-bd)", borderRadius: "12px", overflow: "hidden" }}>
               <div className="payroll-table-head" data-payroll-wide="true" style={{ ...TH }}>
                 <span style={{ flex: 1, minWidth: 0 }}>Employee</span>
@@ -1879,10 +1929,10 @@ export default function Payroll() {
 
               {!payrollLoading && !payrollQuery.isError && periods.length === 0 && (
                 <div style={{ padding: "56px 24px", textAlign: "center" as const }}>
-                    <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>No local payroll records yet</div>
-                    <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>Prepare local source records here, then use the Gusto workspace for provider payroll.</div>
+                    <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "4px" }}>No pay runs yet</div>
+                    <div style={{ fontSize: "13px", color: "var(--faint)", marginBottom: "16px" }}>Prepare a pay run from logged hours, then review and submit it with Gusto on the Run payroll tab.</div>
                   <button onClick={() => setIsRunPayrollOpen(true)} style={{ display: "inline-flex", alignItems: "center", gap: "7px", background: "var(--jox-primary)", color: "#fff", border: "none", borderRadius: "9px", padding: "10px 18px", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }} data-testid="button-run-first-payroll">
-                    <Play style={{ width: "14px", height: "14px" }} /> Prepare local records
+                    <Play style={{ width: "14px", height: "14px" }} /> Prepare pay run
                   </button>
                 </div>
               )}
@@ -1978,6 +2028,9 @@ export default function Payroll() {
             </div>
             </>
           )}
+
+          {/* ── BANK (read-only, independent of payroll) ── */}
+          {activeSection === "bank" && <GustoBankView />}
 
           {/* ══════════════════════════════════════════════════════════════════ */}
           {/* ── EMPLOYEES TABLE ── */}
