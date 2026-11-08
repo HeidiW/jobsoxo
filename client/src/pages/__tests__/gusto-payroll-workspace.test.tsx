@@ -300,6 +300,10 @@ describe("Gusto payroll workspace", () => {
     expect(state("verify_bank_info")).toHaveTextContent("To do");
     expect(state("add_employees")).toHaveAttribute("data-state", "done");
     expect(state("employee_management")).toHaveAttribute("data-state", "todo");
+    // Red rows say who and why.
+    expect(screen.getByTestId("checklist-employee_management-detail")).toHaveTextContent("1 of 2 ready · Maria Lopez: Gusto onboarding incomplete");
+    expect(screen.getByTestId("checklist-verify_bank_info-detail")).toHaveTextContent("awaiting deposits");
+    expect(screen.queryByTestId("checklist-company_onboarding-detail")).toBeNull();
     // Tools that aren't tasks stay as plain buttons.
     expect(screen.getByRole("button", { name: "Gusto payroll history" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Gusto payroll" })).toBeInTheDocument();

@@ -129,12 +129,31 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
   // Setup tasks show done (green) or to do (red); null while the data loads.
   const readinessEmployees = readinessQuery.data?.employees ?? [];
   const employeesKnown = readinessQuery.isSuccess;
-  const setupChecklist: Array<{ type: FlowType; label: string; done: boolean | null }> = [
-    { type: "company_onboarding", label: "Complete company setup", done: status ? status.onboardingComplete === true : null },
-    { type: "add_bank_info", label: "Set up Gusto funding", done: status ? !!status.fundingAccount : null },
-    { type: "verify_bank_info", label: "Verify funding in Gusto", done: status ? status.fundingAccount?.status === "verified" : null },
-    { type: "add_employees", label: "Add employees in Gusto", done: employeesKnown ? readinessEmployees.length > 0 && readinessEmployees.every(e => !!e.gustoEmployeeId) : null },
-    { type: "employee_management", label: "Manage employees", done: employeesKnown ? readinessEmployees.length > 0 && readinessEmployees.every(e => e.ready) : null },
+  // Each row says why it's still to do, naming the people involved.
+  const shortBlocker = (blocker: string) =>
+    /not synchronized/i.test(blocker) ? "not in Gusto"
+      : /onboarding is incomplete/i.test(blocker) ? "Gusto onboarding incomplete"
+        : /direct deposit/i.test(blocker) ? "direct deposit not set up"
+          : /contractor/i.test(blocker) ? "contractor, not W-2 payroll"
+            : blocker;
+  const nameBlockers = (people: typeof readinessEmployees) =>
+    people.map(e => `${e.name || "Employee"}: ${shortBlocker(e.blockers?.[0] ?? "Gusto setup needed")}`).join(" · ");
+  const unlinked = readinessEmployees.filter(e => !e.gustoEmployeeId);
+  const notReady = readinessEmployees.filter(e => !e.ready);
+  const companyStepsLeft = (status?.blockers ?? []).filter(b => b.startsWith("Complete Gusto setup")).length;
+  const fundingStatus = status?.fundingAccount?.status;
+  const setupChecklist: Array<{ type: FlowType; label: string; done: boolean | null; detail?: string }> = [
+    { type: "company_onboarding", label: "Complete company setup", done: status ? status.onboardingComplete === true : null,
+      detail: companyStepsLeft ? `${companyStepsLeft} step${companyStepsLeft === 1 ? "" : "s"} left in Gusto` : undefined },
+    { type: "add_bank_info", label: "Set up Gusto funding", done: status ? !!status.fundingAccount : null,
+      detail: status && !status.fundingAccount ? "No funding account yet" : undefined },
+    { type: "verify_bank_info", label: "Verify funding in Gusto", done: status ? fundingStatus === "verified" : null,
+      detail: fundingStatus && fundingStatus !== "verified" ? fundingStatus.replace(/_/g, " ") : undefined },
+    { type: "add_employees", label: "Add employees in Gusto", done: employeesKnown ? readinessEmployees.length > 0 && unlinked.length === 0 : null,
+      detail: !employeesKnown ? undefined : readinessEmployees.length === 0 ? "No active employees in JobsOxo yet" : unlinked.length ? nameBlockers(unlinked) : undefined },
+    { type: "employee_management", label: "Manage employees", done: employeesKnown ? readinessEmployees.length > 0 && notReady.length === 0 : null,
+      detail: !employeesKnown || readinessEmployees.length === 0 ? undefined : notReady.length
+        ? `${readinessEmployees.length - notReady.length} of ${readinessEmployees.length} ready · ${nameBlockers(notReady)}` : undefined },
   ];
   const otherFlows = flowLabels.filter(flow => !setupChecklist.some(item => item.type === flow.type));
   const runStatus = run?.status ?? "";
@@ -531,7 +550,10 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
             return <li key={item.type} data-testid={`checklist-${item.type}`} data-state={item.done === null ? "unknown" : item.done ? "done" : "todo"}
               style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 0", borderTop: index ? "1px solid var(--panel-bd)" : "none" }}>
               <span aria-hidden="true" style={{ width: "10px", height: "10px", borderRadius: "50%", background: tone, flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: "12px" }}>{item.label}</span>
+              <span style={{ flex: 1, minWidth: 0, fontSize: "12px" }}>
+                {item.label}
+                {item.detail && !item.done && <span data-testid={`checklist-${item.type}-detail`} style={{ display: "block", color: "var(--muted)", fontSize: "11px", marginTop: "2px" }}>{item.detail}</span>}
+              </span>
               <span style={{ fontSize: "11px", fontWeight: 700, color: tone, minWidth: "54px", textAlign: "right" }}>{state}</span>
               <button type="button" style={buttonStyle} disabled={busy || status?.configured !== true}
                 aria-label={`Open ${item.label}`} onClick={() => void openFlow(item.type, item.label)}>Open</button>
