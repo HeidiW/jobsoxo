@@ -225,6 +225,33 @@ describe("Gusto payroll workspace", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/gusto/funding-account/test-deposits", expect.objectContaining({ method: "POST" })));
   });
 
+  it("fills a demo company with sample data and lists what's left", async () => {
+    const fallback = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => url === "/api/gusto/demo-company/sample-data"
+      ? Promise.resolve(jsonResponse({ results: [
+        { step: "Company address", status: "done" },
+        { step: "Industry", status: "failed", detail: "Gusto 422 invalid_attribute_value (naics_code)" },
+        { step: "Sign documents", status: "manual", detail: "Review and sign with Complete company setup" },
+      ] }))
+      : fallback(url, init));
+    queryClient.setQueryData(["/api/gusto/status"], {
+      configured: true, available: true, companyId: "company-1", environment: "demo", onboardingComplete: false,
+    });
+    queryClient.setQueryData(["/api/gusto/payroll-runs"], { runs: [] });
+    queryClient.setQueryData(["/api/gusto/employees/readiness"], { employees: [] });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <GustoPayrollWorkspace records={[]} period={null} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByTestId("button-gusto-sample-data"));
+    const results = await screen.findByTestId("gusto-sample-results");
+    expect(results).toHaveTextContent("✓ Company address");
+    expect(results).toHaveTextContent("✕ Industry — failed: Gusto 422 invalid_attribute_value (naics_code)");
+    expect(results).toHaveTextContent("→ Sign documents — still needed: Review and sign with Complete company setup");
+  });
+
   it("never offers simulated deposits outside demo", async () => {
     queryClient.setQueryData(["/api/gusto/status"], {
       configured: true, available: true, companyId: "company-1", environment: "production", onboardingComplete: true,
@@ -240,6 +267,7 @@ describe("Gusto payroll workspace", () => {
 
     expect(await screen.findByTestId("button-gusto-verify-funding")).toBeInTheDocument();
     expect(screen.queryByTestId("button-gusto-test-deposits")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("button-gusto-sample-data")).not.toBeInTheDocument();
   });
 
   it("hides setup steps that are already done", async () => {
@@ -259,6 +287,7 @@ describe("Gusto payroll workspace", () => {
     expect(screen.queryByTestId("button-gusto-complete-setup")).not.toBeInTheDocument();
     expect(screen.queryByTestId("button-gusto-verify-funding")).not.toBeInTheDocument();
     expect(screen.queryByTestId("button-gusto-test-deposits")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("button-gusto-sample-data")).not.toBeInTheDocument();
   });
 
   it("rejects unapproved Gusto subdomains for hosted flows", async () => {

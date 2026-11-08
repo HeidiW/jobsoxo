@@ -8,8 +8,10 @@ export class GustoConfigurationError extends Error {}
 export class GustoProviderError extends Error {
   status: number;
   code: string;
-  constructor(message: string, status = 502, code = "provider_error") {
-    super(message); this.status = status; this.code = code;
+  /** The field Gusto rejected, when it names one (never its value). */
+  field?: string;
+  constructor(message: string, status = 502, code = "provider_error", field?: string) {
+    super(message); this.status = status; this.code = code; this.field = field;
   }
 }
 
@@ -169,9 +171,11 @@ async function send<T>(path: string, token: string | undefined, options: Request
     if (!response.ok) {
       const code = data?.errors?.[0]?.category ?? data?.code;
       const providerCode = typeof code === "string" && /^[a-z_]{1,60}$/.test(code) ? code : "provider_error";
+      const errorKey = data?.errors?.[0]?.error_key;
+      const field = typeof errorKey === "string" && /^[a-z0-9_.]{1,60}$/.test(errorKey) ? errorKey : undefined;
       throw new GustoProviderError(
         `Gusto request was not accepted (${response.status}). Check company setup and payroll readiness.`,
-        response.status, providerCode,
+        response.status, providerCode, field,
       );
     }
     if (raw && data === null) throw new GustoProviderError("Gusto returned an invalid response.", 502, "invalid_response");

@@ -33,6 +33,7 @@ type GustoRun = {
   updatedAt?: string; canCancel: boolean; canRecalculate?: boolean; canSubmit?: boolean;
 };
 type RunList = { runs: GustoRun[] };
+type SampleStep = { step: string; status: "done" | "skipped" | "failed" | "manual"; detail?: string };
 type FlowType = "company_onboarding" | "add_bank_info" | "verify_bank_info" | "add_employees" | "employee_management" | "payroll_history" | "run_payroll";
 
 const flowLabels: Array<{ type: FlowType; label: string }> = [
@@ -61,6 +62,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
   const [runId, setRunId] = useState("");
   const [payDate, setPayDate] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sampleSteps, setSampleSteps] = useState<SampleStep[] | null>(null);
   const [flowUrl, setFlowUrl] = useState("");
   const [flowTitle, setFlowTitle] = useState("");
   const [flowBeforeWarning, setFlowBeforeWarning] = useState<FlowType | null>(null);
@@ -282,6 +284,14 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                   {status.fundingAccount?.status === "verified" && <p role="note" style={{ color: "var(--muted)", fontSize: "11px", margin: "5px 0 0" }}>Gusto currently reports this funding account as verified. This status is read-only here; any verification steps or changes take place in Gusto.</p>}
                   {status.error && <div role="status" style={{ color: "var(--jx-orange-ink)", fontSize: "12px", marginTop: "5px" }}>{status.error}</div>}
                   {status.blockers?.map((blocker, index) => <div key={`${blocker}-${index}`} style={{ color: "var(--jx-orange-ink)", fontSize: "12px", marginTop: "4px" }}><AlertTriangle aria-hidden="true" style={{ width: "12px", height: "12px", verticalAlign: "middle", marginRight: "5px" }} />{blocker}</div>)}
+                  {sampleSteps && <div role="status" data-testid="gusto-sample-results" style={{ marginTop: "10px", padding: "10px", borderRadius: "8px", background: "var(--track)", fontSize: "12px" }}>
+                    <div style={{ fontWeight: 700, marginBottom: "4px" }}>Sample data results</div>
+                    {sampleSteps.map(item => <div key={item.step} data-testid={`sample-step-${item.status}`}>
+                      <strong>{{ done: "✓", skipped: "–", failed: "✕", manual: "→" }[item.status]} {item.step}</strong>
+                      {item.status === "manual" ? " — still needed" : item.status === "failed" ? " — failed" : ""}
+                      {item.detail ? `: ${item.detail}` : ""}
+                    </div>)}
+                  </div>}
                 </div>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
@@ -307,6 +317,15 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                     onClick={() => void openFlow("verify_bank_info", "Verify funding in Gusto")}
                     data-testid="button-gusto-verify-funding"
                   >Verify funding</button>}
+                  {status.environment === "demo" && status.companyId && status.onboardingComplete === false && <button
+                    type="button" style={buttonStyle} disabled={busy}
+                    onClick={async () => {
+                      const result = await perform<{ results?: SampleStep[] }>("POST", "/api/gusto/demo-company/sample-data");
+                      if (result?.results) setSampleSteps(result.results);
+                    }}
+                    data-testid="button-gusto-sample-data"
+                    title="Demo only: enters Gusto's test company, bank, pay schedule and employee details"
+                  >Fill with sample data</button>}
                   {status.environment === "demo" && status.fundingAccount && status.fundingAccount.status !== "verified" && <button
                     type="button" style={buttonStyle} disabled={busy}
                     onClick={async () => {
