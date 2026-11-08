@@ -76,6 +76,7 @@ describe("importGustoEmployees", () => {
     const rosa = await byName("Rosa Diaz");
     expect(rosa).toMatchObject({ email: "rosa@example.com", phone: "2125550111", position: "Painter", dayRate: "240.00", payType: "hourly", employmentType: "w2", stateCode: "NY" });
     expect(rosa?.hireDate?.toISOString()).toBe("2026-10-05T00:00:00.000Z");
+    expect(rosa?.taxAllowances).toBeNull();
     const sammy = await byName("Sammy Lee");
     expect(sammy).toMatchObject({ email: null, position: "Plasterer", dayRate: "0.00" });
     expect(await byName("Old Hand")).toBeUndefined();

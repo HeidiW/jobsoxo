@@ -29,6 +29,13 @@
       "when": 1794168840740,
       "tag": "0003_client_additional_emails",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794179472987,
+      "tag": "0004_tax_allowances_nullable",
+      "breakpoints": true
     }
   ]
 }

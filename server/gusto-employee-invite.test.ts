@@ -18,7 +18,7 @@ const { gustoCompensation, inviteEmployeeToGusto } = await import("./gusto-emplo
 const companyId = "company-invite-1";
 const base = `/v1/companies/${companyId}`;
 type FakeEmployee = { uuid: string; email: string; onboarding_status: string; jobs: any[]; workAddresses: number };
-let gusto: { employees: FakeEmployee[]; failJob: boolean };
+let gusto: { employees: FakeEmployee[]; failJob: boolean; failStateTax: boolean; stateTaxes: any[]; stateTaxPuts: any[] };
 
 function fakeGusto() {
   vi.mocked(gustoRequest).mockImplementation(async (path: string, options: any = {}) => {
@@ -44,6 +44,11 @@ function fakeGusto() {
         return { current_compensation_uuid: "comp-1", compensations: [{ uuid: "comp-1", version: "v1" }] };
       }
       if (resource === "onboarding_status" && verb === "PUT") { employee.onboarding_status = options.body.onboarding_status; return {}; }
+      if (resource === "state_taxes" && verb === "GET") {
+        if (gusto.failStateTax) throw new GustoProviderError("state taxes unavailable", 500, "provider_error");
+        return gusto.stateTaxes;
+      }
+      if (resource === "state_taxes" && verb === "PUT") { gusto.stateTaxPuts.push(options.body); return {}; }
     }
     if (route === "PUT /v1/compensations/comp-1") return {};
     throw new Error(`Unexpected Gusto request: ${route}`);
@@ -68,7 +73,7 @@ const employee = (overrides: Record<string, unknown> = {}) => storage.createEmpl
 } as any);
 
 beforeEach(() => {
-  gusto = { employees: [], failJob: false };
+  gusto = { employees: [], failJob: false, failStateTax: false, stateTaxes: [{ state: "NY", questions: [{ key: "withholding_allowance", answers: [] }] }], stateTaxPuts: [] };
   vi.mocked(gustoRequest).mockReset();
   fakeGusto();
 });
@@ -88,7 +93,8 @@ describe("inviteEmployeeToGusto", () => {
 
     const outcome = await inviteEmployeeToGusto(userId, rosa.id);
 
-    expect(outcome).toEqual({ status: "invited", gustoEmployeeId: "g-1", onboardingStatus: "self_onboarding_invited" });
+    expect(outcome).toEqual({ status: "invited", gustoEmployeeId: "g-1", onboardingStatus: "self_onboarding_invited", withholding: "skipped" });
+    expect(gusto.stateTaxPuts).toHaveLength(0);
     expect(calls("POST", `${base}/employees`)[0][1].body).toEqual({ first_name: "Rosa", last_name: "Diaz", email: "rosa@example.com", self_onboarding: true });
     expect(calls("POST", "/v1/employees/g-1/work_addresses")[0][1].body).toEqual({ location_uuid: "loc-filing", effective_date: "2026-11-02" });
     expect(calls("POST", "/v1/employees/g-1/jobs")[0][1].body).toEqual({ title: "Painter", hire_date: "2026-11-02" });
@@ -119,6 +125,31 @@ describe("inviteEmployeeToGusto", () => {
     expect(calls("POST", `${base}/employees`)).toHaveLength(1);
     expect(calls("POST", "/v1/employees/g-1/work_addresses")).toHaveLength(1);
     expect(outcome.status).toBe("invited");
+  });
+
+  it("pre-fills the state withholding allowance the admin entered, and never guesses", async () => {
+    const userId = await connect();
+    const entered = await employee({ taxAllowances: 2 });
+    const outcome = await inviteEmployeeToGusto(userId, entered.id);
+
+    expect(outcome.withholding).toBe("set");
+    expect(gusto.stateTaxPuts).toEqual([{ states: [{ state: "NY", questions: [{ key: "withholding_allowance", answers: [{ value: 2, valid_from: expect.any(String) }] }] }] }]);
+
+    gusto.stateTaxPuts = [];
+    const blank = await employee({ email: "blank@example.com", taxAllowances: null });
+    expect((await inviteEmployeeToGusto(userId, blank.id)).withholding).toBe("skipped");
+    expect(gusto.stateTaxPuts).toHaveLength(0);
+  });
+
+  it("still invites when Gusto's state tax call fails", async () => {
+    const userId = await connect();
+    gusto.failStateTax = true;
+    const person = await employee({ taxAllowances: 1 });
+
+    const outcome = await inviteEmployeeToGusto(userId, person.id);
+
+    expect(outcome).toMatchObject({ status: "invited", withholding: "failed" });
+    expect(gusto.stateTaxPuts).toHaveLength(0);
   });
 
   it("links someone already in Gusto by email without inviting twice", async () => {

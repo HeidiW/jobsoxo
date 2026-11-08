@@ -1,0 +1,1 @@
+ALTER TABLE "employees" ALTER COLUMN "tax_allowances" DROP DEFAULT;

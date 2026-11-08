@@ -63,6 +63,7 @@ describe("Add employee: invite to Gusto payroll", () => {
     fireEvent.click(screen.getByTestId("button-save-employee"));
 
     await waitFor(() => expect(posted()).toMatchObject({ name: "Rosa Diaz", firstName: "Rosa", lastName: "Diaz", inviteToGusto: true }));
+    expect(posted().taxAllowances).toBeNull();
     await waitFor(() => expect(toast).toHaveBeenCalledWith({
       title: "Employee added and invited to Gusto", description: "Gusto emailed rosa@example.com to enter their tax and bank details.",
     }));

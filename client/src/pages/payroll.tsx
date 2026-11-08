@@ -479,7 +479,7 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
       employmentType: ((employee as any)?.employmentType as EmployeeFormValues["employmentType"]) || "w2",
       payType: ((employee as any)?.payType as EmployeeFormValues["payType"]) || "hourly",
       filingStatus: ((employee as any)?.filingStatus as EmployeeFormValues["filingStatus"]) || "single",
-      taxAllowances: (employee as any)?.taxAllowances?.toString() || "0",
+      taxAllowances: (employee as any)?.taxAllowances == null ? "" : String((employee as any).taxAllowances),
       stateCode: (employee as any)?.stateCode || "NY",
       taxpayerIdNumber: (employee as any)?.taxpayerIdNumber || "",
       inviteToGusto: true,
@@ -500,7 +500,7 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
       const payload = {
         ...data,
         name: fullName,
-        taxAllowances: parseInt(data.taxAllowances || "0"),
+        taxAllowances: data.taxAllowances?.trim() ? parseInt(data.taxAllowances, 10) : null,
         annualSalary: data.annualSalary ? String(parseFloat(data.annualSalary)) : null,
       };
       const res = await apiRequest(isEdit ? "PATCH" : "POST", isEdit ? `/api/employees/${employee.id}` : "/api/employees",
@@ -651,8 +651,9 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
                 </FormItem>
               )} />
               <FormField control={form.control} name="taxAllowances" render={({ field }) => (
-                <FormItem><label style={lbl}>Allowances</label>
-                  <FormControl><input {...field} type="number" min="0" max="20" style={inp} placeholder="0" data-testid="input-tax-allowances" /></FormControl>
+                <FormItem><label style={lbl}>State withholding allowances</label>
+                  <FormControl><input {...field} type="number" min="0" max="20" style={inp} placeholder="From the state certificate (NY IT-2104 box 1)" data-testid="input-tax-allowances" /></FormControl>
+                  <p style={{ fontSize: "11px", color: "#94a3b8", margin: "4px 0 0" }}>If entered, Gusto's state withholding question is pre-filled for this employee. Leave blank and Gusto will ask them.</p>
                   <FormMessage />
                 </FormItem>
               )} />

@@ -2,6 +2,7 @@ import { companyIntegration, syncCompany, syncEmployees, verifyDemoFunding } fro
 import { storage } from "./storage";
 import { GustoProviderError, gustoEnvironment, gustoRequest } from "./gusto-client";
 import { businessDay } from "./business-time";
+import { prefillWithholdingAllowance } from "./gusto-state-tax";
 
 // Fills a Gusto *demo* company with sample data through Gusto's API, using
 // Gusto's documented demo test values (EIN 91-0532465, routing 102001017,
@@ -215,6 +216,7 @@ async function ensureSampleEmployeesInGusto(call: GustoCall, company: string, kn
         added += 1;
       }
       await ensureDirectDeposit(call, employee.uuid, `00098765432${index}`);
+      try { await prefillWithholdingAllowance(call, employee.uuid, 0); } catch { /* demo convenience only */ }
       if (employee.onboarding_status !== "onboarding_completed") {
         try {
           await call(`/v1/employees/${employee.uuid}/onboarding_status`, { method: "PUT", body: { onboarding_status: "onboarding_completed" } });
@@ -239,7 +241,7 @@ async function ensureSampleEmployeesInJobsOxo(): Promise<number> {
     if (emails.has(sample.email)) continue;
     await storage.createEmployee({
       name: `${sample.first_name} ${sample.last_name}`, email: sample.email, position: sample.title,
-      dayRate: (Number(sample.rate) * 8).toFixed(2), payType: "hourly", employmentType: "w2",
+      dayRate: (Number(sample.rate) * 8).toFixed(2), payType: "hourly", employmentType: "w2", taxAllowances: 0,
       stateCode: "NY", status: "active", hireDate: new Date(`${addDays(businessDay(), -14)}T00:00:00Z`),
     });
     created += 1;

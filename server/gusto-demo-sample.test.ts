@@ -60,6 +60,8 @@ function fakeGusto() {
         return employee.payment === "Direct Deposit" ? { type: "Direct Deposit", splits: [{ uuid: "split-1" }] } : { type: "Check", splits: null, version: "pm-v1" };
       }
       if (resource === "bank_accounts" && verb === "POST") { employee.payment = "Direct Deposit"; return {}; }
+      if (resource === "state_taxes" && verb === "GET") return [{ state: "NY", questions: [{ key: "withholding_allowance", answers: [] }] }];
+      if (resource === "state_taxes" && verb === "PUT") return {};
       if (resource === "onboarding_status" && verb === "PUT") {
         if (state.failOnboarding) throw new GustoProviderError("rejected", 422, "invalid_operation", "onboarding_status");
         employee.onboarding_status = "onboarding_completed";

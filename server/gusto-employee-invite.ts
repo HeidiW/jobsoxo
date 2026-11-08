@@ -5,6 +5,7 @@ import { allGustoEmployees, companyIntegration } from "./gusto-company";
 import { GustoProviderError, gustoRequest } from "./gusto-client";
 import { storage } from "./storage";
 import { businessDay } from "./business-time";
+import { prefillWithholdingAllowance, type PrefillResult } from "./gusto-state-tax";
 
 // Adds a JobsOxo employee to Gusto and invites them to self-onboard: Gusto
 // emails them to enter their own SSN, W-4, state tax and bank details, so the
@@ -18,6 +19,8 @@ export type InviteOutcome = {
   status: "invited" | "already_invited" | "in_gusto";
   gustoEmployeeId: string;
   onboardingStatus: string;
+  /** State withholding allowance pre-filled from the JobsOxo employee, if Gusto asked for it. */
+  withholding: PrefillResult["outcome"] | "failed";
 };
 
 const INVITABLE = new Set(["self_onboarding_pending_invite", "admin_onboarding_incomplete"]);
@@ -103,7 +106,16 @@ export async function inviteEmployeeToGusto(
     }
   }
 
-  // 3. Send Gusto's self-onboarding invitation.
+  // 3. Pre-fill the state withholding allowance the admin entered, if Gusto
+  // asks for one and it's still blank. A problem here must not block the invite.
+  let withholding: InviteOutcome["withholding"] = "skipped";
+  try {
+    withholding = (await prefillWithholdingAllowance(call, gustoEmployee.uuid, employee.taxAllowances)).outcome;
+  } catch {
+    withholding = "failed";
+  }
+
+  // 4. Send Gusto's self-onboarding invitation.
   let onboardingStatus = String(gustoEmployee.onboarding_status ?? "self_onboarding_pending_invite");
   let status: InviteOutcome["status"] = "in_gusto";
   if (INVITED.has(onboardingStatus)) {
@@ -116,5 +128,5 @@ export async function inviteEmployeeToGusto(
   await db.update(gustoEmployeeMappings)
     .set({ onboardingStatus, lastSyncedAt: new Date(), updatedAt: new Date() })
     .where(eq(gustoEmployeeMappings.employeeId, employeeId));
-  return { status, gustoEmployeeId: gustoEmployee.uuid, onboardingStatus };
+  return { status, gustoEmployeeId: gustoEmployee.uuid, onboardingStatus, withholding };
 }

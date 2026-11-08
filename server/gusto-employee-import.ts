@@ -63,7 +63,7 @@ export async function importGustoEmployees(userId: string) {
       name, email: email || null, phone: person.phone || null, position: job?.title || null,
       hireDate: job?.hire_date ? new Date(`${job.hire_date}T00:00:00Z`) : null,
       dayRate: pay?.dayRate ?? "0", payType: pay?.payType ?? "hourly", annualSalary: pay?.annualSalary ?? null,
-      employmentType: "w2", status: "active", ...(companyState ? { stateCode: companyState } : {}),
+      taxAllowances: null, employmentType: "w2", status: "active", ...(companyState ? { stateCode: companyState } : {}),
     });
     // Link by Gusto's ID so people without an email still connect; the sync
     // below then fills in onboarding and payment readiness.

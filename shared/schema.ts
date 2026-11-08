@@ -354,7 +354,8 @@ export const employees = pgTable("employees", {
   payType: text("pay_type").default("hourly"), // hourly, salary, day
   annualSalary: decimal("annual_salary", { precision: 10, scale: 2 }),
   filingStatus: text("filing_status").default("single"), // single, married, head_of_household
-  taxAllowances: integer("tax_allowances").default(0),
+  // State withholding allowances (e.g. NY IT-2104 box 1). Null until an admin enters one.
+  taxAllowances: integer("tax_allowances"),
   stateCode: text("state_code").default("CA"),
   taxpayerIdNumber: text("taxpayer_id_number"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -381,7 +382,7 @@ export const insertEmployeeSchema = createInsertSchema(employees)
     payType: z.enum(["hourly", "salary", "day"]).optional(),
     annualSalary: z.coerce.string().optional().nullable(),
     filingStatus: z.enum(["single", "married", "head_of_household"]).optional(),
-    taxAllowances: z.coerce.number().int().min(0).max(20).optional(),
+    taxAllowances: z.union([z.null(), z.coerce.number().int().min(0).max(20)]).optional(),
     stateCode: z.string().length(2).optional(),
   });
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
