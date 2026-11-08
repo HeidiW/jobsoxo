@@ -6,6 +6,7 @@ import { employees, gustoIntegrations, gustoPayrollItems, gustoPayrollRuns, gust
 import { GustoConfigurationError, GustoProviderError, gustoConfigured, gustoEnvironment, verifyGustoSignature } from "./gusto-client";
 import { companyIntegration, connectCompany, createFlow, employeeReadiness, syncCompany, syncEmployees, verifyDemoFunding } from "./gusto-company";
 import { fillDemoCompany, setUpSampleEmployees } from "./gusto-demo-sample";
+import { importGustoEmployees } from "./gusto-employee-import";
 import { calculatePayroll, cancelPayroll, PayrollConflict, pendingPayrollStates, reconcilePayroll, runForUser, submitPayroll } from "./gusto-payroll";
 import { derivePayrollInputs, payrollDate } from "./gusto-inputs";
 import { registerPayrollBankView } from "./payroll-bank-view";
@@ -97,6 +98,9 @@ export function registerGustoRoutes(app: Express, requireAdmin: (req: Request, r
   });
   app.get("/api/gusto/employees/readiness", requireAdmin, async (req, res) => {
     try { res.json({ employees: await employeeReadiness(req.session.userId!) }); } catch (error) { fail(res, error); }
+  });
+  app.post("/api/gusto/employees/import", requireAdmin, async (req, res) => {
+    try { res.json(await importGustoEmployees(req.session.userId!)); } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/employees/sync", requireAdmin, async (req, res) => {
     try { res.json({ synced: await syncEmployees(req.session.userId!) }); } catch (error) { fail(res, error); }

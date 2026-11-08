@@ -305,6 +305,27 @@ describe("Gusto payroll workspace", () => {
     expect(screen.getByRole("button", { name: "Open Gusto payroll" })).toBeInTheDocument();
   });
 
+  it("imports employees from Gusto and lists who still needs a day rate", async () => {
+    const fallback = fetchMock.getMockImplementation() as (url: string, init?: RequestInit) => Promise<Response>;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => url === "/api/gusto/employees/import"
+      ? Promise.resolve(jsonResponse({ imported: ["Rosa Diaz", "Sammy Lee"], needsRate: ["Sammy Lee"], alreadyInJobsOxo: 1, linked: 3 }))
+      : fallback(url, init));
+    queryClient.setQueryData(["/api/gusto/status"], { configured: true, available: true, companyId: "company-1", environment: "production", onboardingComplete: true });
+    queryClient.setQueryData(["/api/gusto/payroll-runs"], { runs: [] });
+    queryClient.setQueryData(["/api/gusto/employees/readiness"], { employees: [] });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <GustoPayrollWorkspace records={[]} period={null} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByTestId("button-gusto-import-employees"));
+    const results = await screen.findByTestId("gusto-import-results");
+    expect(results).toHaveTextContent("✓ Imported from Gusto: Rosa Diaz, Sammy Lee");
+    expect(results).toHaveTextContent("– Already in JobsOxo: 1");
+    expect(results).toHaveTextContent("→ Set a day rate — still needed: Gusto didn't share pay for Sammy Lee");
+  });
+
   it("never offers simulated deposits outside demo", async () => {
     queryClient.setQueryData(["/api/gusto/status"], {
       configured: true, available: true, companyId: "company-1", environment: "production", onboardingComplete: true,

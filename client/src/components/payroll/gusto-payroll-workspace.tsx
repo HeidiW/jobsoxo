@@ -78,6 +78,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
   const [busy, setBusy] = useState(false);
   const [sampleSteps, setSampleSteps] = useState<SampleStep[] | null>(null);
   const [employeeSampleSteps, setEmployeeSampleSteps] = useState<SampleStep[] | null>(null);
+  const [importSteps, setImportSteps] = useState<SampleStep[] | null>(null);
   const [flowUrl, setFlowUrl] = useState("");
   const [flowTitle, setFlowTitle] = useState("");
   const [flowBeforeWarning, setFlowBeforeWarning] = useState<FlowType | null>(null);
@@ -378,6 +379,21 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: 700 }}><Users aria-hidden="true" style={{ width: "15px", height: "15px" }} />Gusto employee setup</div>
               <div style={{ display: "flex", gap: "7px", flexWrap: "wrap" }}>
+                {status.companyId && <button
+                  type="button" style={buttonStyle} disabled={busy}
+                  onClick={async () => {
+                    const result = await perform<{ imported: string[]; needsRate: string[]; alreadyInJobsOxo: number }>("POST", "/api/gusto/employees/import");
+                    if (!result?.imported) return;
+                    setImportSteps([
+                      { step: "Imported from Gusto", status: "done", detail: result.imported.length ? result.imported.join(", ") : "No new employees" },
+                      ...(result.alreadyInJobsOxo ? [{ step: "Already in JobsOxo", status: "skipped" as const, detail: String(result.alreadyInJobsOxo) }] : []),
+                      ...(result.needsRate.length ? [{ step: "Set a day rate", status: "manual" as const, detail: `Gusto didn't share pay for ${result.needsRate.join(", ")}` }] : []),
+                    ]);
+                    await queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+                  }}
+                  data-testid="button-gusto-import-employees"
+                  title="Creates a JobsOxo employee for each current Gusto employee not already here"
+                >Import employees from Gusto</button>}
                 {status.environment === "demo" && status.companyId && <button
                   type="button" style={buttonStyle} disabled={busy}
                   onClick={async () => {
@@ -399,6 +415,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                 }}>Sync Gusto payment methods</button>
               </div>
             </div>
+            {importSteps && <SampleResults title="Import results" steps={importSteps} testId="gusto-import-results" />}
             {employeeSampleSteps && <SampleResults title="Sample employee results" steps={employeeSampleSteps} testId="gusto-sample-employee-results" />}
             {readinessQuery.isLoading ? <p style={{ color: "var(--muted)", fontSize: "12px" }}>Checking Gusto employee setup…</p>
               : readinessQuery.isError ? <p role="alert" style={{ color: "var(--jx-orange-ink)", fontSize: "12px" }}>Gusto employee readiness could not load. Retry after syncing the company.</p>
