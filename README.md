@@ -328,6 +328,7 @@ The main variables are below; `.env.example` lists every one the server reads (i
 | `SETUP_CODE` | Production | Code required to create the first admin on an empty database; setup is refused in production without it |
 | `ENCRYPTION_KEY` | Yes | 64 hex chars; encrypts stored bank and provider tokens. Production key must be copied exactly when moving hosts |
 | `RESEND_API_KEY` | Yes | Resend API key for sending emails |
+| `EMAIL_FROM` | Yes | Sender address on a domain verified in Resend (e.g. `noreply@jobsoxo.com`); the company name is used as the display name |
 | `TWILIO_ACCOUNT_SID` | Yes | Twilio account SID for SMS |
 | `TWILIO_AUTH_TOKEN` | Yes | Twilio auth token |
 | `TWILIO_PHONE_NUMBER` | Yes | Twilio outbound phone number |

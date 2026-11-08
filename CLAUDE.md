@@ -81,6 +81,7 @@ These protect real payroll, real funds and audit history. Don't relax them witho
 - **First-time setup**: `/api/auth/register` creates the admin only on an empty database and requires `SETUP_CODE` (`server/setup-code.ts`). Production without it refuses setup. OAuth sign-in never creates accounts (`findOAuthUser` in `server/oauth.ts`); new people join by invite.
 - **Sessions**: stored in Postgres via `connect-pg-simple` (the `session` table is defined in `shared/schema.ts` and created by migrations; don't enable `createTableIfMissing`). In production the cookie is `Secure` and the server refuses to start without `SESSION_SECRET`.
 - **Encryption**: bank-account data is encrypted with `ENCRYPTION_KEY` (64 hex chars); rotate with `server/rotate-encryption-key.ts` using `ENCRYPTION_KEY_PREVIOUS`. When moving hosts, copy the production key exactly and verify existing data decrypts before cutover.
+- **Email** (Resend): every send goes through `server/email.ts` and uses `fromHeader()`, so the sender is `EMAIL_FROM` (a domain verified in Resend). Without it, mail comes from `noreply@resend.dev`, which only reaches the Resend account owner.
 - Others: Microsoft/Apple/Yahoo OAuth, Resend, Twilio, Stripe. Uploaded job documents are stored in Postgres. See `.env.example` for every variable the server reads.
 
 ## Hosting

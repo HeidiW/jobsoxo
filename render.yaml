@@ -86,6 +86,8 @@ services:
       # Email, SMS and payments
       - key: RESEND_API_KEY
         sync: false
+      - key: EMAIL_FROM # Sender on a domain verified in Resend, e.g. noreply@jobsoxo.com
+        sync: false
       - key: TWILIO_ACCOUNT_SID
         sync: false
       - key: TWILIO_AUTH_TOKEN

@@ -45,6 +45,24 @@ async function ensurePayToken(invoiceId: string): Promise<string> {
   return existing.payToken!;
 }
 
+/**
+ * The address emails are sent from: EMAIL_FROM (a domain verified in Resend),
+ * as a bare address or "Name <address>". Falls back to Resend's test sender,
+ * which only delivers to the Resend account owner.
+ */
+export function senderAddress(): string {
+  const configured = process.env.EMAIL_FROM?.trim();
+  if (!configured) return "noreply@resend.dev";
+  const bracketed = /<([^>]+)>/.exec(configured);
+  return (bracketed ? bracketed[1] : configured).trim();
+}
+
+/** A From header with the given display name and the configured sender address. */
+export function fromHeader(displayName: string): string {
+  const name = displayName.replace(/[<>"\r\n]/g, "").trim() || "JobsOxo";
+  return `${name} <${senderAddress()}>`;
+}
+
 export interface EmailConfig {
   apiKey?: string;
   fromEmail?: string;
@@ -90,7 +108,7 @@ export async function sendInvoiceEmail(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from: config.fromEmail || `${settings?.companyName || "Invoicing"} <noreply@resend.dev>`,
+          from: config.fromEmail || fromHeader(settings?.companyName || "Invoicing"),
           to: [toEmail],
           subject,
           html: body,
@@ -158,7 +176,7 @@ export async function sendPaymentReminder(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from: config.fromEmail || `${settings?.companyName || "Invoicing"} <noreply@resend.dev>`,
+          from: config.fromEmail || fromHeader(settings?.companyName || "Invoicing"),
           to: [client.email],
           subject,
           html: body,
@@ -518,7 +536,7 @@ export async function sendPasswordResetEmail(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "JobsOxo <noreply@resend.dev>",
+        from: fromHeader("JobsOxo"),
         to: [toEmail],
         subject,
         html,
@@ -576,7 +594,7 @@ export async function sendDirectDepositEmail(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: config.fromEmail || `${companyName} <noreply@resend.dev>`,
+        from: config.fromEmail || fromHeader(companyName),
         to: [toEmail],
         subject,
         html,
@@ -754,7 +772,7 @@ export async function sendChangeOrderEmail(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from: config.fromEmail || `${companyName} <noreply@resend.dev>`,
+          from: config.fromEmail || fromHeader(companyName),
           to: [toEmail],
           subject,
           html,
