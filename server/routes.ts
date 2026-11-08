@@ -3,6 +3,7 @@ import { createLinkToken, exchangePublicToken, getAccountInfo, getBalance, getTr
 import { seedDemoData } from "./seed";
 import { calendarDay } from "./business-time";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
+import { COMPANY_FIELD_LABELS, REQUIRED_COMPANY_FIELDS, isCompanyFieldFilled } from "@shared/company-setup";
 // Function declaration (not const) so it's hoisted and immune to TDZ in circular-dep scenarios.
 // import.meta.url is valid in ESM (dev/tsx) but undefined in CJS bundles (production build).
 // Falls back to process.cwd() path so createRequire can still resolve node_modules.
@@ -3546,6 +3547,17 @@ export async function registerRoutes(
 
   app.patch("/api/settings", requireAuth, requireAdmin, async (req, res) => {
     try {
+      // Saves can be partial (e.g. reminder settings), but a required company
+      // field that is sent must not be blank or invalid.
+      const invalid = REQUIRED_COMPANY_FIELDS.filter(
+        (field) => req.body && field in req.body && !isCompanyFieldFilled(field, req.body[field]),
+      );
+      if (invalid.length > 0) {
+        return res.status(400).json({
+          error: `${invalid.map((field) => COMPANY_FIELD_LABELS[field]).join(", ")} ${invalid.length === 1 ? "is" : "are"} required`,
+          fields: invalid,
+        });
+      }
       const parsed = insertSettingsSchema.partial().safeParse(req.body);
       if (!parsed.success) return badRequest(res, parsed.error);
       const settings = await storage.updateSettings(parsed.data);

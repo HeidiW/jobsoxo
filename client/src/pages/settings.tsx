@@ -55,6 +55,7 @@ import { Switch } from "@/components/ui/switch";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import type { Settings, Invite } from "@shared/schema";
+import { COMPANY_FIELD_LABELS, isCompanyFieldFilled, missingCompanyFields } from "@shared/company-setup";
 import { usePlaidLink, type PlaidAccountMeta } from "@/hooks/use-plaid-link";
 import {
   Dialog,
@@ -66,14 +67,16 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import "@/components/settings/settings.css";
 
+const required = (label: string) => z.string().trim().min(1, `${label} is required`);
+
 const settingsFormSchema = z.object({
-  companyName: z.string().optional(),
-  companyEmail: z.string().email("Invalid email").optional().or(z.literal("")),
-  companyPhone: z.string().optional(),
-  companyAddress: z.string().optional(),
-  taxRate: z.string().optional(),
-  invoicePrefix: z.string().optional(),
-  invoiceTerms: z.string().optional(),
+  companyName: required("Company name"),
+  companyEmail: required("Email").email("Invalid email"),
+  companyPhone: required("Phone"),
+  companyAddress: required("Address"),
+  taxRate: required("Tax rate").refine((value) => isCompanyFieldFilled("taxRate", value), "Enter a tax rate from 0 to 100"),
+  invoicePrefix: required("Invoice prefix"),
+  invoiceTerms: required("Invoice terms"),
   inboxSyncHour: z.coerce.number().int().min(0).max(23).optional(),
 });
 
@@ -943,6 +946,37 @@ function CollectionsAgentCard({ settings, canManage }: { settings: Settings | un
   );
 }
 
+const LEAVE_SETTINGS_MESSAGE = "You have unsaved changes in Settings. Leave without saving?";
+
+/** Warns before closing the tab or following an in-app link while changes are unsaved. */
+function useUnsavedChangesWarning(active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    // Capture phase, so this runs before wouter's link handler.
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = (event.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!link || link.target === "_blank") return;
+      const url = new URL(link.href, window.location.href);
+      if (url.origin !== window.location.origin || url.pathname === window.location.pathname) return;
+      if (!window.confirm(LEAVE_SETTINGS_MESSAGE)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [active]);
+}
+
 export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -1078,6 +1112,9 @@ export default function SettingsPage() {
   })();
 
   const canManageSettings = !!user?.isAdmin;
+  const hasUnsavedChanges = canManageSettings && form.formState.isDirty;
+  const missingFields = settings ? missingCompanyFields(settings) : [];
+  useUnsavedChangesWarning(hasUnsavedChanges);
 
   const onSubmit = (data: SettingsFormValues) => {
     if (!canManageSettings || isError) return;
@@ -1102,6 +1139,15 @@ export default function SettingsPage() {
         <h1 className="settings-heading">Settings</h1>
         <p className="text-muted-foreground mt-1">Manage your company information and preferences</p>
       </div>
+
+      {canManageSettings && missingFields.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100" role="status" data-testid="banner-finish-setup">
+          <p className="font-semibold">Finish setting up your company</p>
+          <p className="mt-1 text-sm">
+            Fill in {missingFields.map((field) => COMPANY_FIELD_LABELS[field]).join(", ")}, then click <strong>Save</strong>. You'll be able to use the rest of JobsOxo once these are saved.
+          </p>
+        </div>
+      )}
 
       {isError && (
         <div className="flex items-center justify-between gap-4 rounded-2xl border border-destructive/30 bg-destructive/5 p-4" role="alert">
@@ -1483,6 +1529,32 @@ export default function SettingsPage() {
 
       {/* Only admins can manage invite codes */}
       {user?.isAdmin && <InvitePanel />}
+
+      {hasUnsavedChanges && (
+        <div
+          className="sticky bottom-4 z-10 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-jx-line bg-background/95 p-3 pl-5 shadow-lg backdrop-blur"
+          role="region"
+          aria-label="Unsaved changes"
+          data-testid="bar-unsaved-changes"
+        >
+          <p className="text-sm font-semibold">You have unsaved changes</p>
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" onClick={() => form.reset()} data-testid="button-discard-settings">
+              Discard
+            </Button>
+            <Button
+              type="submit"
+              form="settings-company-form"
+              disabled={updateSettingsMutation.isPending || isError}
+              className="settings-primary"
+              data-testid="button-save-settings-bar"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {updateSettingsMutation.isPending ? "Saving..." : "Save changes"}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

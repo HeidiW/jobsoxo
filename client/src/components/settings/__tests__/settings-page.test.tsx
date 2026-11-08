@@ -276,4 +276,84 @@ describe("Settings page", () => {
     fireEvent.click(screen.getByTestId("button-connect-bank"));
     expect(fetchMock.mock.calls.some(([url, init]) => typeof url === "string" && url.startsWith("/api/plaid") && init?.method === "POST")).toBe(false);
   });
+
+  it("shows a save bar as soon as a field changes, and Discard restores the saved values", async () => {
+    mockUser = { isAdmin: true, displayName: "Rae" };
+    mount();
+    expect(await screen.findByDisplayValue("Northstar Finish Co.")).toBeInTheDocument();
+    expect(screen.queryByTestId("bar-unsaved-changes")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("input-company-name"), { target: { value: "Northstar Painting" } });
+    expect(await screen.findByTestId("bar-unsaved-changes")).toHaveTextContent("You have unsaved changes");
+
+    fireEvent.click(screen.getByTestId("button-discard-settings"));
+    await waitFor(() => expect(screen.queryByTestId("bar-unsaved-changes")).not.toBeInTheDocument());
+    expect(screen.getByTestId("input-company-name")).toHaveValue("Northstar Finish Co.");
+    expect(patches).toHaveLength(0);
+  });
+
+  it("saves from the bar and hides it once saved", async () => {
+    mockUser = { isAdmin: true, displayName: "Rae" };
+    mount();
+    expect(await screen.findByDisplayValue("Northstar Finish Co.")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("input-company-phone"), { target: { value: "(212) 555-0199" } });
+    fireEvent.click(await screen.findByTestId("button-save-settings-bar"));
+
+    await waitFor(() => expect(patches).toHaveLength(1));
+    expect(patches[0].body).toMatchObject({ companyPhone: "(212) 555-0199" });
+    await waitFor(() => expect(screen.queryByTestId("bar-unsaved-changes")).not.toBeInTheDocument());
+  });
+
+  it("requires every company and invoice field before saving", async () => {
+    mockUser = { isAdmin: true, displayName: "Rae" };
+    mount();
+    expect(await screen.findByDisplayValue("Northstar Finish Co.")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("input-company-name"), { target: { value: "  " } });
+    fireEvent.change(screen.getByTestId("input-invoice-terms"), { target: { value: "" } });
+    fireEvent.change(screen.getByTestId("input-tax-rate"), { target: { value: "150" } });
+    fireEvent.click(screen.getByTestId("button-save-settings"));
+
+    expect(await screen.findByText("Company name is required")).toBeInTheDocument();
+    expect(screen.getByText("Invoice terms is required")).toBeInTheDocument();
+    expect(screen.getByText("Enter a tax rate from 0 to 100")).toBeInTheDocument();
+    expect(patches).toHaveLength(0);
+  });
+
+  it("tells a first-time admin what to fill in", async () => {
+    mockUser = { isAdmin: true, displayName: "Rae" };
+    settingsData = { ...settingsData, companyName: null, companyPhone: "", companyAddress: null };
+    mount();
+
+    const banner = await screen.findByTestId("banner-finish-setup");
+    expect(banner).toHaveTextContent("Finish setting up your company");
+    expect(banner).toHaveTextContent("Company name, Phone, Address");
+  });
+
+  it("asks before following a link away from unsaved changes", async () => {
+    mockUser = { isAdmin: true, displayName: "Rae" };
+    const confirm = vi.fn().mockReturnValue(false);
+    vi.stubGlobal("confirm", confirm);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <a href="/invoices" data-testid="nav-invoices">Invoices</a>
+        <SettingsPage />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByDisplayValue("Northstar Finish Co.")).toBeInTheDocument();
+
+    // No changes yet: no prompt.
+    const unprompted = new MouseEvent("click", { bubbles: true, cancelable: true });
+    screen.getByTestId("nav-invoices").dispatchEvent(unprompted);
+    expect(confirm).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByTestId("input-company-name"), { target: { value: "Changed" } });
+    await screen.findByTestId("bar-unsaved-changes");
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    screen.getByTestId("nav-invoices").dispatchEvent(click);
+
+    expect(confirm).toHaveBeenCalledWith("You have unsaved changes in Settings. Leave without saving?");
+    expect(click.defaultPrevented).toBe(true);
+  });
 });

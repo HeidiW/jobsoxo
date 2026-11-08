@@ -34,6 +34,7 @@ import InvoicePay from "@/pages/invoice-pay";
 import EmployeeBankSetup from "@/pages/employee-bank-setup";
 import { initializeAnalytics } from "@/lib/analytics";
 import { legacyInboxDestination } from "@/lib/app-shell";
+import { CompanySetupGate } from "@/components/company-setup-gate";
 
 function Router() {
   return (
@@ -136,6 +137,7 @@ function AuthenticatedApp() {
         <AppSidebar />
         <div className="flex flex-col flex-1 overflow-hidden">
           <AppTopbar />
+          <CompanySetupGate />
           <main className="min-w-0 flex-1 overflow-y-auto bg-background">
             <Router />
           </main>
