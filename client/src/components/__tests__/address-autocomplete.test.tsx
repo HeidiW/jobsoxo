@@ -112,4 +112,16 @@ describe("Address autocomplete focus and async results", () => {
     expect(input).not.toBeDisabled();
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
+
+  it("looks disabled, like other inputs, inside a locked form", () => {
+    render(
+      <fieldset disabled>
+        <AddressAutocomplete value="18 Example Street" onChange={() => {}} data-testid="locked-address" />
+      </fieldset>,
+    );
+
+    const input = screen.getByTestId("locked-address");
+    expect(input).toBeDisabled();
+    expect(input).toHaveClass("disabled:opacity-50", "disabled:cursor-not-allowed");
+  });
 });
