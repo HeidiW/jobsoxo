@@ -296,6 +296,17 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                     else setup?.focus({ preventScroll: true });
                   }}>Set up demo company</button>}
                 {status.configured && <>
+                  {/* Next setup steps sit beside the checklist they resolve. */}
+                  {status.companyId && status.onboardingComplete === false && <button
+                    type="button" style={{ ...buttonStyle, background: "var(--jox-primary)", color: "#fff", border: 0 }}
+                    disabled={busy} onClick={() => void openFlow("company_onboarding", "Complete company setup")}
+                    data-testid="button-gusto-complete-setup"
+                  >Complete company setup</button>}
+                  {status.fundingAccount && status.fundingAccount.status !== "verified" && <button
+                    type="button" style={buttonStyle} disabled={busy}
+                    onClick={() => void openFlow("verify_bank_info", "Verify funding in Gusto")}
+                    data-testid="button-gusto-verify-funding"
+                  >Verify funding</button>}
                   <button type="button" style={buttonStyle} disabled={busy} onClick={() => void perform("POST", "/api/gusto/sync")}>Sync readiness</button>
                   <button type="button" style={buttonStyle} disabled={busy} onClick={() => void openFlow("add_bank_info", "Set up Gusto funding")}>Funding setup</button>
                 </>}
