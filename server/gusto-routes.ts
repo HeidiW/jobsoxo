@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { db } from "./db";
 import { employees, gustoIntegrations, gustoPayrollItems, gustoPayrollRuns, gustoWebhookEvents } from "@shared/schema";
 import { GustoConfigurationError, GustoProviderError, gustoConfigured, gustoEnvironment, verifyGustoSignature } from "./gusto-client";
-import { companyIntegration, connectCompany, createFlow, employeeReadiness, syncCompany, syncEmployees } from "./gusto-company";
+import { companyIntegration, connectCompany, createFlow, employeeReadiness, syncCompany, syncEmployees, verifyDemoFunding } from "./gusto-company";
 import { calculatePayroll, cancelPayroll, PayrollConflict, pendingPayrollStates, reconcilePayroll, runForUser, submitPayroll } from "./gusto-payroll";
 import { derivePayrollInputs, payrollDate } from "./gusto-inputs";
 import { registerPayrollBankView } from "./payroll-bank-view";
@@ -76,6 +76,9 @@ export function registerGustoRoutes(app: Express, requireAdmin: (req: Request, r
   });
   app.post("/api/gusto/sync", requireAdmin, async (req, res) => {
     try { res.json(await syncCompany(req.session.userId!)); } catch (error) { fail(res, error); }
+  });
+  app.post("/api/gusto/funding-account/test-deposits", requireAdmin, async (req, res) => {
+    try { res.json(await verifyDemoFunding(req.session.userId!)); } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/funding-account", requireAdmin, async (req, res) => {
     // Compatibility endpoint is now discovery only: never create/replace a

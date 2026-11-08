@@ -156,6 +156,49 @@ export async function employeeReadiness(userId: string) {
   });
 }
 
+/**
+ * Gusto's response shape for send_test_deposits isn't documented: accept
+ * deposit_1/deposit_2 or a two-item list, and only real micro-deposit amounts.
+ */
+export function testDepositAmounts(body: any): [number, number] | null {
+  const pairs = [
+    [body?.deposit_1, body?.deposit_2],
+    Array.isArray(body?.deposits) ? body.deposits : null,
+    Array.isArray(body) ? body : null,
+  ];
+  for (const pair of pairs) {
+    if (!pair || pair.length !== 2) continue;
+    const amounts = pair.map((value: any) => Number(value && typeof value === "object" ? value.amount : value));
+    if (amounts.every((amount: number) => Number.isFinite(amount) && amount > 0 && amount < 1)) return [amounts[0], amounts[1]];
+  }
+  return null;
+}
+
+/**
+ * Demo only: Gusto doesn't send real micro-deposits in demo. Simulate them with
+ * Gusto's demo endpoint, then confirm them through the normal verify endpoint.
+ */
+export async function verifyDemoFunding(userId: string) {
+  const integration = await companyIntegration(userId);
+  if (integration.environment !== "demo" || gustoEnvironment() !== "demo") {
+    throw new GustoProviderError("Test deposits are only available for demo companies.", 409, "demo_only");
+  }
+  const path = `/v1/companies/${integration.companyId}/bank_accounts`;
+  const accounts = await gustoRequest<any[]>(path, { userId });
+  if (!Array.isArray(accounts) || accounts.length === 0) {
+    throw new GustoProviderError("Add a funding bank account in Gusto first.", 409, "funding_missing");
+  }
+  if (accounts.length > 1) throw new GustoProviderError("Gusto returned multiple funding accounts; the default cannot be determined safely.", 409, "funding_ambiguous");
+  const account = accounts[0];
+  if (account.verification_status !== "verified") {
+    const deposits = await gustoRequest<any>(`${path}/${account.uuid}/send_test_deposits`, { userId, method: "POST" });
+    const amounts = testDepositAmounts(deposits);
+    if (!amounts) throw new GustoProviderError("Gusto returned test deposits in an unexpected format.", 502, "invalid_response");
+    await gustoRequest(`${path}/${account.uuid}/verify`, { userId, method: "PUT", body: { deposit_1: amounts[0], deposit_2: amounts[1] } });
+  }
+  return syncCompany(userId);
+}
+
 export const GUSTO_FLOW_TYPES = new Set(["company_onboarding", "add_bank_info", "verify_bank_info", "add_employees", "employee_management", "payroll_history", "run_payroll"]);
 
 export async function createFlow(userId: string, flowType: string) {

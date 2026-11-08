@@ -307,6 +307,15 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                     onClick={() => void openFlow("verify_bank_info", "Verify funding in Gusto")}
                     data-testid="button-gusto-verify-funding"
                   >Verify funding</button>}
+                  {status.environment === "demo" && status.fundingAccount && status.fundingAccount.status !== "verified" && <button
+                    type="button" style={buttonStyle} disabled={busy}
+                    onClick={async () => {
+                      const result = await perform<{ fundingAccount?: { status?: string } }>("POST", "/api/gusto/funding-account/test-deposits");
+                      if (result?.fundingAccount?.status === "verified") toast({ title: "Demo funding account verified" });
+                    }}
+                    data-testid="button-gusto-test-deposits"
+                    title="Demo only: Gusto doesn't send real test deposits in demo"
+                  >Simulate test deposits</button>}
                   <button type="button" style={buttonStyle} disabled={busy} onClick={() => void perform("POST", "/api/gusto/sync")}>Sync readiness</button>
                   <button type="button" style={buttonStyle} disabled={busy} onClick={() => void openFlow("add_bank_info", "Set up Gusto funding")}>Funding setup</button>
                 </>}
