@@ -3349,10 +3349,13 @@ export async function registerRoutes(
       const settingsRow = (settingsResult as any).rows?.[0] ?? null;
       const companyName: string = settingsRow?.company_name ?? "Your Company";
 
-      await sendDirectDepositEmail(employee.email, employee.name, setupLink, companyName, {
+      const sent = await sendDirectDepositEmail(employee.email, employee.name, setupLink, companyName, {
         apiKey: process.env.RESEND_API_KEY,
         provider: "resend",
       });
+      if (!sent.success) {
+        return res.status(502).json({ error: "The setup email couldn't be sent. Check the email settings and try again." });
+      }
 
       res.json({ success: true, message: `Setup link sent to ${employee.email}` });
     } catch (error: any) {

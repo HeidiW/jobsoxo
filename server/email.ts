@@ -63,6 +63,30 @@ export function fromHeader(displayName: string): string {
   return `${name} <${senderAddress()}>`;
 }
 
+/** "heidi@jobsoxo.com" → "h***@jobsoxo.com", so logs don't hold full addresses. */
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  return domain ? `${local.slice(0, 1)}***@${domain}` : "***";
+}
+
+function logEmailFailure(kind: string, toEmail: string, detail: string): void {
+  console.error(`[Email] ${kind} to ${maskEmail(toEmail)} failed: ${detail}`);
+}
+
+/**
+ * Without an API key nothing is sent. In development the link is logged so it
+ * can still be used locally; in production it isn't, since a reset or setup
+ * link grants access to anyone who can read the logs.
+ */
+function handleMissingApiKey(kind: string, toEmail: string, link: string): { success: boolean; error?: string } {
+  if (process.env.NODE_ENV !== "production") {
+    console.log(`[Email] ${kind} link for ${toEmail} (no RESEND_API_KEY): ${link}`);
+    return { success: true };
+  }
+  logEmailFailure(kind, toEmail, "RESEND_API_KEY is not set");
+  return { success: false, error: "Email is not configured" };
+}
+
 export interface EmailConfig {
   apiKey?: string;
   fromEmail?: string;
@@ -523,10 +547,7 @@ export async function sendPasswordResetEmail(
 </body>
 </html>`;
 
-  if (!config.apiKey) {
-    console.log(`[Email] Password reset link for ${toEmail}: ${resetLink}`);
-    return { success: true };
-  }
+  if (!config.apiKey) return handleMissingApiKey("Password reset", toEmail, resetLink);
 
   try {
     const response = await fetch("https://api.resend.com/emails", {
@@ -544,10 +565,12 @@ export async function sendPasswordResetEmail(
     });
     if (!response.ok) {
       const err = await response.text();
+      logEmailFailure("Password reset", toEmail, `Resend ${response.status} ${err}`);
       return { success: false, error: `Email failed: ${response.status} ${err}` };
     }
     return { success: true };
   } catch (error) {
+    logEmailFailure("Password reset", toEmail, String(error));
     return { success: false, error: String(error) };
   }
 }
@@ -581,10 +604,7 @@ export async function sendDirectDepositEmail(
 </body>
 </html>`;
 
-  if (!config.apiKey) {
-    console.log(`[Email] Direct deposit setup link for ${toEmail}: ${setupLink}`);
-    return { success: true };
-  }
+  if (!config.apiKey) return handleMissingApiKey("Direct deposit setup", toEmail, setupLink);
 
   try {
     const response = await fetch("https://api.resend.com/emails", {
@@ -602,10 +622,12 @@ export async function sendDirectDepositEmail(
     });
     if (!response.ok) {
       const err = await response.text();
+      logEmailFailure("Direct deposit setup", toEmail, `Resend ${response.status} ${err}`);
       return { success: false, error: `Email failed: ${response.status} ${err}` };
     }
     return { success: true };
   } catch (error) {
+    logEmailFailure("Direct deposit setup", toEmail, String(error));
     return { success: false, error: String(error) };
   }
 }
