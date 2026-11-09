@@ -1,5 +1,6 @@
 import { encrypt, decrypt } from "./encryption";
 import {
+  invoiceCounters,
   type User,
   type InsertUser,
   type Client,
@@ -77,6 +78,7 @@ import {
   plaidTransactions,
 } from "@shared/schema";
 import { db } from "./db";
+import { businessDay } from "./business-time";
 import { eq, ne, desc, and, gte, lte, sql, isNull, or, inArray } from "drizzle-orm";
 
 export type TeamMember = Pick<User, "id" | "username" | "displayName" | "email" | "isAdmin">;
@@ -136,6 +138,7 @@ export interface IStorage {
   updateInvoice(id: string, invoice: Partial<InsertInvoice>): Promise<Invoice | undefined>;
   deleteInvoice(id: string): Promise<void>;
   getNextInvoiceNumber(): Promise<string>;
+  peekNextInvoiceNumber(): Promise<string>;
 
   // Payments
   getPaymentsByInvoice(invoiceId: string): Promise<Payment[]>;
@@ -278,6 +281,10 @@ export interface IStorage {
     activeJobs: number;
     overdueInvoices: number;
   }>;
+}
+
+export function formatInvoiceNumber(prefix: string, year: number, sequence: number): string {
+  return `${prefix}-${year}-${String(sequence).padStart(4, "0")}`;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -515,25 +522,36 @@ export class DatabaseStorage implements IStorage {
     await db.delete(invoices).where(eq(invoices.id, id));
   }
 
+  /**
+   * Allocates the next invoice number: PREFIX-YYYY-NNNN. The counter row is
+   * upserted atomically, so simultaneous creators never share a number, and
+   * the "next invoice number" setting acts as a floor. A number, once taken,
+   * is never handed out again even if the invoice is later deleted.
+   */
   async getNextInvoiceNumber(): Promise<string> {
     const settingsResult = await this.getSettings();
-    const prefix = settingsResult?.invoicePrefix || "INV";
-    
-    const [lastInvoice] = await db
-      .select({ invoiceNumber: invoices.invoiceNumber })
-      .from(invoices)
-      .orderBy(desc(invoices.createdAt))
-      .limit(1);
+    const prefix = (settingsResult?.invoicePrefix || "INV").trim();
+    const year = Number(businessDay().slice(0, 4));
+    const floor = Math.max(1, settingsResult?.invoiceNextNumber ?? 1);
+    const [row] = await db.execute<{ last_number: number }>(sql`
+      INSERT INTO invoice_counters (scope, series, year, last_number)
+      VALUES ('default', 'invoice', ${year}, ${floor})
+      ON CONFLICT (scope, series, year)
+      DO UPDATE SET last_number = GREATEST(invoice_counters.last_number + 1, ${floor})
+      RETURNING last_number
+    `).then((result) => result.rows);
+    return formatInvoiceNumber(prefix, year, Number(row.last_number));
+  }
 
-    let nextNumber = 1;
-    if (lastInvoice?.invoiceNumber) {
-      const match = lastInvoice.invoiceNumber.match(/(\d+)$/);
-      if (match) {
-        nextNumber = parseInt(match[1], 10) + 1;
-      }
-    }
-
-    return `${prefix}-${String(nextNumber).padStart(4, "0")}`;
+  /** The number the next invoice would get, without taking it. */
+  async peekNextInvoiceNumber(): Promise<string> {
+    const settingsResult = await this.getSettings();
+    const prefix = (settingsResult?.invoicePrefix || "INV").trim();
+    const year = Number(businessDay().slice(0, 4));
+    const floor = Math.max(1, settingsResult?.invoiceNextNumber ?? 1);
+    const [counter] = await db.select().from(invoiceCounters)
+      .where(and(eq(invoiceCounters.scope, "default"), eq(invoiceCounters.series, "invoice"), eq(invoiceCounters.year, year)));
+    return formatInvoiceNumber(prefix, year, Math.max(counter ? counter.lastNumber + 1 : 1, floor));
   }
 
   // Payments

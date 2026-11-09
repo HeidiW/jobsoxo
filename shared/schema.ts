@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, date, boolean, jsonb, json, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, date, boolean, jsonb, json, index, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { emailListSchema } from "./client-emails";
@@ -704,7 +704,19 @@ export const settings = pgTable("settings", {
   inboxSyncHour: integer("inbox_sync_hour").default(8), // 0-23, hour of day for daily inbox sync
   collectionsEnabled: boolean("collections_enabled").default(true).notNull(),
   reminderTones: jsonb("reminder_tones").$type<{ stage: number; label: string; subject: string; body: string }[]>(),
+  // Lowest sequence number the next invoice may use (e.g. continue from old software). Null = no floor.
+  invoiceNextNumber: integer("invoice_next_number"),
 });
+
+// Atomic invoice-number counters, one row per (scope, series, year). Scope is
+// the business ("default" while JobsOxo runs one company); series lets credit
+// notes or estimates get their own sequence later. Numbers are never reused.
+export const invoiceCounters = pgTable("invoice_counters", {
+  scope: text("scope").notNull(),
+  series: text("series").notNull(),
+  year: integer("year").notNull(),
+  lastNumber: integer("last_number").notNull(),
+}, (table) => [primaryKey({ columns: [table.scope, table.series, table.year] })]);
 
 // Reminder Logs — history of every outbound reminder sent per invoice
 export const reminderLogs = pgTable("reminder_logs", {
@@ -726,6 +738,7 @@ export const insertSettingsSchema = createInsertSchema(settings)
   .extend({
     taxRate: z.coerce.string().optional(),
     inboxSyncHour: z.number().int().min(0).max(23).optional().nullable(),
+    invoiceNextNumber: z.union([z.null(), z.coerce.number().int().min(1).max(999_999_999)]).optional(),
   });
 export type InsertSettings = z.infer<typeof insertSettingsSchema>;
 export type Settings = typeof settings.$inferSelect;

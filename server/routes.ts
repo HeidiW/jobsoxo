@@ -3588,7 +3588,8 @@ export async function registerRoutes(
       }
       const nextInboxSync = await getNextInboxSyncTime();
       const lastInboxSync = await getLastInboxSyncTime();
-      res.json({ ...settings, nextInboxSync, lastInboxSync });
+      const nextInvoiceNumber = await storage.peekNextInvoiceNumber();
+      res.json({ ...settings, nextInboxSync, lastInboxSync, nextInvoiceNumber });
     } catch (error) {
       console.error("Get settings error:", error);
       res.status(500).json({ error: "Failed to get settings" });

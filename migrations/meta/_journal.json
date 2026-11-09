@@ -43,6 +43,13 @@
       "when": 1794185481230,
       "tag": "0005_line_item_status",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794186265468,
+      "tag": "0006_invoice_counters",
+      "breakpoints": true
     }
   ]
 }

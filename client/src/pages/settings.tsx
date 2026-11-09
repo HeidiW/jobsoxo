@@ -76,6 +76,7 @@ const settingsFormSchema = z.object({
   companyAddress: required("Address"),
   taxRate: required("Tax rate").refine((value) => isCompanyFieldFilled("taxRate", value), "Enter a tax rate from 0 to 100"),
   invoicePrefix: required("Invoice prefix"),
+  invoiceNextNumber: z.string().optional().refine((v) => !v?.trim() || (/^\d+$/.test(v.trim()) && Number(v) >= 1), "Enter a whole number of 1 or more"),
   invoiceTerms: required("Invoice terms"),
   inboxSyncHour: z.coerce.number().int().min(0).max(23).optional(),
 });
@@ -1007,7 +1008,7 @@ export default function SettingsPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const { data: settings, isLoading, isError, refetch } = useQuery<Settings & { nextInboxSync?: string; lastInboxSync?: string | null }>({
+  const { data: settings, isLoading, isError, refetch } = useQuery<Settings & { nextInboxSync?: string; lastInboxSync?: string | null; nextInvoiceNumber?: string }>({
     queryKey: ["/api/settings"],
   });
 
@@ -1033,6 +1034,7 @@ export default function SettingsPage() {
       companyAddress: settings?.companyAddress || "",
       taxRate: settings?.taxRate?.toString() || "0",
       invoicePrefix: settings?.invoicePrefix || "INV",
+      invoiceNextNumber: settings?.invoiceNextNumber == null ? "" : String(settings.invoiceNextNumber),
       invoiceTerms: settings?.invoiceTerms || "",
       inboxSyncHour: settings?.inboxSyncHour ?? 8,
     },
@@ -1044,6 +1046,7 @@ export default function SettingsPage() {
         ...data,
         taxRate: parseFloat(data.taxRate || "0"),
         inboxSyncHour: data.inboxSyncHour ?? 8,
+        invoiceNextNumber: data.invoiceNextNumber?.trim() ? parseInt(data.invoiceNextNumber, 10) : null,
       };
       const res = await apiRequest("PATCH", "/api/settings", payload);
       return res.json();
@@ -1267,7 +1270,24 @@ export default function SettingsPage() {
                         <Input placeholder="INV" {...field} form="settings-company-form" data-testid="input-invoice-prefix" />
                       </FormControl>
                       <FormDescription>
-                        Prefix for invoice numbers (e.g., INV-001)
+                        Numbers look like {(form.watch("invoicePrefix") || "INV").trim()}-{new Date().getFullYear()}-0001: prefix, year, then a sequence that restarts each January.
+                        {settings?.nextInvoiceNumber && <> Next invoice: <span className="font-mono font-semibold" data-testid="text-next-invoice-number">{settings.nextInvoiceNumber}</span>.</>}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="invoiceNextNumber"
+                  render={({ field }) => (
+                    <FormItem className="settings-field">
+                      <FormLabel>Start numbering at</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Leave blank to continue" inputMode="numeric" {...field} form="settings-company-form" data-testid="input-invoice-next-number" />
+                      </FormControl>
+                      <FormDescription>
+                        Optional. Use it to carry on from previous software (e.g. 450) or to avoid starting at 0001. Numbers are never reused.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
