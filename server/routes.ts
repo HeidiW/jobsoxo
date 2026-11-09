@@ -4,6 +4,7 @@ import { seedDemoData } from "./seed";
 import { calendarDay } from "./business-time";
 import { invoiceRecipients } from "@shared/client-emails";
 import { LINE_ITEM_STATUSES, lineItemProgress } from "@shared/line-item-status";
+import { invoicePrefixFromCompanyName, isDerivedInvoicePrefix } from "@shared/invoice-prefix";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
 import { inviteEmployeeToGusto, removeEmployeeEverywhere, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } from "./gusto-employee-invite";
 import { GustoConfigurationError, GustoProviderError } from "./gusto-client";
@@ -3657,6 +3658,13 @@ export async function registerRoutes(
       }
       const parsed = insertSettingsSchema.partial().safeParse(req.body);
       if (!parsed.success) return badRequest(res, parsed.error);
+      // A prefix that was never hand-chosen follows the company name's initials.
+      if (typeof parsed.data.companyName === "string") {
+        const current = await storage.getSettings();
+        if (isDerivedInvoicePrefix(parsed.data.invoicePrefix ?? current?.invoicePrefix, current?.companyName)) {
+          parsed.data.invoicePrefix = invoicePrefixFromCompanyName(parsed.data.companyName);
+        }
+      }
       const settings = await storage.updateSettings(parsed.data);
       res.json(settings);
     } catch (error) {

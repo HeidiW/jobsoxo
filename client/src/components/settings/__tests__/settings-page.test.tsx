@@ -356,4 +356,31 @@ describe("Settings page", () => {
     expect(confirm).toHaveBeenCalledWith("You have unsaved changes in Settings. Leave without saving?");
     expect(click.defaultPrevented).toBe(true);
   });
+
+  it("derives the invoice prefix from the company name until it is hand-edited", async () => {
+    mockUser = { isAdmin: true, displayName: "Rae" };
+    settingsData = { ...settingsData, companyName: "", invoicePrefix: "INV" };
+    mount();
+    await screen.findByTestId("input-company-name");
+
+    fireEvent.change(screen.getByTestId("input-company-name"), { target: { value: "Conor Foy Plaster" } });
+    await waitFor(() => expect(screen.getByTestId("input-invoice-prefix")).toHaveValue("CFP"));
+
+    fireEvent.change(screen.getByTestId("input-company-name"), { target: { value: "Conor Foy Plaster & Paint" } });
+    await waitFor(() => expect(screen.getByTestId("input-invoice-prefix")).toHaveValue("CFPP"));
+
+    // A hand-typed prefix stays put when the name changes again.
+    fireEvent.change(screen.getByTestId("input-invoice-prefix"), { target: { value: "JBX" } });
+    fireEvent.change(screen.getByTestId("input-company-name"), { target: { value: "Something Else" } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByTestId("input-invoice-prefix")).toHaveValue("JBX");
+  });
+
+  it("leaves a hand-chosen prefix alone on load", async () => {
+    mockUser = { isAdmin: true, displayName: "Rae" };
+    mount();
+    expect(await screen.findByDisplayValue("Northstar Finish Co.")).toBeInTheDocument();
+    expect(screen.getByTestId("input-invoice-prefix")).toHaveValue("NS");
+    expect(screen.queryByTestId("bar-unsaved-changes")).not.toBeInTheDocument();
+  });
 });

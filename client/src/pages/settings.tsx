@@ -56,6 +56,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import type { Settings, Invite } from "@shared/schema";
 import { COMPANY_FIELD_LABELS, isCompanyFieldFilled, missingCompanyFields } from "@shared/company-setup";
+import { invoicePrefixFromCompanyName, isDerivedInvoicePrefix } from "@shared/invoice-prefix";
 import { usePlaidLink, type PlaidAccountMeta } from "@/hooks/use-plaid-link";
 import {
   Dialog,
@@ -1116,6 +1117,21 @@ export default function SettingsPage() {
 
   const canManageSettings = !!user?.isAdmin;
   const hasUnsavedChanges = canManageSettings && form.formState.isDirty;
+
+  // The invoice prefix follows the company name's initials until someone
+  // types their own prefix.
+  const watchedCompanyName = form.watch("companyName");
+  const previousCompanyName = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!canManageSettings || isLoading) return;
+    const derived = invoicePrefixFromCompanyName(watchedCompanyName);
+    const currentPrefix = form.getValues("invoicePrefix") ?? "";
+    if (isDerivedInvoicePrefix(currentPrefix, previousCompanyName.current, settings?.companyName) && derived !== currentPrefix.trim().toUpperCase()) {
+      form.setValue("invoicePrefix", derived, { shouldDirty: true });
+    }
+    previousCompanyName.current = watchedCompanyName;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchedCompanyName, canManageSettings, isLoading]);
   const missingFields = settings ? missingCompanyFields(settings) : [];
   useUnsavedChangesWarning(hasUnsavedChanges);
 
@@ -1270,6 +1286,7 @@ export default function SettingsPage() {
                         <Input placeholder="INV" {...field} form="settings-company-form" data-testid="input-invoice-prefix" />
                       </FormControl>
                       <FormDescription>
+                        Set from your company name's initials; change it if you prefer something else.{" "}
                         Numbers look like {(form.watch("invoicePrefix") || "INV").trim()}-{new Date().getFullYear()}-0001: prefix, year, then a sequence that restarts each January.
                         {settings?.nextInvoiceNumber && <> Next invoice: <span className="font-mono font-semibold" data-testid="text-next-invoice-number">{settings.nextInvoiceNumber}</span>.</>}
                       </FormDescription>

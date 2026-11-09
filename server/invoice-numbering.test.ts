@@ -71,4 +71,18 @@ describe("invoice numbering", () => {
     await request(admin).patch("/api/settings").send({ invoiceNextNumber: 450 }).expect(200);
     expect((await storage.getSettings())?.invoiceNextNumber).toBe(450);
   });
+
+  it("derives the prefix from the company name unless one was hand-chosen", async () => {
+    const admin = await buildAdminTestApp();
+    await storage.updateSettings({ invoicePrefix: "INV", companyName: null });
+
+    await request(admin).patch("/api/settings").send({ companyName: "Conor Foy Plaster", invoicePrefix: "INV" }).expect(200);
+    expect((await storage.getSettings())?.invoicePrefix).toBe("CFP");
+
+    await request(admin).patch("/api/settings").send({ companyName: "Conor Foy Plaster & Paint", invoicePrefix: "CFP" }).expect(200);
+    expect((await storage.getSettings())?.invoicePrefix).toBe("CFPP");
+
+    await request(admin).patch("/api/settings").send({ companyName: "Another Name", invoicePrefix: "JBX" }).expect(200);
+    expect((await storage.getSettings())?.invoicePrefix).toBe("JBX");
+  });
 });
