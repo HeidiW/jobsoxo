@@ -38,6 +38,14 @@ describe("payrollStatusItems", () => {
     ]);
   });
 
+  it("treats an unapproved company as setup still to do", () => {
+    const unapproved = { ...ready, companyStatus: "Not Approved" };
+    expect(payrollNextStep({ ...loaded, status: unapproved, readiness: { employees: [{ ready: true }] } })).toMatchObject({ key: "finish_setup" });
+    expect(payrollStatusItems({ ...loaded, status: unapproved, readiness: undefined, periodLabel: null })[0])
+      .toEqual({ key: "gusto", label: "Gusto payroll", value: "Awaiting Gusto approval", state: "todo" });
+    expect(payrollNextStep({ ...loaded, status: { ...ready, companyStatus: "Approved" }, readiness: { employees: [{ ready: true }] } })).toMatchObject({ key: "prepare_run" });
+  });
+
   it("flags an unfinished Gusto setup and a missing pay run", () => {
     const items = payrollStatusItems({ ...loaded, status: { companyId: "c1", onboardingComplete: false, fundingAccount: null }, readiness: { employees: [] }, periodLabel: null });
     expect(items[0]).toMatchObject({ value: "Setup incomplete", state: "todo" });

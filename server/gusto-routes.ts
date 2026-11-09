@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { db } from "./db";
 import { employees, gustoIntegrations, gustoPayrollItems, gustoPayrollRuns, gustoWebhookEvents } from "@shared/schema";
 import { GustoConfigurationError, GustoProviderError, gustoConfigured, gustoEnvironment, verifyGustoSignature } from "./gusto-client";
-import { companyIntegration, connectCompany, createFlow, employeeReadiness, syncCompany, syncEmployees, verifyDemoFunding } from "./gusto-company";
+import { approveDemoCompany, companyIntegration, connectCompany, createFlow, employeeReadiness, syncCompany, syncEmployees, upcomingPayrolls, verifyDemoFunding } from "./gusto-company";
 import { fillDemoCompany, setUpSampleEmployees } from "./gusto-demo-sample";
 import { importGustoEmployees, syncCompanyAndImport } from "./gusto-employee-import";
 import { calculatePayroll, cancelPayroll, PayrollConflict, pendingPayrollStates, reconcilePayroll, runForUser, submitPayroll } from "./gusto-payroll";
@@ -78,6 +78,12 @@ export function registerGustoRoutes(app: Express, requireAdmin: (req: Request, r
   });
   app.post("/api/gusto/sync", requireAdmin, async (req, res) => {
     try { res.json(await syncCompanyAndImport(req.session.userId!)); } catch (error) { fail(res, error); }
+  });
+  app.post("/api/gusto/demo-company/approve", requireAdmin, async (req, res) => {
+    try { res.json(await approveDemoCompany(req.session.userId!)); } catch (error) { fail(res, error); }
+  });
+  app.get("/api/gusto/payrolls/upcoming", requireAdmin, async (req, res) => {
+    try { res.json({ payrolls: await upcomingPayrolls(req.session.userId!) }); } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/demo-company/sample-employees", requireAdmin, async (req, res) => {
     try { res.json(await setUpSampleEmployees(req.session.userId!)); } catch (error) { fail(res, error); }

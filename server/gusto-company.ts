@@ -80,6 +80,9 @@ export async function syncCompany(userId: string) {
     .filter((step: any) => step.required && !step.completed).map((step: any) => `Complete Gusto setup: ${step.title ?? step.id}`);
   if (onboarding?.onboarding_completed !== true && !blockers.length) blockers.push("Gusto company onboarding is incomplete");
   if (account?.verification_status !== "verified") blockers.push("Gusto funding account is not verified");
+  // Gusto generates payrolls only for approved companies; demo companies are approved via an extra API call.
+  const companyStatus: string | null = typeof company.company_status === "string" ? company.company_status : null;
+  if (companyStatus && companyStatus !== "Approved") blockers.push(`Gusto company status is "${companyStatus}" — payrolls are generated once Gusto approves the company`);
   await db.update(gustoIntegrations).set({
     fundingAccountId: account?.uuid ?? null, fundingStatus: account?.verification_status ?? "not_connected",
     state: "connected", lastError: null, lastSyncedAt: new Date(), updatedAt: new Date(),
@@ -87,7 +90,7 @@ export async function syncCompany(userId: string) {
   return {
     configured: true, available: true, state: "connected", companyId: integration.companyId,
     companyName: company.name ?? company.trade_name ?? "Gusto company", environment: integration.environment,
-    onboardingComplete: onboarding?.onboarding_completed === true, blockers,
+    onboardingComplete: onboarding?.onboarding_completed === true, blockers, companyStatus,
     fundingAccount: account ? { id: account.uuid, status: account.verification_status, name: account.name,
       accountMask: typeof account.hidden_account_number === "string" ? account.hidden_account_number.replace(/\D/g, "").slice(-4) : null } : null,
     lastSyncedAt: new Date().toISOString(),
@@ -201,6 +204,39 @@ export async function verifyDemoFunding(userId: string) {
     await gustoRequest(`${path}/${account.uuid}/verify`, { userId, method: "PUT", body: { deposit_1: amounts[0], deposit_2: amounts[1] } });
   }
   return syncCompany(userId);
+}
+
+/**
+ * Demo only: Gusto requires companies to be approved before it generates
+ * payrolls. In production Gusto does this itself; in demo there is an endpoint.
+ */
+export async function approveDemoCompany(userId: string) {
+  const integration = await companyIntegration(userId);
+  if (integration.environment !== "demo" || gustoEnvironment() !== "demo") {
+    throw new GustoProviderError("Only demo companies can be approved from here. Gusto approves production companies itself.", 409, "demo_only");
+  }
+  const path = `/v1/companies/${integration.companyId}`;
+  const onboarding = await gustoRequest<any>(`${path}/onboarding_status`, { userId });
+  if (onboarding?.onboarding_completed !== true) {
+    // Gusto's own finish step; it reports which required steps are still open.
+    await gustoRequest(`${path}/finish_onboarding`, { userId, method: "PUT" });
+  }
+  await gustoRequest(`${path}/approve`, { userId, method: "PUT" });
+  return syncCompany(userId);
+}
+
+export type UpcomingPayroll = { payrollId: string; periodStart: string; periodEnd: string; payDate: string };
+
+/** Gusto's upcoming regular payrolls: the periods and check dates a pay run must match. */
+export async function upcomingPayrolls(userId: string): Promise<UpcomingPayroll[]> {
+  const integration = await companyIntegration(userId);
+  const rows = await gustoRequest<any[]>(`/v1/companies/${integration.companyId}/payrolls?processing_statuses=unprocessed&payroll_types=regular&per=100&page=1`, { userId });
+  if (!Array.isArray(rows)) throw new GustoProviderError("Gusto returned an invalid payroll list.", 502, "invalid_response");
+  return rows
+    .filter((row) => !row.off_cycle && !row.processed && row.pay_period?.start_date && row.pay_period?.end_date && row.check_date)
+    .map((row) => ({ payrollId: String(row.payroll_uuid), periodStart: row.pay_period.start_date, periodEnd: row.pay_period.end_date, payDate: row.check_date }))
+    .sort((a, b) => a.payDate.localeCompare(b.payDate))
+    .slice(0, 6);
 }
 
 export const GUSTO_FLOW_TYPES = new Set(["company_onboarding", "add_bank_info", "verify_bank_info", "add_employees", "employee_management", "payroll_history", "run_payroll"]);

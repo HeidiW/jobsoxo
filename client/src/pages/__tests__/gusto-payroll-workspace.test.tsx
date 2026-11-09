@@ -451,6 +451,69 @@ describe("Gusto payroll workspace", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/employees/e-wait/everywhere", expect.objectContaining({ method: "DELETE" })));
   });
 
+  it("offers Approve demo company only for an unapproved demo company", async () => {
+    queryClient.setQueryData(["/api/gusto/status"], {
+      configured: true, available: true, companyId: "company-1", environment: "demo", onboardingComplete: true,
+      fundingAccount: { id: "bank-1", status: "verified" }, companyStatus: "Not Approved",
+    });
+    queryClient.setQueryData(["/api/gusto/payroll-runs"], { runs: [] });
+    queryClient.setQueryData(["/api/gusto/employees/readiness"], { employees: [] });
+    queryClient.setQueryData(["/api/gusto/payrolls/upcoming"], { payrolls: [] });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <GustoPayrollWorkspace records={[]} period={{ start: "2026-11-09", end: "2026-11-15" }} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(await screen.findByTestId("button-gusto-approve-company"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/gusto/demo-company/approve", expect.objectContaining({ method: "POST" })));
+    expect(screen.getByTestId("gusto-upcoming")).toHaveTextContent("Gusto has no upcoming payrolls yet — the company must be approved first.");
+  });
+
+  it("hides Approve for approved or production companies", async () => {
+    queryClient.setQueryData(["/api/gusto/status"], { configured: true, available: true, companyId: "company-1", environment: "production", onboardingComplete: true, companyStatus: "Not Approved" });
+    queryClient.setQueryData(["/api/gusto/payroll-runs"], { runs: [] });
+    queryClient.setQueryData(["/api/gusto/employees/readiness"], { employees: [] });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <GustoPayrollWorkspace records={[]} period={null} />
+      </QueryClientProvider>,
+    );
+    await screen.findByRole("button", { name: "Sync readiness" });
+    expect(screen.queryByTestId("button-gusto-approve-company")).toBeNull();
+  });
+
+  it("shows Gusto's upcoming periods, defaults the pay date, and warns on a mismatch", async () => {
+    const upcoming = { payrolls: [
+      { payrollId: "p1", periodStart: "2026-11-09", periodEnd: "2026-11-15", payDate: "2026-11-20" },
+      { payrollId: "p2", periodStart: "2026-11-16", periodEnd: "2026-11-22", payDate: "2026-11-27" },
+    ] };
+    const status = { configured: true, available: true, companyId: "company-1", environment: "demo", onboardingComplete: true, companyStatus: "Approved" };
+    queryClient.setQueryData(["/api/gusto/status"], status);
+    queryClient.setQueryData(["/api/gusto/payroll-runs"], { runs: [] });
+    queryClient.setQueryData(["/api/gusto/employees/readiness"], { employees: [] });
+    queryClient.setQueryData(["/api/gusto/payrolls/upcoming"], upcoming);
+    const { unmount } = render(
+      <QueryClientProvider client={queryClient}>
+        <GustoPayrollWorkspace records={[]} period={{ start: "2026-11-09", end: "2026-11-15" }} />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByTestId("gusto-upcoming")).toHaveTextContent("2026-11-09 – 2026-11-15 · pay 2026-11-20");
+    await waitFor(() => expect(screen.getByTestId("input-gusto-pay-date")).toHaveValue("2026-11-20"));
+    expect(screen.queryByRole("alert", { name: "" })).toBeNull();
+    unmount();
+
+    queryClient.setQueryData(["/api/gusto/status"], status);
+    queryClient.setQueryData(["/api/gusto/payrolls/upcoming"], upcoming);
+    render(
+      <QueryClientProvider client={queryClient}>
+        <GustoPayrollWorkspace records={[]} period={{ start: "2026-11-01", end: "2026-11-30" }} />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText(/doesn't match a Gusto period/)).toBeInTheDocument();
+  });
+
   it("never offers simulated deposits outside demo", async () => {
     queryClient.setQueryData(["/api/gusto/status"], {
       configured: true, available: true, companyId: "company-1", environment: "production", onboardingComplete: true,

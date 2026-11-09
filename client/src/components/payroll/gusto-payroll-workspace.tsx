@@ -22,8 +22,9 @@ type PayrollRecordRow = {
 type GustoStatus = GustoDemoSetupStatus & {
   configured: boolean; available: boolean; state?: string; companyId?: string; companyName?: string;
   fundingAccount?: { id: string; status: string; accountMask?: string; name?: string } | null;
-  onboardingComplete?: boolean; blockers?: string[]; error?: string; environment?: string;
+  onboardingComplete?: boolean; blockers?: string[]; error?: string; environment?: string; companyStatus?: string | null;
 };
+type UpcomingPayroll = { payrollId: string; periodStart: string; periodEnd: string; payDate: string };
 type ReadinessEmployee = { id: string; name?: string; ready: boolean; blockers?: string[]; gustoEmployeeId?: string | null; onboardingStatus?: string | null; paymentMethodStatus?: string | null };
 type GustoReadiness = { employees?: ReadinessEmployee[] };
 
@@ -128,6 +129,10 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
     retry: false,
   });
   const readinessQuery = useQuery<GustoReadiness>({ queryKey: ["/api/gusto/employees/readiness"], staleTime: 30_000, retry: false });
+  const upcomingQuery = useQuery<{ payrolls: UpcomingPayroll[] }>({ queryKey: ["/api/gusto/payrolls/upcoming"], staleTime: 30_000, retry: false, enabled: !!statusQuery.data?.companyId });
+  const upcoming = upcomingQuery.data?.payrolls ?? [];
+  const matchingUpcoming = period ? upcoming.find(p => p.periodStart === period.start && p.periodEnd === period.end) : undefined;
+  const approved = !statusQuery.data?.companyStatus || statusQuery.data.companyStatus === "Approved";
   const runList = useMemo(() => runsQuery.data?.runs ?? [], [runsQuery.data?.runs]);
   const selectedRun = runList.find(item => item.id === runId);
   const runQuery = useQuery<GustoRun>({
@@ -215,9 +220,10 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
 
   useEffect(() => {
     if (period) {
-      setPayDate(period.end);
+      // Gusto's check date for this period when it has one, else the period end.
+      setPayDate(matchingUpcoming?.payDate ?? period.end);
     }
-  }, [period?.start, period?.end]);
+  }, [period?.start, period?.end, matchingUpcoming?.payDate]);
 
   async function perform<T = unknown>(method: string, path: string, body?: unknown): Promise<T | null> {
     setBusy(true);
@@ -391,6 +397,15 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                     disabled={busy} onClick={() => void openFlow("company_onboarding", "Complete company setup")}
                     data-testid="button-gusto-complete-setup"
                   >Complete company setup</button>}
+                  {status.environment === "demo" && status.companyId && !approved && <button
+                    type="button" style={{ ...buttonStyle, background: "var(--jox-primary)", color: "#fff", border: 0 }} disabled={busy}
+                    onClick={async () => {
+                      const result = await perform<GustoStatus>("POST", "/api/gusto/demo-company/approve");
+                      if (result?.companyStatus === "Approved") { toast({ title: "Demo company approved", description: "Gusto will now generate upcoming payrolls." }); await queryClient.invalidateQueries({ queryKey: ["/api/gusto/payrolls/upcoming"] }); }
+                    }}
+                    data-testid="button-gusto-approve-company"
+                    title="Demo only: Gusto approves production companies itself"
+                  >Approve demo company</button>}
                   {status.fundingAccount && status.fundingAccount.status !== "verified" && <button
                     type="button" style={buttonStyle} disabled={busy}
                     onClick={() => void openFlow("verify_bank_info", "Verify funding in Gusto")}
@@ -527,6 +542,15 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
               <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", flexWrap: "wrap", marginBottom: "10px" }}>
                 <div><div style={{ fontSize: "12px", fontWeight: 700 }}>Payroll source review · {reviewItems.length} employee{reviewItems.length === 1 ? "" : "s"}</div><div style={{ color: "var(--muted)", fontSize: "11px", marginTop: "3px" }}>Gross values are estimates from saved local records. Gusto calculates final payroll; no local tax totals are sent.</div></div>
                 {period && <label style={{ fontSize: "11px", color: "var(--muted)" }}>Pay date<input aria-label="Gusto pay date" data-testid="input-gusto-pay-date" type="date" min={period.end} value={payDate} onChange={event => setPayDate(event.target.value)} style={{ display: "block", ...buttonStyle, marginTop: "4px", color: "var(--fg)" }} /></label>}
+                {status?.companyId && upcomingQuery.isSuccess && <div data-testid="gusto-upcoming" style={{ width: "100%", fontSize: "12px", color: "var(--muted)", marginTop: "6px" }}>
+                  {upcoming.length === 0
+                    ? <span style={{ color: "var(--jx-orange-ink)" }}>Gusto has no upcoming payrolls yet{approved ? ". Check the pay schedule in Gusto setup." : " — the company must be approved first."}</span>
+                    : <>
+                      <span>Gusto's upcoming pay periods: </span>
+                      {upcoming.map(p => <span key={p.payrollId} style={{ display: "inline-block", marginRight: "8px", fontWeight: period && p.periodStart === period.start && p.periodEnd === period.end ? 700 : 400, color: period && p.periodStart === period.start && p.periodEnd === period.end ? "var(--jx-green-ink)" : undefined }}>{p.periodStart} – {p.periodEnd} · pay {p.payDate}</span>)}
+                      {period && !matchingUpcoming && <span role="alert" style={{ display: "block", color: "var(--jx-orange-ink)", marginTop: "4px" }}>This pay run ({period.start} – {period.end}) doesn't match a Gusto period. Prepare a pay run using one of the periods above.</span>}
+                    </>}
+                </div>}
               </div>
               {reviewItems.length === 0 ? <p style={{ color: "var(--muted)", fontSize: "12px", marginBottom: 0 }}>No local payroll source records for this period. The local worksheet and history remain available.</p>
                 : <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>

@@ -769,6 +769,11 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
   const { data: payrollSettings } = useQuery<PayrollSettings>({ queryKey: ["/api/payroll-settings"] });
   const activeCount = employees?.filter(e => e.status === "active").length ?? 0;
   const presets = periodPresets();
+  // Gusto only accepts pay runs for its own upcoming periods, so offer those first.
+  const upcomingQuery = useQuery<{ payrolls: Array<{ payrollId: string; periodStart: string; periodEnd: string; payDate: string }> }>({
+    queryKey: ["/api/gusto/payrolls/upcoming"], retry: false, staleTime: 30_000,
+  });
+  const upcoming = upcomingQuery.data?.payrolls ?? [];
 
   // Derive smart defaults from saved pay frequency; fall back to "This Month"
   const freqPeriod = payrollSettings
@@ -780,13 +785,17 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
     defaultValues: { periodStart: presets[0].start, periodEnd: presets[0].end },
   });
 
-  // When settings load async, reset to the frequency-driven period
+  // When settings load async, reset to the frequency-driven period — unless
+  // Gusto has an upcoming period, which wins because only it can be submitted.
   useEffect(() => {
-    if (payrollSettings) {
+    if (upcoming.length > 0) {
+      form.reset({ periodStart: upcoming[0].periodStart, periodEnd: upcoming[0].periodEnd });
+    } else if (payrollSettings) {
       const p = getFrequencyPeriod(payrollSettings.payFrequency);
       form.reset({ periodStart: p.start, periodEnd: p.end });
     }
-  }, [payrollSettings]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payrollSettings, upcoming.length]);
   const mutation = useMutation({
     mutationFn: async (data: RunPayrollValues) => {
       const res = await apiRequest("POST", "/api/payroll-records/run", { periodStart: data.periodStart, periodEnd: data.periodEnd });
@@ -844,6 +853,18 @@ function RunPayrollForm({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+        {upcoming.length > 0 && (
+          <div data-testid="run-gusto-periods" style={{ fontSize: "12px", color: "#475569", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", padding: "10px 12px" }}>
+            <div style={{ fontWeight: 700, color: "#14532d", marginBottom: "6px" }}>Gusto's upcoming pay periods</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              {upcoming.map(p => <button key={p.payrollId} type="button" data-testid={`run-gusto-period-${p.periodStart}`}
+                onClick={() => form.reset({ periodStart: p.periodStart, periodEnd: p.periodEnd })}
+                style={{ border: "1px solid #bbf7d0", background: "#fff", borderRadius: "7px", padding: "5px 9px", fontSize: "12px", cursor: "pointer", fontFamily: "inherit" }}>
+                {p.periodStart} – {p.periodEnd} · pay {p.payDate}</button>)}
+            </div>
+            <div style={{ marginTop: "6px", fontSize: "11px" }}>Gusto only accepts pay runs for these periods.</div>
+          </div>
+        )}
           <FormField control={form.control} name="periodStart" render={({ field }) => (
             <FormItem><label style={{ ...lbl, color: mutation.isPending ? "#94a3b8" : undefined }}>Period start *</label>
               <Tooltip open={mutation.isPending ? undefined : false}>

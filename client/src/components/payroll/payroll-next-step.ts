@@ -5,7 +5,13 @@ export type GustoStatusLite = {
   companyId?: string;
   onboardingComplete?: boolean;
   fundingAccount?: { status: string } | null;
+  /** Gusto's company_status: "Approved" once payroll may run. */
+  companyStatus?: string | null;
 } | undefined;
+
+export function gustoApproved(status: GustoStatusLite): boolean {
+  return !status?.companyStatus || status.companyStatus === "Approved";
+}
 
 export type ReadinessLite = { employees?: Array<{ ready: boolean; gustoEmployeeId?: string | null }> } | undefined;
 
@@ -32,7 +38,7 @@ type Input = {
 };
 
 export function gustoSetupComplete(status: GustoStatusLite): boolean {
-  return !!status?.companyId && status.onboardingComplete === true && status.fundingAccount?.status === "verified";
+  return !!status?.companyId && status.onboardingComplete === true && status.fundingAccount?.status === "verified" && gustoApproved(status);
 }
 
 /** The single primary action for the page header. Members only log hours. */
@@ -59,7 +65,9 @@ export function payrollStatusItems(input: Input & { periodLabel: string | null }
         ? { key: "gusto", label: "Gusto payroll", value: "Not connected", state: "todo" }
         : gustoSetupComplete(status)
           ? { key: "gusto", label: "Gusto payroll", value: "Connected and set up", state: "done" }
-          : { key: "gusto", label: "Gusto payroll", value: "Setup incomplete", state: "todo" });
+          : status.onboardingComplete === true && status.fundingAccount?.status === "verified" && !gustoApproved(status)
+            ? { key: "gusto", label: "Gusto payroll", value: "Awaiting Gusto approval", state: "todo" }
+            : { key: "gusto", label: "Gusto payroll", value: "Setup incomplete", state: "todo" });
     const employees = readiness?.employees ?? [];
     const ready = employees.filter((e) => e.ready).length;
     items.push(!readinessLoaded
