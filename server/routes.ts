@@ -786,10 +786,8 @@ export async function registerRoutes(
   app.get("/api/dashboard", async (req, res) => {
     try {
       const now = new Date();
-      const hour = now.getHours();
-      const timeOfDay = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
 
-      // Greeting
+      // Greeting (the time of day is the viewer's, so the browser picks it)
       const user = req.session?.userId ? await storage.getUser(req.session.userId as string) : null;
       const firstName = user?.displayName?.trim() || "there";
 
@@ -933,7 +931,7 @@ export async function registerRoutes(
         activeJobs: { count: Number(activeJobsRows[0]?.count) || 0, crews: Number(crewsTodayRows[0]?.count) || 0, hoursToday: Math.round(Number(hoursTodayRows[0]?.total) || 0) },
         needsAttention,
         week,
-        greeting: { firstName, timeOfDay },
+        greeting: { firstName },
       });
     } catch (error) {
       console.error("Dashboard error:", error);

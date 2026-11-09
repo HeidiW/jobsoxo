@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Router } from "wouter";
-import Dashboard from "@/pages/dashboard";
+import Dashboard, { timeOfDayAt } from "@/pages/dashboard";
 import { queryClient } from "@/lib/queryClient";
 
 const { toastMock } = vi.hoisted(() => ({ toastMock: vi.fn() }));
@@ -38,7 +38,7 @@ const dashboardData = {
     { date: "2025-01-09", weekday: "THU", dayNum: 9, isToday: false, jobs: [] },
     { date: "2025-01-10", weekday: "FRI", dayNum: 10, isToday: false, jobs: [] },
   ],
-  greeting: { firstName: "Rae", timeOfDay: "morning" as const },
+  greeting: { firstName: "Rae" },
 };
 
 const jobs = [{
@@ -100,5 +100,14 @@ describe("Dashboard interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "New job" }));
     await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
     expect(screen.getByTestId("dashboard-job-form")).toHaveTextContent("Production job form");
+  });
+
+  it("greets by the viewer's local time of day", () => {
+    expect(timeOfDayAt(new Date(2026, 10, 9, 0, 30))).toBe("morning");
+    expect(timeOfDayAt(new Date(2026, 10, 9, 11, 59))).toBe("morning");
+    expect(timeOfDayAt(new Date(2026, 10, 9, 12, 0))).toBe("afternoon");
+    expect(timeOfDayAt(new Date(2026, 10, 9, 16, 59))).toBe("afternoon");
+    expect(timeOfDayAt(new Date(2026, 10, 9, 17, 0))).toBe("evening");
+    expect(timeOfDayAt(new Date(2026, 10, 9, 23, 59))).toBe("evening");
   });
 });

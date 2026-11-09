@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { format } from "date-fns";
@@ -39,7 +39,7 @@ interface DashboardData {
   activeJobs: { count: number; crews: number; hoursToday: number };
   needsAttention: Array<{ invoiceId: string; invoiceNumber: string; client: string; project?: string; reason: "overdue" | "due-today" | "deposit-due"; detail: string; balance: number; daysOverdue: number }>;
   week: Array<{ date: string; weekday: string; dayNum: number; isToday: boolean; jobs: Array<{ jobId: string; label: string; crewSize: number; color: string }> }>;
-  greeting: { firstName: string; timeOfDay: "morning" | "afternoon" | "evening" };
+  greeting: { firstName: string };
 }
 
 interface JobWithClient extends Job {
@@ -59,7 +59,26 @@ const panelStyle = {
   borderColor: "hsl(var(--border))",
 };
 
+export type TimeOfDay = "morning" | "afternoon" | "evening";
+
+/** Greeting period in the viewer's own time zone: before noon, before 5 pm, then evening. */
+export function timeOfDayAt(date: Date): TimeOfDay {
+  const hour = date.getHours();
+  return hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
+}
+
+/** Follows the browser's clock, so a dashboard left open rolls over at noon and 5 pm. */
+function useTimeOfDay(): TimeOfDay {
+  const [timeOfDay, setTimeOfDay] = useState(() => timeOfDayAt(new Date()));
+  useEffect(() => {
+    const timer = setInterval(() => setTimeOfDay(timeOfDayAt(new Date())), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  return timeOfDay;
+}
+
 export default function Dashboard() {
+  const timeOfDay = useTimeOfDay();
   const [newJobOpen, setNewJobOpen] = useState(false);
   const [sentInvoiceIds, setSentInvoiceIds] = useState<Set<string>>(() => new Set());
   const { toast } = useToast();
@@ -125,7 +144,7 @@ export default function Dashboard() {
         <header className="flex flex-wrap items-end justify-between gap-x-7 gap-y-5">
           <div className="min-w-0 max-w-full">
             <h1 className="max-w-full break-words font-display text-[48px] !font-extrabold leading-[.92] tracking-[-.065em] sm:text-[64px] lg:text-[72px]">
-              <span style={{ color: "var(--jx-green)" }}>Good {greeting.timeOfDay}, </span>{greeting.firstName}
+              <span style={{ color: "var(--jx-green)" }} data-testid="text-greeting">Good {timeOfDay}, </span>{greeting.firstName}
             </h1>
             <p className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px] sm:text-[16px]" style={{ color: "var(--jx-ink-2)" }}>
               <CalendarDays className="h-4 w-4" aria-hidden="true" />
