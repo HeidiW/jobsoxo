@@ -10,7 +10,7 @@ import { assistantErrorMessage, invoiceAssistantConfigured, runAssistantTurn, st
 import { proofreadRequestSchema } from "@shared/invoice-proofread";
 import { proofreadErrorMessage, proofreadFields } from "./invoice-proofread";
 import { applyResendEvent, latestDeliveries, listDeliveries, refreshDeliveries, verifyResendSignature } from "./email-delivery";
-import { registerTodoRoutes } from "./todos";
+import { registerNotepadRoutes } from "./notepads";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
 import { inviteEmployeeToGusto, removeEmployeeEverywhere, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } from "./gusto-employee-invite";
 import { GustoConfigurationError, GustoProviderError } from "./gusto-client";
@@ -741,7 +741,7 @@ export async function registerRoutes(
     return requireAuth(req, res, next);
   });
 
-  registerTodoRoutes(app);
+  registerNotepadRoutes(app);
 
   app.get("/api/address-suggestions", async (req, res) => {
     const query = typeof req.query.q === "string" ? req.query.q.trim() : "";

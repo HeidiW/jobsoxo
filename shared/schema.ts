@@ -729,19 +729,15 @@ export const reminderLogs = pgTable("reminder_logs", {
   errorMessage: text("error_message"),
 });
 
-// "Get on it": the team's shared to-do list. An optional calendar day puts
-// an item on the dashboard week and the Scheduling calendar.
-export const todos = pgTable("todos", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  text: text("text").notNull(),
-  dueDate: date("due_date"), // calendar day, YYYY-MM-DD
-  done: boolean("done").notNull().default(false),
-  doneAt: timestamp("done_at"),
-  doneBy: varchar("done_by").references(() => users.id, { onDelete: "set null" }),
-  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [index("todos_due_date_idx").on(table.dueDate)]);
-export type Todo = typeof todos.$inferSelect;
+// "Get on it": the team's shared notepad, shown on the dashboard and in
+// Scheduling. One row per notepad; "get-on-it" is the only one today.
+export const notepads = pgTable("notepads", {
+  id: varchar("id").primaryKey(),
+  content: text("content").notNull().default(""),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  updatedBy: varchar("updated_by").references(() => users.id, { onDelete: "set null" }),
+});
+export type Notepad = typeof notepads.$inferSelect;
 
 // Every client email about an invoice (the invoice itself, change orders,
 // reminders) and what Resend reported back, so people can see whether it

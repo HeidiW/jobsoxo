@@ -25,15 +25,13 @@ const initialJobs = [
 let jobs: typeof initialJobs;
 let unavailable: boolean;
 let fetchMock: ReturnType<typeof vi.fn>;
-let todoRows: Array<Record<string, unknown>> = [];
 function mount() { render(<QueryClientProvider client={queryClient}><Scheduling /></QueryClientProvider>); }
 async function ready() { await screen.findByTestId("job-block-scheduled"); }
 
 describe("Scheduling redesign", () => {
   beforeEach(() => {
     queryClient.clear(); jobs = structuredClone(initialJobs); unavailable = false;
-    todoRows = [];
-    fetchMock = vi.fn(async (path: string) => path === "/api/todos" ? Response.json(todoRows) : unavailable ? Response.json({ error: "Unavailable" }, { status: 503 }) : Response.json(jobs));
+    fetchMock = vi.fn(async (path: string) => path === "/api/notepads/get-on-it" ? Response.json({ content: "Order primer", updatedAt: null, updatedByName: null }) : unavailable ? Response.json({ error: "Unavailable" }, { status: 503 }) : Response.json(jobs));
     vi.stubGlobal("fetch", fetchMock);
   });
   afterEach(() => { queryClient.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -50,7 +48,7 @@ describe("Scheduling redesign", () => {
     expect(screen.getByTestId("backlog-job-quoted")).toBeVisible();
     expect(screen.getByTestId("backlog-job-undated")).toBeVisible();
     expect(screen.queryByText("Completed job")).not.toBeInTheDocument();
-    expect(fetchMock.mock.calls.every(([path]) => path === "/api/jobs" || path === "/api/todos")).toBe(true);
+    expect(fetchMock.mock.calls.every(([path]) => path === "/api/jobs" || path === "/api/notepads/get-on-it")).toBe(true);
     if (today.getDay() !== 0 && today.getDay() !== 6) {
       expect(screen.getByTestId(`scheduling-date-${format(today, "yyyy-MM-dd")}`)).toHaveAttribute("aria-current", "date");
     }
@@ -133,15 +131,9 @@ describe("Scheduling redesign", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
-  it("puts dated team to-dos on their day and lists the rest under the calendar", async () => {
-    todoRows = [
-      { id: "t-day", text: "Order primer", dueDate: date(0), done: false, doneAt: null, createdAt: "2026-11-01T00:00:00Z" },
-      { id: "t-none", text: "Call the supplier", dueDate: null, done: false, doneAt: null, createdAt: "2026-11-01T00:00:00Z" },
-    ];
+  it("shows the team's Get on it notepad under the calendar", async () => {
     mount();
-    expect(await screen.findByTestId(`schedule-todos-${date(0)}`)).toHaveTextContent("Order primer");
-    const list = screen.getByTestId("get-on-it-list");
-    expect(list).toHaveTextContent("Call the supplier");
-    expect(list).not.toHaveTextContent("Order primer");
+    const pad = await screen.findByTestId("input-notepad");
+    await waitFor(() => expect(pad).toHaveValue("Order primer"));
   });
 });

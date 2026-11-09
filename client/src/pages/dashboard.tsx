@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { GetOnItList, TodoCheck, useTodos } from "@/components/todos/get-on-it";
+import { GetOnItNotepad } from "@/components/notepad/get-on-it-notepad";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { format } from "date-fns";
@@ -80,7 +80,6 @@ function useTimeOfDay(): TimeOfDay {
 
 export default function Dashboard() {
   const timeOfDay = useTimeOfDay();
-  const { todos, update: updateTodo, remove: removeTodo } = useTodos();
   const [newJobOpen, setNewJobOpen] = useState(false);
   const [sentInvoiceIds, setSentInvoiceIds] = useState<Set<string>>(() => new Set());
   const { toast } = useToast();
@@ -182,11 +181,11 @@ export default function Dashboard() {
               title="This week on site"
               action={<Link href="/scheduling" className="inline-flex items-center gap-1 text-sm font-semibold no-underline" style={{ color: "var(--jx-green-ink)" }}>Scheduling <ArrowRight className="h-4 w-4" /></Link>}
             />
-            {week.every((day) => day.jobs.length === 0 && !todos.some((todo) => todo.dueDate === day.date)) ? (
+            {week.every((day) => day.jobs.length === 0) ? (
               <div className="flex min-h-[202px] flex-col items-center justify-center rounded-[17px] border border-dashed px-5 text-center" style={{ borderColor: "var(--jx-line)" }}>
                 <CalendarDays className="mb-3 h-8 w-8" style={{ color: "var(--jx-ink-3)" }} aria-hidden="true" />
                 <p className="font-display text-lg font-bold">Nothing scheduled this week</p>
-                <p className="mt-1 max-w-sm text-sm text-muted-foreground">Jobs with dates and to-dos with a day will appear here.</p>
+                <p className="mt-1 max-w-sm text-sm text-muted-foreground">Jobs with dates will appear here. You can add dates from a job’s details.</p>
               </div>
             ) : (
               <div className="min-w-0 overflow-x-auto pb-1">
@@ -202,7 +201,7 @@ export default function Dashboard() {
                       <span className="font-display text-xl font-bold">{day.dayNum}</span>
                     </div>
                     <div className="space-y-2">
-                      {day.jobs.length === 0 && !todos.some((todo) => todo.dueDate === day.date) ? (
+                      {day.jobs.length === 0 ? (
                         <span className="block px-1 py-2 text-[11px]" style={{ color: "var(--jx-ink-3)" }}>No jobs</span>
                       ) : day.jobs.map((job) => (
                         <Link
@@ -215,18 +214,13 @@ export default function Dashboard() {
                           {job.label}
                         </Link>
                       ))}
-                      {todos.filter((todo) => todo.dueDate === day.date).map((todo) => (
-                        <TodoCheck key={todo.id} todo={todo} compact
-                          onToggle={(done) => updateTodo.mutate({ id: todo.id, done })}
-                          onDelete={() => removeTodo.mutate(todo.id)} />
-                      ))}
                     </div>
                   </div>
                 ))}
                 </div>
               </div>
             )}
-            <GetOnItList shownDays={week.map((day) => day.date)} />
+            <GetOnItNotepad />
           </div>
 
           <div className="min-w-0 rounded-[24px] p-5 text-jx-orange-ink sm:p-6" style={{ background: "var(--jx-orange-tint)" }}>

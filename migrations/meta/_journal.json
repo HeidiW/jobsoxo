@@ -71,6 +71,20 @@
       "when": 1794197011023,
       "tag": "0009_todos",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794197737612,
+      "tag": "0010_get_on_it_notepad",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794197787833,
+      "tag": "0011_retire_todos",
+      "breakpoints": true
     }
   ]
 }
