@@ -184,3 +184,55 @@ export async function unlinkGustoEmployee(employeeId: string) {
   if (deleted.length === 0) throw new GustoProviderError("This employee isn't linked to Gusto.", 404, "not_linked");
   return { unlinked: true };
 }
+
+/**
+ * Delete an employee from Gusto and JobsOxo. Gusto only deletes employees who
+ * are still onboarding; an onboarded employee must be terminated in Gusto
+ * instead, so that case is refused rather than guessed at. JobsOxo refuses if
+ * the employee has worksheet or Gusto payroll history.
+ */
+export async function removeEmployeeEverywhere(userId: string, employeeId: string) {
+  const employee = await storage.getEmployee(employeeId);
+  if (!employee) throw new GustoProviderError("Employee not found.", 404, "not_found");
+  const [mapping] = await db.select().from(gustoEmployeeMappings).where(eq(gustoEmployeeMappings.employeeId, employeeId));
+  let removedFromGusto = false;
+  if (mapping) {
+    const integration = await companyIntegration(userId);
+    if (mapping.companyId && mapping.companyId !== integration.companyId) {
+      throw new GustoProviderError("This employee is linked to a different Gusto company.", 409, "wrong_company");
+    }
+    const path = `/v1/employees/${mapping.gustoEmployeeId}`;
+    let gustoEmployee: any = null;
+    try {
+      gustoEmployee = await gustoRequest<any>(path, { userId });
+    } catch (error) {
+      if (!(error instanceof GustoProviderError && error.status === 404)) throw error;
+    }
+    if (gustoEmployee) {
+      if (gustoEmployee.onboarding_status === "onboarding_completed" || gustoEmployee.onboarded === true) {
+        throw new GustoProviderError(
+          "Gusto won't delete an employee who has finished onboarding. Terminate them in Gusto (Manage employees), then mark them inactive here.",
+          409, "onboarded",
+        );
+      }
+      await gustoRequest(path, { userId, method: "DELETE" });
+      removedFromGusto = true;
+    }
+    await db.delete(gustoEmployeeMappings).where(eq(gustoEmployeeMappings.employeeId, employeeId));
+  }
+  try {
+    await storage.deleteEmployee(employeeId);
+  } catch (error: any) {
+    // Foreign keys from worksheets / Gusto payroll items block the delete.
+    if (error?.code === "23503") {
+      throw new GustoProviderError(
+        removedFromGusto
+          ? "Removed from Gusto, but this employee has payroll history in JobsOxo and can't be deleted. Mark them inactive instead."
+          : "This employee has payroll history in JobsOxo and can't be deleted. Mark them inactive instead.",
+        409, "has_history",
+      );
+    }
+    throw error;
+  }
+  return { removedFromGusto, removedFromJobsOxo: true };
+}

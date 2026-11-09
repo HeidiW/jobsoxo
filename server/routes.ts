@@ -4,7 +4,7 @@ import { seedDemoData } from "./seed";
 import { calendarDay } from "./business-time";
 import { invoiceRecipients } from "@shared/client-emails";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
-import { inviteEmployeeToGusto, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } from "./gusto-employee-invite";
+import { inviteEmployeeToGusto, removeEmployeeEverywhere, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } from "./gusto-employee-invite";
 import { GustoConfigurationError, GustoProviderError } from "./gusto-client";
 import { COMPANY_FIELD_LABELS, REQUIRED_COMPANY_FIELDS, isCompanyFieldFilled } from "@shared/company-setup";
 // Function declaration (not const) so it's hoisted and immune to TDZ in circular-dep scenarios.
@@ -2031,6 +2031,7 @@ export async function registerRoutes(
   app.post("/api/employees/:id/gusto-invite/resend", requireAdmin, gustoEmployeeAction("Resending the Gusto invitation", resendGustoInvitation));
   app.post("/api/employees/:id/gusto-onboarding/take-over", requireAdmin, gustoEmployeeAction("Taking over Gusto onboarding", takeOverGustoOnboarding));
   app.delete("/api/employees/:id/gusto-link", requireAdmin, gustoEmployeeAction("Unlinking from Gusto", (_userId, id) => unlinkGustoEmployee(id)));
+  app.delete("/api/employees/:id/everywhere", requireAdmin, gustoEmployeeAction("Removing the employee", removeEmployeeEverywhere));
 
   app.patch("/api/employees/:id", async (req, res) => {
     try {

@@ -111,6 +111,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [submitConfirm, setSubmitConfirm] = useState(false);
   const [removeCompanyId, setRemoveCompanyId] = useState("");
+  const [removeEmployee, setRemoveEmployee] = useState<{ id: string; name: string } | null>(null);
   const removingCompany = useRef(false);
   const idempotencyKey = useRef<string | null>(null);
   const demoSetupRef = useRef<HTMLDivElement>(null);
@@ -504,6 +505,9 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                           onClick={() => void openFlow("add_employees", "Add employees in Gusto")}>Fix in Gusto</button>}
                         {status?.companyId && state.action === "direct_deposit" && <button type="button" style={buttonStyle} disabled={busy} data-testid={`button-gusto-fix-${employee.id}`}
                           onClick={() => void openFlow("employee_management", "Manage employees")}>Fix in Gusto</button>}
+                        {status?.companyId && ["invite", "waiting", "not_found", "finish_onboarding"].includes(state.action) && <button type="button"
+                          style={{ ...buttonStyle, color: "hsl(var(--destructive))" }} disabled={busy} data-testid={`button-gusto-remove-${employee.id}`}
+                          onClick={() => setRemoveEmployee({ id: employee.id, name })}>Remove</button>}
                       </span>
                     </div>;
                   })}
@@ -602,6 +606,33 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
           {flowUrl && <iframe key={flowUrl} title={flowTitle} src={flowUrl} className="min-h-0 flex-1 w-full rounded border border-border" referrerPolicy="strict-origin-when-cross-origin" sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-modals" />}
         </DialogContent>
       </Dialog>
+      <AlertDialog open={!!removeEmployee} onOpenChange={open => { if (!open && !busy) setRemoveEmployee(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {removeEmployee?.name} entirely?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This deletes the employee from JobsOxo, including their logged hours, and deletes their un-onboarded record in Gusto.
+              Gusto won't delete an employee who has finished onboarding; terminate them in Gusto first. Employees with payroll history
+              can't be deleted here — mark them inactive instead.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Keep employee</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={busy} data-testid="button-confirm-remove-employee"
+              onClick={async (event) => {
+                event.preventDefault();
+                if (!removeEmployee) return;
+                const result = await perform<{ removedFromGusto?: boolean }>("DELETE", `/api/employees/${removeEmployee.id}/everywhere`);
+                if (result !== null) {
+                  await queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+                  toast({ title: `${removeEmployee.name} removed`, description: result.removedFromGusto ? "Deleted from Gusto and JobsOxo." : "Deleted from JobsOxo." });
+                  setRemoveEmployee(null);
+                }
+              }}>Remove</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={!!removeCompanyId} onOpenChange={open => { if (!open && !busy) setRemoveCompanyId(""); }}>
         <AlertDialogContent>
           <AlertDialogHeader>

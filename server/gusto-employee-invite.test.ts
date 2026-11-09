@@ -13,7 +13,7 @@ vi.mock("./gusto-client", async (importOriginal) => ({
   gustoRequest: vi.fn(),
 }));
 const { gustoRequest, GustoProviderError } = await import("./gusto-client");
-const { gustoCompensation, inviteEmployeeToGusto, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } = await import("./gusto-employee-invite");
+const { gustoCompensation, inviteEmployeeToGusto, removeEmployeeEverywhere, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } = await import("./gusto-employee-invite");
 
 const companyId = "company-invite-1";
 const base = `/v1/companies/${companyId}`;
@@ -31,11 +31,19 @@ function fakeGusto() {
       return created;
     }
     if (route === `GET ${base}/locations`) return [{ uuid: "loc-mailing" }, { uuid: "loc-filing", filing_address: true }];
-    const match = /^(GET|POST|PUT) \/v1\/employees\/(g-[\w-]+)(?:\/(\w+))?$/.exec(route);
+    const match = /^(GET|POST|PUT|DELETE) \/v1\/employees\/(g-[\w-]+)(?:\/(\w+))?$/.exec(route);
     if (match) {
       const [, verb, uuid, resource] = match;
       const employee = gusto.employees.find((e) => e.uuid === uuid)!;
-      if (!resource && verb === "GET") return employee;
+      if (!resource && verb === "GET") {
+        if (!employee) throw new GustoProviderError("gone", 404, "not_found");
+        return employee;
+      }
+      if (!resource && verb === "DELETE") {
+        if (employee.onboarding_status === "onboarding_completed") throw new GustoProviderError("onboarded", 422, "invalid_operation");
+        gusto.employees = gusto.employees.filter((e) => e.uuid !== uuid);
+        return {};
+      }
       if (resource === "work_addresses" && verb === "GET") return Array.from({ length: employee.workAddresses }, () => ({}));
       if (resource === "work_addresses" && verb === "POST") { employee.workAddresses += 1; return {}; }
       if (resource === "jobs" && verb === "POST") {
@@ -265,6 +273,49 @@ describe("Gusto employee actions after an invite", () => {
     expect(await mappingOf(person.id)).toBeUndefined();
     expect(gustoRequest).not.toHaveBeenCalled();
     await expect(unlinkGustoEmployee(person.id)).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("removeEmployeeEverywhere", () => {
+  it("deletes an onboarding employee from Gusto and JobsOxo", async () => {
+    const userId = await connect();
+    const person = await employee();
+    await inviteEmployeeToGusto(userId, person.id);
+
+    const result = await removeEmployeeEverywhere(userId, person.id);
+
+    expect(result).toEqual({ removedFromGusto: true, removedFromJobsOxo: true });
+    expect(gusto.employees).toHaveLength(0);
+    expect(await storage.getEmployee(person.id)).toBeUndefined();
+  });
+
+  it("refuses an onboarded employee and leaves both records alone", async () => {
+    const userId = await connect();
+    const person = await employee();
+    await inviteEmployeeToGusto(userId, person.id);
+    gusto.employees[0].onboarding_status = "onboarding_completed";
+
+    await expect(removeEmployeeEverywhere(userId, person.id)).rejects.toMatchObject({ code: "onboarded" });
+    expect(gusto.employees).toHaveLength(1);
+    expect(await storage.getEmployee(person.id)).toBeDefined();
+  });
+
+  it("still removes the JobsOxo record when Gusto no longer has the employee", async () => {
+    const userId = await connect();
+    const person = await employee();
+    await inviteEmployeeToGusto(userId, person.id);
+    gusto.employees = [];
+
+    expect(await removeEmployeeEverywhere(userId, person.id)).toEqual({ removedFromGusto: false, removedFromJobsOxo: true });
+    expect(await storage.getEmployee(person.id)).toBeUndefined();
+  });
+
+  it("deletes an employee who was never in Gusto without calling Gusto", async () => {
+    const userId = await connect();
+    const person = await employee();
+
+    expect(await removeEmployeeEverywhere(userId, person.id)).toEqual({ removedFromGusto: false, removedFromJobsOxo: true });
+    expect(gustoRequest).not.toHaveBeenCalled();
   });
 });
 });

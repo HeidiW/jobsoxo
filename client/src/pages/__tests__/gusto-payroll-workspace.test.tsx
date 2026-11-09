@@ -439,6 +439,18 @@ describe("Gusto payroll workspace", () => {
     expect(JSON.parse(fetchMock.mock.calls.find(([url]) => url === "/api/gusto/flows")![1].body)).toEqual({ flowType: "employee_management" });
   });
 
+  it("removes an employee everywhere after confirmation", async () => {
+    renderRoster();
+    expect(screen.queryByTestId("button-gusto-remove-e-ok")).toBeNull();
+    fireEvent.click(await screen.findByTestId("button-gusto-remove-e-wait"));
+    expect(await screen.findByText("Remove Heidi Williams entirely?")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/everywhere"))).toBe(false);
+
+    fireEvent.click(screen.getByTestId("button-confirm-remove-employee"));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/employees/e-wait/everywhere", expect.objectContaining({ method: "DELETE" })));
+  });
+
   it("never offers simulated deposits outside demo", async () => {
     queryClient.setQueryData(["/api/gusto/status"], {
       configured: true, available: true, companyId: "company-1", environment: "production", onboardingComplete: true,
