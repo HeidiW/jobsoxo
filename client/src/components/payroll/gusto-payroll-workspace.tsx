@@ -599,7 +599,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
       <Dialog open={!!flowUrl} onOpenChange={open => { if (!open) closeFlow(); }}>
         <DialogContent className="max-w-5xl !flex flex-col h-[85dvh] max-h-[850px]">
           <DialogHeader><DialogTitle>{flowTitle}</DialogTitle><DialogDescription>Secure Gusto workflow displayed inside JobsOxo. Close this window when finished to refresh setup status.</DialogDescription></DialogHeader>
-          {flowUrl && <iframe key={flowUrl} title={flowTitle} src={flowUrl} className="min-h-0 flex-1 w-full rounded border border-border" referrerPolicy="strict-origin-when-cross-origin" sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" />}
+          {flowUrl && <iframe key={flowUrl} title={flowTitle} src={flowUrl} className="min-h-0 flex-1 w-full rounded border border-border" referrerPolicy="strict-origin-when-cross-origin" sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-modals" />}
         </DialogContent>
       </Dialog>
       <AlertDialog open={!!removeCompanyId} onOpenChange={open => { if (!open && !busy) setRemoveCompanyId(""); }}>

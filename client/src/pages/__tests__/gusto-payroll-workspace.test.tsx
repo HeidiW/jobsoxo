@@ -198,7 +198,7 @@ describe("Gusto payroll workspace", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Open Complete company setup" }));
     const iframe = await screen.findByTitle("Complete company setup");
     expect(iframe).toHaveAttribute("src", "https://flows.gusto-demo.com/flows/company-onboarding");
-    expect(iframe).toHaveAttribute("sandbox", "allow-forms allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox");
+    expect(iframe).toHaveAttribute("sandbox", "allow-forms allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-modals");
     expect(fetchMock).toHaveBeenCalledWith("/api/gusto/flows", expect.objectContaining({ method: "POST" }));
   });
 
