@@ -823,7 +823,7 @@ export default function InvoiceNew() {
     const fields: ProofreadField[] = [
       ...sections.map((sec) => ({ id: `section:${sec}`, label: "Section name", text: sec })),
       ...items.map((item) => ({ id: `item:${item.id}`, label: "Line item", text: item.description })),
-      { id: "notes", label: "Notes", text: notes },
+      { id: "notes", label: "Scope of work", text: notes },
       { id: "terms", label: "Terms", text: termsAndConditions },
     ];
     return fields;
@@ -1227,11 +1227,11 @@ export default function InvoiceNew() {
                     </div>
                   </div>
                   <div style={{ marginTop: "14px" }}>
-                    <label style={labelStyle}>Scope summary / notes</label>
+                    <label style={labelStyle}>Scope of work</label>
                     <FormField control={form.control} name="notes" render={({ field }) => (
                       <FormItem>
                         <FormControl>
-                          <textarea {...field} onBlur={(e) => { field.onChange(tidyText(e.target.value)); field.onBlur(); }} spellCheck={true} rows={2} placeholder="Summary line shown at the top of the invoice" style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} data-testid="input-invoice-notes" />
+                          <textarea {...field} onBlur={(e) => { field.onChange(tidyText(e.target.value)); field.onBlur(); }} spellCheck={true} rows={2} placeholder="What the job covered, e.g. Interior repaint of units 4A–4C: walls, ceilings and trim" style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} data-testid="input-invoice-notes" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

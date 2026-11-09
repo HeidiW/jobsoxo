@@ -219,7 +219,7 @@ function ProposalCardView({ card, onApply, onDismiss }: { card: ProposalCard; on
   const changes: string[] = [];
   if (proposal.dueDate) changes.push(`Due date → ${proposal.dueDate}`);
   if (proposal.taxRate !== null) changes.push(`Tax rate → ${proposal.taxRate}%`);
-  if (proposal.notes !== null) changes.push(`Notes → “${proposal.notes}”`);
+  if (proposal.notes !== null) changes.push(`Scope of work → “${proposal.notes}”`);
   if (proposal.termsAndConditions !== null) changes.push(`Terms → “${proposal.termsAndConditions}”`);
   return (
     <div className={`invoice-assistant-proposal is-${status}`} data-testid={`assistant-proposal-${card.id}`}>

@@ -7,7 +7,7 @@ import type { ProofreadIssue } from "@shared/invoice-proofread";
 
 const fields = [
   { id: "item:1", label: "Line item", text: "Prep and paint kichen walls" },
-  { id: "notes", label: "Notes", text: "thanks for your business" },
+  { id: "notes", label: "Scope of work", text: "thanks for your business" },
 ];
 const issues: ProofreadIssue[] = [
   { fieldId: "item:1", kind: "spelling", original: "kichen", replacement: "kitchen", note: "Misspelled" },

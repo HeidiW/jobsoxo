@@ -18,7 +18,7 @@ vi.mock("./invoice-proofread", async (importOriginal) => {
 
 const fields = [
   { id: "item:1", label: "Line item", text: "Prep and paint kichen walls" },
-  { id: "notes", label: "Notes", text: "thanks for your business" },
+  { id: "notes", label: "Scope of work", text: "thanks for your business" },
 ];
 
 describe("tidyText", () => {

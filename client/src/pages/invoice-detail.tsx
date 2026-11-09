@@ -1526,7 +1526,7 @@ export default function InvoiceDetail() {
                     name="notes"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Notes <span className="text-muted-foreground">(optional)</span></FormLabel>
+                        <FormLabel>Scope of work <span className="text-muted-foreground">(optional)</span></FormLabel>
                         <FormControl>
                           <Textarea rows={2} className="resize-none" {...field} data-testid="input-edit-notes" />
                         </FormControl>

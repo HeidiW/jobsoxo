@@ -391,7 +391,7 @@ export function parseDocumentText(rawText: string): ParsedDocument {
 
   // ── Notes ──
   let notes: string | undefined;
-  const notesIdx = lines.findIndex((l) => /^notes?:?\s*$/i.test(l));
+  const notesIdx = lines.findIndex((l) => /^(notes?|scope(\s+of\s+work)?):?\s*$/i.test(l));
   if (notesIdx !== -1 && notesIdx < lines.length - 1) {
     notes = lines.slice(notesIdx + 1, Math.min(notesIdx + 5, lines.length)).join(" ").slice(0, 500);
   }

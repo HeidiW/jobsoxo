@@ -63,6 +63,7 @@ describe("invoice assistant prompt", () => {
     expect(text).toContain("2. [General] Paint — 4 each × $45.00 = $180.00 (materials, pending)");
     expect(text).toContain("subtotal $1030.00");
     expect(describeInvoice({ ...invoice, lineItems: [] })).toContain("(no line items yet)");
+    expect(text).toContain("Scope of work: (none)");
   });
 
   it("attaches the invoice to the last user message and keeps tool results", () => {

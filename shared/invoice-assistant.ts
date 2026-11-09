@@ -69,7 +69,7 @@ export const INVOICE_PROPOSAL_JSON_SCHEMA = {
         additionalProperties: false,
       },
     },
-    notes: { type: ["string", "null"], description: "Replacement text for the invoice notes, or null to leave them." },
+    notes: { type: ["string", "null"], description: "Replacement scope of work: one or two sentences at the top of the invoice saying what the job covered. Null to leave it." },
     termsAndConditions: { type: ["string", "null"], description: "Replacement payment terms, or null to leave them." },
     dueDate: { type: ["string", "null"], description: "New due date as YYYY-MM-DD, or null to leave it." },
     taxRate: { type: ["number", "null"], description: "New tax rate as a percentage, or null to leave it." },

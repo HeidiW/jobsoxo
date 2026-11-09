@@ -397,7 +397,7 @@ function generateInvoiceEmailBody(
       ${referenceCodesHtml}
     </div>
     
-    ${invoice.notes ? `<p><strong>Notes:</strong> ${invoice.notes}</p>` : ""}
+    ${invoice.notes ? `<p><strong>Scope of work:</strong> ${invoice.notes}</p>` : ""}
     
     <p>Thank you for your business!</p>
     

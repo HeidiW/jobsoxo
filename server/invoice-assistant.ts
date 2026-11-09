@@ -67,14 +67,14 @@ export function describeInvoice(invoice: InvoiceSnapshot): string {
     `Tax rate: ${invoice.taxRate || "0"}%`,
     `Line items (subtotal ${money(subtotal)}):`,
     items,
-    `Notes: ${invoice.notes?.trim() || "(none)"}`,
+    `Scope of work: ${invoice.notes?.trim() || "(none)"}`,
     `Terms: ${invoice.termsAndConditions?.trim() || "(none)"}`,
   ].join("\n");
 }
 
 export const proposalTool: Anthropic.Tool = {
   name: PROPOSAL_TOOL_NAME,
-  description: "Propose changes to the invoice being built: add line items, or replace the notes, payment terms, due date or tax rate. The person reviews the proposal and applies or dismisses it.",
+  description: "Propose changes to the invoice being built: add line items, or replace the scope of work (the summary at the top of the invoice), payment terms, due date or tax rate. The person reviews the proposal and applies or dismisses it.",
   strict: true,
   input_schema: INVOICE_PROPOSAL_JSON_SCHEMA as unknown as Anthropic.Tool["input_schema"],
 };
