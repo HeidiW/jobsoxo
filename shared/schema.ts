@@ -3,6 +3,7 @@ import { pgTable, text, varchar, integer, decimal, timestamp, date, boolean, jso
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { emailListSchema } from "./client-emails";
+import { LINE_ITEM_STATUSES } from "./line-item-status";
 
 function numericString(label: string) {
   return z
@@ -195,6 +196,8 @@ export const lineItems = pgTable("line_items", {
   changeOrderReason: text("change_order_reason"),
   section: text("section"),
   refs: text("refs"),
+  // Work status set by hand: pending | in_progress | completed. Internal; not printed.
+  status: text("status").notNull().default("pending"),
 });
 
 export const lineItemsRelations = relations(lineItems, ({ one }) => ({
@@ -214,6 +217,7 @@ const lineItemSchema = createInsertSchema(lineItems)
     quantity: positiveNumericString("Quantity"),
     rate: positiveNumericString("Rate"),
     amount: positiveNumericString("Amount"),
+    status: z.enum(LINE_ITEM_STATUSES).optional(),
   });
 export const insertLineItemSchema = lineItemSchema.superRefine(validateLineItemAmount);
 

@@ -23,6 +23,7 @@ import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { invoiceRecipients } from "@shared/client-emails";
 import { InvoiceRecipients } from "@/components/invoices/invoice-recipients";
+import { LineItemProgress } from "@/components/invoices/line-item-progress";
 import { formatPhone } from "@/lib/formatPhone";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -1650,6 +1651,9 @@ export default function InvoiceDetail() {
           settings={settings}
           coApprovedTotal={coApprovedTotal}
         />
+
+        {/* ── Work progress per line item ── */}
+        <LineItemProgress invoiceId={invoice.id} items={invoice.lineItems ?? []} />
 
         {/* ── Recipients ── */}
         <SendsToPanel invoice={invoice} />
