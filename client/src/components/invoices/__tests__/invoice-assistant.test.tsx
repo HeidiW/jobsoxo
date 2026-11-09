@@ -102,7 +102,7 @@ describe("InvoiceAssistantPanel", () => {
   it("explains when the server has no API key", async () => {
     available = false;
     mount();
-    expect(await screen.findByTestId("assistant-unavailable")).toHaveTextContent("Anthropic API key");
+    expect(await screen.findByTestId("assistant-unavailable")).toHaveTextContent("connect JobsOxo to Claude");
     expect(screen.queryByTestId("input-assistant-message")).not.toBeInTheDocument();
   });
 });

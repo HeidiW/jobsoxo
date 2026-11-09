@@ -159,7 +159,7 @@ export function InvoiceAssistantPanel({ open, onClose, snapshot, onApply }: Invo
 
       {!available ? (
         <p className="invoice-assistant-note" data-testid="assistant-unavailable">
-          The assistant isn't set up on this server yet. An admin needs to add an Anthropic API key.
+          The assistant isn't set up on this server yet. An admin needs to connect JobsOxo to Claude.
         </p>
       ) : (
         <>

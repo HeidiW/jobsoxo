@@ -34,6 +34,20 @@ const collect = (res: any, callback: (err: null, body: string) => void) => {
   res.on("end", () => callback(null, data));
 };
 
+describe("invoiceAssistantConfigured", () => {
+  it("accepts an API key, an auth token, or a complete OIDC federation setup", async () => {
+    const { invoiceAssistantConfigured } = await vi.importActual<typeof import("./invoice-assistant")>("./invoice-assistant");
+    expect(invoiceAssistantConfigured({})).toBe(false);
+    expect(invoiceAssistantConfigured({ ANTHROPIC_API_KEY: "k" })).toBe(true);
+    expect(invoiceAssistantConfigured({ ANTHROPIC_AUTH_TOKEN: "t" })).toBe(true);
+    const federation = { ANTHROPIC_FEDERATION_RULE_ID: "fdrl_1", ANTHROPIC_ORGANIZATION_ID: "org_1" };
+    expect(invoiceAssistantConfigured(federation)).toBe(false);
+    expect(invoiceAssistantConfigured({ ...federation, ANTHROPIC_IDENTITY_TOKEN_FILE: "/var/run/token" })).toBe(true);
+    expect(invoiceAssistantConfigured({ ...federation, ANTHROPIC_IDENTITY_TOKEN: "jwt" })).toBe(true);
+    expect(invoiceAssistantConfigured({ ANTHROPIC_FEDERATION_RULE_ID: "fdrl_1", ANTHROPIC_IDENTITY_TOKEN: "jwt" })).toBe(false);
+  });
+});
+
 describe("invoice assistant prompt", () => {
   it("names the company and its usual terms in the system prompt", () => {
     const prompt = buildSystemPrompt({ companyName: "Conor Foy Plaster", invoiceTerms: "Due on receipt" } as Settings);

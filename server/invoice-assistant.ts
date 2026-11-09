@@ -15,8 +15,13 @@ import { businessDay } from "./business-time";
 export const INVOICE_ASSISTANT_MODEL = "claude-opus-5-5";
 export const PROPOSAL_TOOL_NAME = "propose_invoice_changes";
 
-export function invoiceAssistantConfigured(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY;
+// The SDK resolves credentials itself: an API key, an auth token, or OIDC
+// workload identity federation (how Render connects). This mirrors its
+// federation trigger so the panel only says "not set up" when none is present.
+export function invoiceAssistantConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return true;
+  return !!(env.ANTHROPIC_FEDERATION_RULE_ID && env.ANTHROPIC_ORGANIZATION_ID
+    && (env.ANTHROPIC_IDENTITY_TOKEN_FILE || env.ANTHROPIC_IDENTITY_TOKEN));
 }
 
 let client: Anthropic | null = null;

@@ -97,8 +97,14 @@ services:
       - key: STRIPE_SECRET_KEY
         sync: false
 
-      # Invoice assistant (Claude)
-      - key: ANTHROPIC_API_KEY
+      # Invoice assistant + proofreader (Claude), via OIDC workload identity federation
+      - key: ANTHROPIC_FEDERATION_RULE_ID
+        sync: false
+      - key: ANTHROPIC_ORGANIZATION_ID
+        sync: false
+      - key: ANTHROPIC_SERVICE_ACCOUNT_ID
+        sync: false
+      - key: ANTHROPIC_IDENTITY_TOKEN_FILE # or ANTHROPIC_IDENTITY_TOKEN
         sync: false
 
 databases:
