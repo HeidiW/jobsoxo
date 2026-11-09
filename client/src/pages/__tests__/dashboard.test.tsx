@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Router } from "wouter";
-import Dashboard, { timeOfDayAt } from "@/pages/dashboard";
+import Dashboard, { calendarDayAt, timeOfDayAt } from "@/pages/dashboard";
 import { queryClient } from "@/lib/queryClient";
 
 const { toastMock } = vi.hoisted(() => ({ toastMock: vi.fn() }));
@@ -59,12 +59,13 @@ function renderDashboard() {
   );
 }
 
+let dashboardUrls: string[] = [];
 describe("Dashboard interactions", () => {
   beforeEach(() => {
     queryClient.clear();
     toastMock.mockClear();
     reminderPayload = { success: true };
-    queryClient.setQueryData(["/api/dashboard"], dashboardData);
+    queryClient.setQueryData(["/api/dashboard", calendarDayAt(new Date())], dashboardData);
     queryClient.setQueryData(["/api/jobs"], jobs);
     queryClient.setQueryData(["/api/jobs", "job-1", "documents"], []);
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -75,7 +76,7 @@ describe("Dashboard interactions", () => {
           headers: { "Content-Type": "application/json" },
         });
       }
-      if (url === "/api/dashboard") return new Response(JSON.stringify(dashboardData));
+      if (url.startsWith("/api/dashboard")) { dashboardUrls.push(url); return new Response(JSON.stringify(dashboardData)); }
       if (url === "/api/jobs") return new Response(JSON.stringify(jobs));
       return new Response(JSON.stringify([]));
     }));
@@ -109,5 +110,13 @@ describe("Dashboard interactions", () => {
     expect(timeOfDayAt(new Date(2026, 10, 9, 16, 59))).toBe("afternoon");
     expect(timeOfDayAt(new Date(2026, 10, 9, 17, 0))).toBe("evening");
     expect(timeOfDayAt(new Date(2026, 10, 9, 23, 59))).toBe("evening");
+  });
+
+  it("asks for the week by the viewer's own calendar day", async () => {
+    dashboardUrls = [];
+    queryClient.clear();
+    render(<QueryClientProvider client={queryClient}><Dashboard /></QueryClientProvider>);
+    await waitFor(() => expect(dashboardUrls).toContain(`/api/dashboard?today=${calendarDayAt(new Date())}`));
+    expect(calendarDayAt(new Date(2026, 10, 9, 23, 30))).toBe("2026-11-09");
   });
 });

@@ -68,24 +68,43 @@ export function timeOfDayAt(date: Date): TimeOfDay {
   return hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
 }
 
-/** Follows the browser's clock, so a dashboard left open rolls over at noon and 5 pm. */
-function useTimeOfDay(): TimeOfDay {
-  const [timeOfDay, setTimeOfDay] = useState(() => timeOfDayAt(new Date()));
+/** The viewer's calendar day as YYYY-MM-DD; the server builds the week from it. */
+export function calendarDayAt(date: Date): string {
+  return format(date, "yyyy-MM-dd");
+}
+
+/**
+ * Follows the browser's clock, so a dashboard left open rolls over at noon,
+ * 5 pm and midnight. Only re-renders when the greeting or the day changes.
+ */
+function useLocalClock(): { timeOfDay: TimeOfDay; today: string } {
+  const read = () => ({ timeOfDay: timeOfDayAt(new Date()), today: calendarDayAt(new Date()) });
+  const [clock, setClock] = useState(read);
   useEffect(() => {
-    const timer = setInterval(() => setTimeOfDay(timeOfDayAt(new Date())), 60_000);
+    const timer = setInterval(() => setClock((prev) => {
+      const next = read();
+      return next.timeOfDay === prev.timeOfDay && next.today === prev.today ? prev : next;
+    }), 60_000);
     return () => clearInterval(timer);
   }, []);
-  return timeOfDay;
+  return clock;
 }
 
 export default function Dashboard() {
-  const timeOfDay = useTimeOfDay();
+  const { timeOfDay, today: localToday } = useLocalClock();
   const [newJobOpen, setNewJobOpen] = useState(false);
   const [sentInvoiceIds, setSentInvoiceIds] = useState<Set<string>>(() => new Set());
   const { toast } = useToast();
 
+  // Keyed by day, so the week moves on at the viewer's midnight; invalidating
+  // ["/api/dashboard"] still refreshes it.
   const { data, isLoading, error, refetch } = useQuery<DashboardData>({
-    queryKey: ["/api/dashboard"],
+    queryKey: ["/api/dashboard", localToday],
+    queryFn: async () => {
+      const res = await fetch(`/api/dashboard?today=${localToday}`, { credentials: "include" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to load dashboard");
+      return res.json();
+    },
   });
   const jobsQuery = useQuery<JobWithClient[]>({ queryKey: ["/api/jobs"] });
   const jobs = jobsQuery.data ?? [];

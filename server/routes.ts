@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import { createLinkToken, exchangePublicToken, getAccountInfo, getBalance, getTransactions, isPlaidConfigured } from "./plaid";
 import { seedDemoData } from "./seed";
-import { calendarDay } from "./business-time";
+import { addCalendarDays, businessDay, calendarDay, parseCalendarDay, workweekOf } from "./business-time";
 import { invoiceRecipients } from "@shared/client-emails";
 import { LINE_ITEM_STATUSES, lineItemProgress } from "@shared/line-item-status";
 import { invoicePrefixFromCompanyName, isDerivedInvoicePrefix } from "@shared/invoice-prefix";
@@ -794,13 +794,19 @@ export async function registerRoutes(
       const user = req.session?.userId ? await storage.getUser(req.session.userId as string) : null;
       const firstName = user?.displayName?.trim() || "there";
 
-      // Date boundaries
-      const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
-      const todayEnd   = new Date(now); todayEnd.setHours(23, 59, 59, 999);
-      const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const endOfLastMonth   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
-      const dueSoonDate = new Date(todayStart); dueSoonDate.setDate(dueSoonDate.getDate() + 30);
+      // "Today" is the viewer's calendar day (the browser sends it); the
+      // server's own clock is UTC, which runs ahead of US evenings. Every
+      // boundary below is a calendar day encoded as UTC midnight, the same
+      // way due dates, job dates and time entries are stored.
+      const today = parseCalendarDay(req.query.today) ?? businessDay(now);
+      const atMidnight = (day: string) => new Date(`${day}T00:00:00.000Z`);
+      const todayStart = atMidnight(today);
+      const todayEnd = new Date(atMidnight(addCalendarDays(today, 1)).getTime() - 1);
+      const [year, month] = today.split("-").map(Number);
+      const startOfThisMonth = new Date(Date.UTC(year, month - 1, 1));
+      const startOfLastMonth = new Date(Date.UTC(year, month - 2, 1));
+      const endOfLastMonth   = new Date(startOfThisMonth.getTime() - 1);
+      const dueSoonDate = atMidnight(addCalendarDays(today, 30));
 
       // All invoices with client + job names
       const allInvoices = await db
@@ -858,9 +864,9 @@ export async function registerRoutes(
       const [activeJobsRows, hoursTodayRows, crewsTodayRows] = await Promise.all([
         db.select({ count: sql<number>`count(*)` }).from(jobs).where(sql`${jobs.status} = 'in_progress'`),
         db.select({ total: sql<number>`COALESCE(SUM(${timeEntries.hoursWorked}::numeric), 0)` })
-          .from(timeEntries).where(sql`DATE(${timeEntries.date}) = CURRENT_DATE`),
+          .from(timeEntries).where(sql`${timeEntries.date} >= ${todayStart} AND ${timeEntries.date} <= ${todayEnd}`),
         db.select({ count: sql<number>`COUNT(DISTINCT ${timeEntries.employeeId})` })
-          .from(timeEntries).where(sql`DATE(${timeEntries.date}) = CURRENT_DATE`),
+          .from(timeEntries).where(sql`${timeEntries.date} >= ${todayStart} AND ${timeEntries.date} <= ${todayEnd}`),
       ]);
 
       // Needs attention — overdue OR due today, sorted most overdue first
@@ -891,11 +897,10 @@ export async function registerRoutes(
         })
         .sort((a, b) => b.daysOverdue - a.daysOverdue);
 
-      // This week Mon–Fri
-      const dow = now.getDay();
-      const monday = new Date(todayStart);
-      monday.setDate(todayStart.getDate() - (dow === 0 ? 6 : dow - 1));
-      const friday = new Date(monday); friday.setDate(monday.getDate() + 4);
+      // This week Mon–Fri, as calendar days
+      const weekDays = workweekOf(today);
+      const monday = atMidnight(weekDays[0]);
+      const friday = new Date(atMidnight(addCalendarDays(weekDays[4], 1)).getTime() - 1);
 
       const weekJobs = await db
         .select({ id: jobs.id, title: jobs.title, startDate: jobs.startDate, endDate: jobs.endDate })
@@ -908,21 +913,18 @@ export async function registerRoutes(
       const getColor = (id: string) => { if (!colorMap.has(id)) colorMap.set(id, JOB_COLORS[ci++ % JOB_COLORS.length]); return colorMap.get(id)!; };
       const WDAYS = ["MON","TUE","WED","THU","FRI"];
 
-      const week = Array.from({ length: 5 }, (_, i) => {
-        const day = new Date(monday); day.setDate(monday.getDate() + i);
-        const dayS = new Date(day); dayS.setHours(0,0,0,0);
-        const dayE = new Date(day); dayE.setHours(23,59,59,999);
+      const week = weekDays.map((date, i) => {
         return {
-          date: day.toISOString().split("T")[0],
+          date,
           weekday: WDAYS[i],
-          dayNum: day.getDate(),
-          isToday: dayS.getTime() === todayStart.getTime(),
+          dayNum: Number(date.slice(8, 10)),
+          isToday: date === today,
           jobs: weekJobs
             .filter(j => {
               if (!j.startDate) return false;
-              const s = new Date(j.startDate); s.setHours(0,0,0,0);
-              const e = j.endDate ? new Date(j.endDate) : s; e.setHours(23,59,59,999);
-              return s <= dayE && e >= dayS;
+              const start = calendarDay(j.startDate);
+              const end = calendarDay(j.endDate ?? j.startDate);
+              return start <= date && end >= date;
             })
             .map(j => ({ jobId: j.id, label: j.title, crewSize: 0, color: getColor(j.id) })),
         };

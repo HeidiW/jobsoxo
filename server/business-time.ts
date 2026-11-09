@@ -25,3 +25,25 @@ export function businessCalendarDate(instant: Date = new Date()): Date {
 export function calendarDay(value: Date | string): string {
   return new Date(value).toISOString().slice(0, 10);
 }
+
+const DAY_MS = 86_400_000;
+const CALENDAR_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A "YYYY-MM-DD" string that names a real calendar day, or null. */
+export function parseCalendarDay(value: unknown): string | null {
+  if (typeof value !== "string" || !CALENDAR_DAY.test(value)) return null;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && calendarDay(date) === value ? value : null;
+}
+
+/** Calendar day arithmetic on "YYYY-MM-DD" strings (no time zones involved). */
+export function addCalendarDays(day: string, days: number): string {
+  return calendarDay(new Date(new Date(`${day}T00:00:00.000Z`).getTime() + days * DAY_MS));
+}
+
+/** Monday to Friday of the week containing `day` (a weekend day maps to the week just ended). */
+export function workweekOf(day: string): string[] {
+  const weekday = new Date(`${day}T00:00:00.000Z`).getUTCDay(); // 0 = Sunday
+  const monday = addCalendarDays(day, -(weekday === 0 ? 6 : weekday - 1));
+  return [0, 1, 2, 3, 4].map((offset) => addCalendarDays(monday, offset));
+}
