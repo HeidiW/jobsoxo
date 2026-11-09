@@ -5,6 +5,8 @@ import { calendarDay } from "./business-time";
 import { invoiceRecipients } from "@shared/client-emails";
 import { LINE_ITEM_STATUSES, lineItemProgress } from "@shared/line-item-status";
 import { invoicePrefixFromCompanyName, isDerivedInvoicePrefix } from "@shared/invoice-prefix";
+import { invoiceAssistantRequestSchema } from "@shared/invoice-assistant";
+import { assistantErrorMessage, invoiceAssistantConfigured, runAssistantTurn, startEventStream } from "./invoice-assistant";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
 import { inviteEmployeeToGusto, removeEmployeeEverywhere, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } from "./gusto-employee-invite";
 import { GustoConfigurationError, GustoProviderError } from "./gusto-client";
@@ -3622,6 +3624,40 @@ export async function registerRoutes(
   });
 
   // Settings
+  // Invoice assistant: one chat turn, streamed back as server-sent events.
+  // The browser keeps the conversation; the server adds the live invoice and
+  // the company context, and never writes to the invoice itself.
+  app.get("/api/invoices/assistant/status", requireAuth, (_req, res) => {
+    res.json({ available: invoiceAssistantConfigured() });
+  });
+
+  app.post("/api/invoices/assistant", requireAuth, async (req, res) => {
+    if (!invoiceAssistantConfigured()) {
+      return res.status(503).json({ error: "The invoice assistant isn't set up on this server yet." });
+    }
+    const parsed = invoiceAssistantRequestSchema.safeParse(req.body);
+    if (!parsed.success) return badRequest(res, parsed.error);
+    const last = parsed.data.messages[parsed.data.messages.length - 1];
+    if (!last || last.role !== "user") {
+      return res.status(400).json({ error: "The conversation must end with your message" });
+    }
+
+    const settings = await storage.getSettings();
+    const controller = new AbortController();
+    req.on("close", () => controller.abort());
+    const events = startEventStream(res);
+    try {
+      await runAssistantTurn({ history: parsed.data.messages, invoice: parsed.data.invoice, settings }, events.send, controller.signal);
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        console.error("Invoice assistant error:", error);
+        events.send({ type: "error", message: assistantErrorMessage(error) });
+      }
+    } finally {
+      events.end();
+    }
+  });
+
   app.get("/api/settings", async (req, res) => {
     try {
       let settings = await storage.getSettings();

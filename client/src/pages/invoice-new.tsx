@@ -24,7 +24,9 @@ import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
 import { trackEvent } from "@/lib/analytics";
 import { formatPhone } from "@/lib/formatPhone";
 import { positiveNumericField } from "@/lib/positive-numeric-field";
-import { ArrowLeft, Plus, FileText, Save, Send, Search } from "lucide-react";
+import { ArrowLeft, Plus, FileText, Save, Send, Search, Sparkles } from "lucide-react";
+import { InvoiceAssistantPanel } from "@/components/invoices/invoice-assistant";
+import type { InvoiceProposal, InvoiceSnapshot } from "@shared/invoice-assistant";
 import { format, addDays } from "date-fns";
 import type { Client, Job, Settings } from "@shared/schema";
 import { Link } from "wouter";
@@ -395,6 +397,7 @@ export default function InvoiceNew() {
   const [googleDocsSearch, setGoogleDocsSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("split");
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabSection>("details");
   const [mobilePane, setMobilePane] = useState<"form" | "preview">("form");
 
@@ -539,6 +542,33 @@ export default function InvoiceNew() {
 
   // Everything the draft would save, as a string, so effects can tell when it changed.
   const watchedForm = form.watch();
+
+  // What the invoice assistant sees each turn, and how its proposals land.
+  const assistantSnapshot: InvoiceSnapshot = {
+    invoiceNumber: draftNumber ?? null,
+    clientName: selectedClient?.name ?? null,
+    jobName: selectedJob?.title ?? null,
+    issueDate: watchedForm.issueDate, dueDate: watchedForm.dueDate, taxRate: watchedForm.taxRate ?? null,
+    notes: watchedForm.notes ?? null, termsAndConditions: watchedForm.termsAndConditions ?? null,
+    lineItems: lineItems.map((item) => ({
+      section: item.section ?? null, category: item.category, description: item.description,
+      quantity: item.quantity, unit: item.unit, rate: item.rate, amount: item.amount, status: item.status ?? "pending",
+    })),
+  };
+  const applyAssistantProposal = (proposal: InvoiceProposal) => {
+    if (proposal.lineItems && proposal.lineItems.length > 0) {
+      const added: NewLineItem[] = proposal.lineItems.map((item) => ({
+        id: crypto.randomUUID(), category: item.category, description: item.description, refs: "",
+        quantity: item.quantity, unit: item.unit, rate: item.rate, amount: Math.round(item.quantity * item.rate * 100) / 100,
+        section: item.section ?? undefined, hasQty: !(item.unit === "lump" && item.quantity === 1), status: "pending",
+      }));
+      setLineItems((prev) => [...prev, ...added]);
+    }
+    if (proposal.notes !== null) form.setValue("notes", proposal.notes, { shouldDirty: true });
+    if (proposal.termsAndConditions !== null) form.setValue("termsAndConditions", proposal.termsAndConditions, { shouldDirty: true });
+    if (proposal.dueDate !== null) form.setValue("dueDate", proposal.dueDate, { shouldDirty: true });
+    if (proposal.taxRate !== null) form.setValue("taxRate", String(proposal.taxRate), { shouldDirty: true });
+  };
   const draftSignature = JSON.stringify({ f: watchedForm, items: lineItems });
   const hasClient = !!watchedForm.clientId;
   const hasRealItem = lineItems.some((item) => item.description.trim().length > 0);
@@ -806,6 +836,16 @@ export default function InvoiceNew() {
         </nav>
 
         <div className="invoice-toolbar-actions">
+          <button
+            type="button"
+            onClick={() => setAssistantOpen((open) => !open)}
+            aria-pressed={assistantOpen}
+            className="invoice-secondary-action"
+            data-testid="button-invoice-assistant"
+          >
+            <Sparkles aria-hidden="true" size={16} />
+            Assistant
+          </button>
           <span className="invoice-autosave-status" aria-live="polite" data-testid="autosave-status" data-state={saveState}
             style={{ fontSize: "12px", color: saveState === "error" ? "#b91c1c" : "#64748b", marginRight: "6px", whiteSpace: "nowrap" }}>
             {saveState === "saving" ? "Saving…" : saveState === "saved" ? `Saved${draftNumber ? ` · ${draftNumber}` : ""}` : saveState === "dirty" ? "Unsaved changes" : saveState === "error" ? "Couldn't save — will retry" : ""}
@@ -832,6 +872,8 @@ export default function InvoiceNew() {
           </button>
         </div>
       </header>
+
+      <InvoiceAssistantPanel open={assistantOpen} onClose={() => setAssistantOpen(false)} snapshot={assistantSnapshot} onApply={applyAssistantProposal} />
 
       {/* ── Document import strip ── */}
       <div className="invoice-import-strip">

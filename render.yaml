@@ -97,6 +97,10 @@ services:
       - key: STRIPE_SECRET_KEY
         sync: false
 
+      # Invoice assistant (Claude)
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
 databases:
   - name: jobsoxo-db
     region: virginia
