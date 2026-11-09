@@ -7,6 +7,7 @@ import {
   RotateCw, Users,
 } from "lucide-react";
 import { ScheduleJobDialog } from "@/components/scheduling/schedule-job-dialog";
+import { GetOnItList, TodoCheck, useTodos } from "@/components/todos/get-on-it";
 import { Button } from "@/components/ui/button";
 import {
   filterScheduleJobs, formatScheduleDate, getBarPosition, getFortnightDays, getMonthDays,
@@ -41,6 +42,8 @@ export default function Scheduling() {
   const [selectedJob, setSelectedJob] = useState<ScheduleJob | null>(null);
   const [chooserOpen, setChooserOpen] = useState(false);
   const { data: jobs, isLoading, isError, isFetching, refetch } = useQuery<ScheduleJob[]>({ queryKey: ["/api/jobs"] });
+  const { todos, update: updateTodo, remove: removeTodo } = useTodos();
+  const todosOn = (day: Date) => todos.filter((todo) => todo.dueDate === dateISO(day));
 
   const safeJobs = jobs ?? [];
   const { active: scheduledJobs, backlog: backlogJobs } = useMemo(() => filterScheduleJobs(safeJobs), [safeJobs]);
@@ -138,6 +141,15 @@ export default function Scheduling() {
                   </div>;
                 })}
               </div>
+              {weekdayDays.some((day) => todosOn(day).length > 0) && <div className="grid border-b border-jx-line bg-jx-gold-tint/30" style={{ gridTemplateColumns: "240px repeat(10, minmax(76px, 1fr))" }} data-testid="schedule-todo-row">
+                <div className="flex flex-col justify-center px-5 py-3">
+                  <p className="text-sm font-bold text-jx-ink">Get on it</p>
+                  <p className="mt-0.5 text-[11px] text-jx-ink-2">Team to-dos with a day</p>
+                </div>
+                {weekdayDays.map((day, index) => <div key={dateISO(day)} className={`space-y-1 border-l border-jx-line/70 p-1.5 ${index === 5 ? "border-l-2 border-l-jx-line" : ""}`} data-testid={`schedule-todos-${dateISO(day)}`}>
+                  {todosOn(day).map((todo) => <TodoCheck key={todo.id} todo={todo} compact onToggle={(done) => updateTodo.mutate({ id: todo.id, done })} onDelete={() => removeTodo.mutate(todo.id)} />)}
+                </div>)}
+              </div>}
               {isLoading ? <div className="space-y-2 p-4" data-testid="scheduling-loading" aria-label="Loading schedule">
                 {[0, 1, 2, 3].map((item) => <div key={item} className="grid h-[76px] animate-pulse rounded-xl bg-jx-surface" style={{ gridTemplateColumns: "240px 1fr" }}><div className="m-4 h-4 w-2/3 rounded bg-card" /><div className="m-4 h-8 rounded-lg bg-card" /></div>)}
               </div> : isError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-4 px-6 py-12">
@@ -182,6 +194,8 @@ export default function Scheduling() {
             })}</div>
           </div>}
         </section>
+
+        <div className="[&>section]:mt-0"><GetOnItList shownDays={weekdayDays.map(dateISO)} /></div>
 
         <section aria-label="Jobs needing dates" className="overflow-hidden rounded-[24px] border border-jx-gold/30 bg-jx-gold-tint text-jx-gold-ink">
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-jx-gold/30 px-5 py-4 sm:px-6">
@@ -229,12 +243,14 @@ export default function Scheduling() {
                   <div className="flex flex-col gap-1">{blocks.slice(0, 3).map((job) => {
                     const color = COLORS[stableIndex(job)];
                     return <JobLink key={job.id} job={job} data-testid={`month-job-${job.id}`} title={job.title} className="truncate rounded-md border-l-[3px] px-1.5 py-1 text-[10px] font-semibold" style={{ background: color.bg, color: color.ink, borderColor: color.ink }}>{job.title}</JobLink>;
-                  })}{blocks.length > 3 && <span className="px-1 text-[9px] text-jx-ink-3">+{blocks.length - 3} more</span>}</div>
+                  })}{blocks.length > 3 && <span className="px-1 text-[9px] text-jx-ink-3">+{blocks.length - 3} more</span>}
+                  {todosOn(day).map((todo) => <TodoCheck key={todo.id} todo={todo} compact onToggle={(done) => updateTodo.mutate({ id: todo.id, done })} />)}</div>
                 </div>;
               })}
             </div>
           </div>
         </div>}
+        <div className="px-4 pb-4"><GetOnItList shownDays={monthDays.map(dateISO)} /></div>
       </section>}
     </div>
     <ScheduleJobDialog open={chooserOpen || !!selectedJob} job={selectedJob} jobs={safeJobs} isLoading={isLoading} isError={isError} onSelect={pickJob} onClose={() => { setSelectedJob(null); setChooserOpen(false); }} />
