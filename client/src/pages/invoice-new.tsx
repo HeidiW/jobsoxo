@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { clientEmailOptions } from "@shared/client-emails";
+import { parseScheduleDate } from "./scheduling-logic";
 import { LINE_ITEM_STATUSES, LINE_ITEM_STATUS_LABELS, type LineItemStatus } from "@shared/line-item-status";
 import { InvoiceRecipients } from "@/components/invoices/invoice-recipients";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -363,10 +364,29 @@ export default function InvoiceNew() {
   const searchParams = new URLSearchParams(search);
   const preselectedClientId = searchParams.get("clientId") || "";
   const preselectedJobId = searchParams.get("jobId") || "";
+  // Drafts live on the server: created on the first real edit, then saved a
+  // couple of seconds after each change. ?draft=ID reopens one.
+  const [draftId, setDraftId] = useState<string | null>(searchParams.get("draft"));
+  const [draftNumber, setDraftNumber] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
+  const lastSavedSignature = useRef<string>("");
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveInFlight = useRef<Promise<string | null> | null>(null);
+  // A draft named in the URL when the page opened is loaded once; drafts this
+  // page creates itself are never reloaded over the user's typing.
+  const reopenedDraftId = useRef<string | null>(searchParams.get("draft"));
+  const draftLoaded = useRef(false);
+  const loadedItems = useRef<NewLineItem[] | null>(null);
 
   const { toast } = useToast();
   const [lineItems, setLineItems] = useState<NewLineItem[]>([]);
   const [sectionsOpen, setSectionsOpen] = useState<Record<string, boolean>>({});
+
+  const draftQuery = useQuery<{ id: string; status: string; invoiceNumber: string; clientId: string; jobId: string | null; issueDate: string; dueDate: string; notes: string | null; termsAndConditions: string | null; taxRate: string | null; recipientEmails: string[] | null; lineItems: Array<{ category: string; description: string; quantity: string; unit: string; rate: string; amount: string; section: string | null; refs: string | null; status?: string }> }>({
+    queryKey: ["/api/invoices", reopenedDraftId.current],
+    enabled: !!reopenedDraftId.current && !draftLoaded.current,
+    retry: false,
+  });
   const [parsedDoc, setParsedDoc] = useState<ParsedDocument | null>(null);
   const [importSource, setImportSource] = useState<"manual" | "pdf" | "google_doc">("manual");
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -425,6 +445,44 @@ export default function InvoiceNew() {
     }
   }, [preselectedJobId, jobs, form]);
 
+  // Reopening a draft: fill the form and items from the server once.
+  useEffect(() => {
+    if (draftQuery.isError && !draftLoaded.current) {
+      draftLoaded.current = true;
+      reopenedDraftId.current = null;
+      setDraftId(null);
+      toast({ title: "Couldn't open that draft", description: "Starting a new invoice instead.", variant: "destructive" });
+      setLocation("/invoices/new", { replace: true });
+      return;
+    }
+    const draft = draftQuery.data;
+    if (!draft || draftLoaded.current) return;
+    draftLoaded.current = true;
+    if (draft.status !== "draft") {
+      setLocation(`/invoices/${draft.id}`, { replace: true });
+      return;
+    }
+    setDraftNumber(draft.invoiceNumber);
+    const day = (value: string) => parseScheduleDate(value) ? format(parseScheduleDate(value)!, "yyyy-MM-dd") : "";
+    form.reset({
+      clientId: draft.clientId, jobId: draft.jobId ?? "", issueDate: day(draft.issueDate), dueDate: day(draft.dueDate),
+      notes: draft.notes ?? "", termsAndConditions: draft.termsAndConditions ?? "", taxRate: String(Number(draft.taxRate ?? 0)),
+      recipientEmails: draft.recipientEmails ?? [],
+    });
+    const items: NewLineItem[] = draft.lineItems.map((item) => ({
+      id: crypto.randomUUID(), category: item.category as NewLineItem["category"], description: item.description,
+      quantity: Number(item.quantity), unit: item.unit, rate: Number(item.rate), amount: Number(item.amount),
+      section: item.section ?? undefined, refs: item.refs ?? undefined, hasQty: item.unit !== "lump" || Number(item.quantity) !== 1,
+      status: (item.status as NewLineItem["status"]) ?? "pending",
+    }));
+    loadedItems.current = items;
+    setLineItems(items);
+    // The loaded state is what's on the server; the autosave effect records it
+    // as saved on the render where these items appear, instead of saving it back.
+    lastSavedSignature.current = "__pending__";
+    setSaveState("saved");
+  }, [draftQuery.data, draftQuery.isError, form, setLocation, toast]);
+
   useEffect(() => {
     const connected = searchParams.get("google_docs_connected");
     const error = searchParams.get("google_docs_error");
@@ -466,21 +524,102 @@ export default function InvoiceNew() {
   const taxAmount = subtotal * (taxRate / 100);
   const total = subtotal + taxAmount;
 
+  const buildPayload = (formData: InvoiceFormValues, send: boolean) => ({
+    ...formData,
+    taxRate: parseFloat(formData.taxRate || "0"),
+    subtotal, taxAmount, total, balance: total,
+    lineItems: lineItems.map(({ id: _id, hasQty, ...item }) => ({
+      ...item,
+      quantity: hasQty === false ? 1 : item.quantity,
+      unit:     hasQty === false ? "lump" : item.unit,
+      rate:     hasQty === false ? item.amount : item.rate,
+    })),
+    send,
+  });
+
+  // Everything the draft would save, as a string, so effects can tell when it changed.
+  const watchedForm = form.watch();
+  const draftSignature = JSON.stringify({ f: watchedForm, items: lineItems });
+  const hasClient = !!watchedForm.clientId;
+  const hasRealItem = lineItems.some((item) => item.description.trim().length > 0);
+
+  /** Creates or updates the server draft. Resolves to the draft id, or null on failure. */
+  const persistDraft = async (): Promise<string | null> => {
+    if (saveInFlight.current) return saveInFlight.current;
+    const run = (async () => {
+      const signature = draftSignature;
+      setSaveState("saving");
+      try {
+        let id = draftId;
+        if (!id) {
+          const res = await apiRequest("POST", "/api/invoices", buildPayload(form.getValues(), false));
+          const created = await res.json();
+          id = created.id as string;
+          setDraftId(id);
+          setDraftNumber(created.invoiceNumber ?? null);
+          const params = new URLSearchParams(search);
+          params.set("draft", id);
+          setLocation(`/invoices/new?${params.toString()}`, { replace: true });
+        } else {
+          const res = await apiRequest("PUT", `/api/invoices/${id}/draft`, buildPayload(form.getValues(), false));
+          const saved = await res.json();
+          if (saved?.invoiceNumber) setDraftNumber(saved.invoiceNumber);
+        }
+        lastSavedSignature.current = signature;
+        setSaveState("saved");
+        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+        return id;
+      } catch (error) {
+        setSaveState("error");
+        toast({ title: "Couldn't save the draft", description: (error as Error).message.replace(/^\d+:\s*/, ""), variant: "destructive" });
+        return null;
+      } finally {
+        saveInFlight.current = null;
+      }
+    })();
+    saveInFlight.current = run;
+    return run;
+  };
+
+  // Autosave two seconds after the last change, once there's a client and a real line item (or a draft already exists).
+  useEffect(() => {
+    if (reopenedDraftId.current && !draftLoaded.current) return; // still loading a reopened draft
+    if (lastSavedSignature.current === "__pending__") {
+      if (loadedItems.current && lineItems === loadedItems.current) {
+        lastSavedSignature.current = draftSignature;
+        loadedItems.current = null;
+      }
+      return;
+    }
+    if (draftSignature === lastSavedSignature.current) return;
+    if (!hasClient || (!draftId && !hasRealItem)) return;
+    setSaveState("dirty");
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => { void persistDraft(); }, 2000);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftSignature, hasClient, hasRealItem, draftId, lineItems]);
+
+  // Only an unsaved or in-flight change is at risk when the tab closes.
+  useEffect(() => {
+    if (saveState !== "dirty" && saveState !== "saving") return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [saveState]);
+
   const createInvoiceMutation = useMutation({
     mutationFn: async (data: { formData: InvoiceFormValues; send: boolean }) => {
-      const payload = {
-        ...data.formData,
-        taxRate: parseFloat(data.formData.taxRate || "0"),
-        subtotal, taxAmount, total, balance: total,
-        lineItems: lineItems.map(({ id: _id, hasQty, ...item }) => ({
-          ...item,
-          quantity: hasQty === false ? 1 : item.quantity,
-          unit:     hasQty === false ? "lump" : item.unit,
-          rate:     hasQty === false ? item.amount : item.rate,
-        })),
-        send: data.send,
-      };
-      const res = await apiRequest("POST", "/api/invoices", payload);
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (!draftId) {
+        // Nothing autosaved yet: one request creates (and optionally sends) it.
+        const res = await apiRequest("POST", "/api/invoices", buildPayload(data.formData, data.send));
+        return res.json();
+      }
+      const id = await persistDraft();
+      if (!id) throw new Error("The draft couldn't be saved.");
+      if (!data.send) return { id, invoiceNumber: draftNumber };
+      const res = await apiRequest("POST", `/api/invoices/${id}/send`);
       return res.json();
     },
     onSuccess: (data, vars) => {
@@ -667,6 +806,10 @@ export default function InvoiceNew() {
         </nav>
 
         <div className="invoice-toolbar-actions">
+          <span className="invoice-autosave-status" aria-live="polite" data-testid="autosave-status" data-state={saveState}
+            style={{ fontSize: "12px", color: saveState === "error" ? "#b91c1c" : "#64748b", marginRight: "6px", whiteSpace: "nowrap" }}>
+            {saveState === "saving" ? "Saving…" : saveState === "saved" ? `Saved${draftNumber ? ` · ${draftNumber}` : ""}` : saveState === "dirty" ? "Unsaved changes" : saveState === "error" ? "Couldn't save — will retry" : ""}
+          </span>
           <button
             onClick={form.handleSubmit((d) => onSubmit(d, false))}
             disabled={createInvoiceMutation.isPending}
@@ -725,8 +868,8 @@ export default function InvoiceNew() {
         {/* Left: Form */}
         <div className="invoice-form-pane">
           <div className="invoice-form-heading">
-            <h1 className="font-display !font-bold">New invoice</h1>
-            <p>Build a clear bill for the work already done.</p>
+            <h1 className="font-display !font-bold">{draftNumber ? `Draft ${draftNumber}` : "New invoice"}</h1>
+            <p>{draftNumber ? "Changes save automatically. Send it when it's ready." : "Build a clear bill for the work already done."}</p>
           </div>
           <Form {...form}>
             <form>

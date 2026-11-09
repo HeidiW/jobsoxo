@@ -70,6 +70,9 @@ describe("Invoices list redesign", () => {
     expect(row).toHaveTextContent("Northline Construction");
     expect(row).toHaveTextContent("Hotel restoration");
     expect(within(row).getByTestId("work-progress-sent")).toHaveTextContent("1/3 done · 1 in progress");
+    expect(within(row).getByTestId("link-invoice-sent")).toHaveAttribute("href", "/invoices/sent");
+    // Drafts reopen in the builder, where they autosave.
+    expect(screen.getByTestId("link-invoice-draft")).toHaveAttribute("href", "/invoices/new?draft=draft");
     expect(within(row).getAllByText("$1,500.57")).toHaveLength(2);
     expect(screen.getByTestId("stat-outstanding")).toHaveTextContent("$2,650.57");
     expect(screen.getByTestId("stat-overdue")).toHaveTextContent("$900.00");

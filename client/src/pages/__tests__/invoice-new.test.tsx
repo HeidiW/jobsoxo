@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import InvoiceNew from "../invoice-new";
@@ -37,6 +37,8 @@ let fetchMock: ReturnType<typeof vi.fn>;
 let failures: Set<string>;
 let googleConnected: boolean;
 let rejectSave: boolean;
+let draftPuts: Array<Record<string, unknown>>;
+let sends: number;
 let clientRecord: Record<string, unknown>;
 let clientPatches: Array<Record<string, unknown>>;
 
@@ -59,7 +61,7 @@ describe("New invoice redesign", () => {
   beforeEach(() => {
     queryClient.clear(); state.navigate.mockReset(); state.toast.mockReset();
     state.search = "jobId=job-1"; failures = new Set(); googleConnected = false; rejectSave = false;
-    clientRecord = { ...client }; clientPatches = [];
+    clientRecord = { ...client }; clientPatches = []; draftPuts = []; sends = 0;
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (failures.has(path)) return Response.json({ error: "Unavailable" }, { status: 503 });
@@ -75,10 +77,26 @@ describe("New invoice redesign", () => {
       if (path === "/api/google-docs/status") return Response.json({ connected: googleConnected, email: null });
       if (path === "/api/google-docs/documents") return Response.json([{ id: "doc-1", name: "Hotel estimate", modifiedTime: null, webViewLink: null }]);
       if (path === "/api/invoices/parse-document" || path === "/api/invoices/parse-google-doc") return Response.json(parsed);
+      if (path === "/api/invoices/inv-7" && (!init?.method || init.method === "GET")) {
+        return Response.json({
+          id: "inv-7", status: "draft", invoiceNumber: "JBX-2026-0007", clientId: client.id, jobId: job.id,
+          issueDate: "2026-11-01T00:00:00.000Z", dueDate: "2026-11-30T00:00:00.000Z", notes: "Reopened notes", termsAndConditions: "Net 30",
+          taxRate: "5", recipientEmails: [client.email],
+          lineItems: [{ category: "labor", description: "Saved earlier", quantity: "3", unit: "hours", rate: "40", amount: "120", section: "Ground floor", refs: null, status: "in_progress" }],
+        });
+      }
+      if (path.endsWith("/draft") && init?.method === "PUT") {
+        draftPuts.push(JSON.parse(String(init.body)));
+        return Response.json({ id: path.split("/")[3], invoiceNumber: "JBX-2026-0009", status: "draft" });
+      }
+      if (path === "/api/invoices/new-invoice/send" && init?.method === "POST") {
+        sends += 1;
+        return Response.json({ id: "new-invoice", status: "sent" });
+      }
       if (path === "/api/invoices" && init?.method === "POST") {
         return rejectSave
           ? Response.json({ error: "Check invoice", details: { dueDate: ["Due date needs correction"] } }, { status: 400 })
-          : Response.json({ id: "new-invoice", invoiceNumber: "JOX-NEW" });
+          : Response.json({ id: "new-invoice", invoiceNumber: "JBX-NEW" });
       }
       return Response.json({ error: "Not found" }, { status: 404 });
     });
@@ -172,6 +190,48 @@ describe("New invoice redesign", () => {
     await waitFor(() => expect(creates()).toHaveLength(1));
     expect(JSON.parse(creates()[0][1].body as string).lineItems[0].status).toBe("in_progress");
   });
+
+  it("autosaves a draft two seconds after the first real edit, then updates it in place", async () => {
+    mount(); await ready(); await addItem();
+    expect(screen.getByTestId("autosave-status")).toHaveTextContent("Unsaved changes");
+    expect(creates()).toHaveLength(0);
+
+    await waitFor(() => expect(creates()).toHaveLength(1), { timeout: 4000 });
+    expect(JSON.parse(creates()[0][1].body as string)).toMatchObject({ clientId: client.id, send: false });
+    await waitFor(() => expect(screen.getByTestId("autosave-status")).toHaveTextContent("Saved · JBX-NEW"));
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Draft JBX-NEW");
+
+    fireEvent.change(screen.getAllByTestId(/^input-item-desc-/)[0], { target: { value: "Finish plaster walls and trim" } });
+    await waitFor(() => expect(draftPuts).toHaveLength(1), { timeout: 4000 });
+    expect(draftPuts[0].lineItems).toEqual([expect.objectContaining({ description: "Finish plaster walls and trim" })]);
+    expect(creates()).toHaveLength(1);
+  }, 12000);
+
+  it("sends an autosaved draft by saving it and calling send, not by creating a second invoice", async () => {
+    mount(); await ready(); await addItem();
+    await waitFor(() => expect(creates()).toHaveLength(1), { timeout: 4000 });
+
+    fireEvent.click(screen.getByTestId("button-send-invoice"));
+    await waitFor(() => expect(sends).toBe(1));
+    expect(creates()).toHaveLength(1);
+    expect(draftPuts).toHaveLength(1);
+    await waitFor(() => expect(state.navigate).toHaveBeenCalledWith("/invoices/new-invoice"));
+  }, 12000);
+
+  it("reopens a draft from ?draft= with its items and fields, without saving it straight back", async () => {
+    state.search = "draft=inv-7";
+    mount();
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Draft JBX-2026-0007"));
+    expect(screen.getAllByTestId(/^input-item-desc-/)[0]).toHaveValue("Saved earlier");
+    expect(screen.getByTestId("input-invoice-tax-rate")).toHaveValue(5);
+    expect(screen.getByTestId("autosave-status")).toHaveTextContent("Saved · JBX-2026-0007");
+
+    // Long enough for an autosave to have fired if the loaded data were treated as a change.
+    await new Promise((resolve) => setTimeout(resolve, 2400));
+    expect(draftPuts).toHaveLength(0);
+    expect(creates()).toHaveLength(0);
+    expect(screen.getByTestId("autosave-status")).toHaveTextContent("Saved · JBX-2026-0007");
+  }, 10000);
 
   it("preserves send=true, server field errors and the unsaved form on failure", async () => {
     rejectSave = true; mount(); await ready(); await addItem();

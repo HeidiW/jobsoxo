@@ -24,6 +24,9 @@ import {
 import { CollectionsView } from "@/components/invoices/CollectionsView";
 import { ReconcileDialog } from "@/components/invoices/ReconcileDialog";
 import type { InvoiceWithRelations } from "@/components/invoices/types";
+
+// Drafts reopen in the builder, where they autosave; everything else opens the invoice page.
+const invoiceHref = (invoice: { id: string; status: string }) => invoice.status === "draft" ? `/invoices/new?draft=${invoice.id}` : `/invoices/${invoice.id}`;
 import { invoicesToCsv } from "./invoices-export";
 
 const PAGE_SIZE = 12;
@@ -323,16 +326,16 @@ export default function Invoices() {
                       const overdue = invoice.status === "overdue";
                       return (
                         <div key={invoice.id} role="link" tabIndex={0} aria-label={`Open invoice ${invoice.invoiceNumber}`}
-                          onClick={() => setLocation(`/invoices/${invoice.id}`)}
+                          onClick={() => setLocation(invoiceHref(invoice))}
                           onKeyDown={(event) => {
                             if ((event.key === "Enter" || event.key === " ") && event.target === event.currentTarget) {
                               event.preventDefault();
-                              setLocation(`/invoices/${invoice.id}`);
+                              setLocation(invoiceHref(invoice));
                             }
                           }}
                           className="group mb-2 grid min-h-[76px] cursor-pointer grid-cols-[140px_minmax(190px,1fr)_minmax(170px,1fr)_120px_120px_130px_130px_130px_48px] items-center gap-3 rounded-2xl border-2 border-transparent bg-card px-[18px] py-3 transition-colors hover:border-jx-green focus-visible:border-jx-green focus-visible:outline-none motion-reduce:transition-none"
                           data-testid={`row-invoice-${invoice.id}`}>
-                          <div className="min-w-0"><Link href={`/invoices/${invoice.id}`} onClick={(event: MouseEvent<HTMLAnchorElement>) => event.stopPropagation()}
+                          <div className="min-w-0"><Link href={invoiceHref(invoice)} onClick={(event: MouseEvent<HTMLAnchorElement>) => event.stopPropagation()}
                             className="truncate font-mono text-[13px] font-semibold text-jx-green-ink hover:underline" data-testid={`link-invoice-${invoice.id}`}>{invoice.invoiceNumber}</Link>
                             {invoice.workProgress && invoice.workProgress.total > 0 && (
                               <span className={`mt-0.5 block text-[11px] ${invoice.workProgress.completed === invoice.workProgress.total ? "text-jx-green-ink" : "text-jx-ink-2"}`} data-testid={`work-progress-${invoice.id}`}>
@@ -351,7 +354,7 @@ export default function Invoices() {
                               <DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label={`Actions for ${invoice.invoiceNumber}`}
                                 className="h-10 w-10 rounded-full text-jx-ink-3 hover:bg-jx-green-tint hover:text-jx-green-ink" data-testid={`button-invoice-actions-${invoice.id}`}><MoreHorizontal className="h-5 w-5" /></Button></DropdownMenuTrigger>
                               <DropdownMenuContent align="end" sideOffset={6} className="w-52 rounded-2xl p-1.5">
-                                <DropdownMenuItem asChild data-testid={`button-view-invoice-${invoice.id}`}><Link href={`/invoices/${invoice.id}`} className="cursor-pointer rounded-xl"><Eye className="mr-2 h-4 w-4" />View invoice</Link></DropdownMenuItem>
+                                <DropdownMenuItem asChild data-testid={`button-view-invoice-${invoice.id}`}><Link href={invoiceHref(invoice)} className="cursor-pointer rounded-xl"><Eye className="mr-2 h-4 w-4" />View invoice</Link></DropdownMenuItem>
                                 {invoice.status !== "paid" && <>
                                   <DropdownMenuItem onSelect={() => sendMutation.mutate(invoice.id)} disabled={sendMutation.isPending} data-testid={`button-send-invoice-${invoice.id}`} className="rounded-xl"><Mail className="mr-2 h-4 w-4" />Send to client</DropdownMenuItem>
                                   <DropdownMenuSeparator />

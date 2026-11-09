@@ -1337,6 +1337,12 @@ export default function InvoiceDetail() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            {invoice.status === "draft" && !editMode && (
+              <Button size="sm" onClick={() => setLocation(`/invoices/new?draft=${invoice.id}`)} data-testid="button-continue-draft">
+                <Pencil className="h-4 w-4 mr-2" />
+                Continue in builder
+              </Button>
+            )}
             {canEdit && !editMode && (
               <Button
                 variant="outline"

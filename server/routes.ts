@@ -1632,6 +1632,52 @@ export async function registerRoutes(
     }
   });
 
+  // Autosave for the invoice builder: replaces a draft's header fields and
+  // line items wholesale, then recalculates totals. Only drafts with no
+  // payments can be rewritten this way.
+  app.put("/api/invoices/:id/draft", async (req, res) => {
+    try {
+      const existing = await storage.getInvoice(req.params.id);
+      if (!existing) return res.status(404).json({ error: "Invoice not found" });
+      if (existing.status !== "draft" || Number(existing.amountPaid) > 0) {
+        return res.status(409).json({ error: "Only unpaid drafts can be edited in the builder. Open the invoice to make changes." });
+      }
+      const parsed = createInvoiceInputSchema.safeParse(req.body);
+      if (!parsed.success) return badRequest(res, parsed.error);
+      const { lineItems: items, send: _send, ...invoiceData } = parsed.data;
+
+      await db.transaction(async (tx) => {
+        await tx.update(invoices).set({
+          clientId: invoiceData.clientId,
+          jobId: invoiceData.jobId || null,
+          taxRate: String(parseNumeric(invoiceData.taxRate)),
+          dueDate: invoiceData.dueDate,
+          notes: invoiceData.notes || null,
+          termsAndConditions: invoiceData.termsAndConditions || null,
+          recipientEmails: invoiceData.recipientEmails?.length ? invoiceData.recipientEmails : null,
+        }).where(eq(invoices.id, existing.id));
+        await tx.delete(lineItems).where(eq(lineItems.invoiceId, existing.id));
+        for (const item of items ?? []) {
+          const quantity = parseNumeric(item.quantity);
+          const rate = parseNumeric(item.rate);
+          await tx.insert(lineItems).values({
+            category: item.category, description: item.description, quantity: String(quantity), unit: item.unit,
+            rate: String(rate), amount: String(quantity * rate), isChangeOrder: item.isChangeOrder || false,
+            changeOrderReason: item.changeOrderReason || null, section: item.section || null, refs: item.refs || null,
+            status: item.status ?? "pending", jobId: invoiceData.jobId || null, invoiceId: existing.id,
+          });
+        }
+      });
+      await recalcInvoiceTotals(existing.id);
+      const invoice = await storage.getInvoice(existing.id);
+      const invoiceLineItems = await db.select().from(lineItems).where(eq(lineItems.invoiceId, existing.id));
+      res.json({ ...invoice, lineItems: invoiceLineItems });
+    } catch (error) {
+      console.error("Save draft error:", error);
+      res.status(500).json({ error: "Failed to save draft" });
+    }
+  });
+
   app.patch("/api/invoices/:id", async (req, res) => {
     try {
       const parsed = insertInvoiceSchema.partial().safeParse(req.body);
