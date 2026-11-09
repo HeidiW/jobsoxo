@@ -18,7 +18,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { trackEvent } from "@/lib/analytics";
 import {
   Banknote, Building2, Check, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert,
-  CreditCard, Download, Eye, FileText, Landmark, Mail, MoreHorizontal, Plus,
+  CreditCard, Download, Eye, FileText, Landmark, Mail, MoreHorizontal, Pencil, Plus,
   RefreshCw, Search, Trash2, X,
 } from "lucide-react";
 import { CollectionsView } from "@/components/invoices/CollectionsView";
@@ -356,6 +356,7 @@ export default function Invoices() {
                               <DropdownMenuContent align="end" sideOffset={6} className="w-52 rounded-2xl p-1.5">
                                 <DropdownMenuItem asChild data-testid={`button-view-invoice-${invoice.id}`}><Link href={invoiceHref(invoice)} className="cursor-pointer rounded-xl"><Eye className="mr-2 h-4 w-4" />View invoice</Link></DropdownMenuItem>
                                 {invoice.status !== "paid" && <>
+                                  <DropdownMenuItem asChild data-testid={`button-edit-invoice-${invoice.id}`}><Link href={invoice.status === "draft" ? `/invoices/new?draft=${invoice.id}` : `/invoices/${invoice.id}?edit=1`} className="cursor-pointer rounded-xl"><Pencil className="mr-2 h-4 w-4" />Edit invoice</Link></DropdownMenuItem>
                                   <DropdownMenuItem onSelect={() => sendMutation.mutate(invoice.id)} disabled={sendMutation.isPending} data-testid={`button-send-invoice-${invoice.id}`} className="rounded-xl"><Mail className="mr-2 h-4 w-4" />Send to client</DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem onSelect={() => { setQuickPayInvoice(invoice); setPaymentMethod("cash"); setPaymentDate(format(new Date(), "yyyy-MM-dd")); }} data-testid={`button-mark-paid-${invoice.id}`} className="rounded-xl"><Check className="mr-2 h-4 w-4" />Mark as paid</DropdownMenuItem>

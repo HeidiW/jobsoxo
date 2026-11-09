@@ -105,6 +105,14 @@ function validWorksheetPeriod(periodStart: Date, periodEnd: Date): boolean {
   return periodStart.getTime() <= periodEnd.getTime();
 }
 
+// An invoice is paid only when money has actually come in and covers the
+// total. A $0 balance with nothing paid (an empty or $0 draft) is not paid;
+// an invoice wrongly left "paid" with no payments goes back to draft.
+export function statusForBalance(current: string, balance: number, amountPaid: number): string {
+  if (amountPaid > 0) return balance <= 0 ? "paid" : current === "paid" ? "partial" : current;
+  return current === "paid" || current === "partial" ? "draft" : current;
+}
+
 async function recalcInvoiceTotals(invoiceId: string): Promise<void> {
   const invoice = await storage.getInvoice(invoiceId);
   if (!invoice) return;
@@ -121,10 +129,7 @@ async function recalcInvoiceTotals(invoiceId: string): Promise<void> {
   const newTotal = newSubtotal + newTax;
   const alreadyPaid = Number(invoice.amountPaid) || 0;
   const newBalance = newTotal - alreadyPaid;
-  const currentStatus = invoice.status;
-  let newStatus = currentStatus;
-  if (newBalance <= 0 && currentStatus !== "paid") newStatus = "paid";
-  else if (newBalance > 0 && currentStatus === "paid") newStatus = "partial";
+  const newStatus = statusForBalance(invoice.status, newBalance, alreadyPaid);
   await storage.updateInvoice(invoiceId, {
     subtotal: String(newSubtotal),
     taxAmount: String(newTax),
@@ -1336,7 +1341,7 @@ export async function registerRoutes(
         taxAmount: String(newTax),
         total: String(newTotal),
         balance: String(newBalance),
-        status: newBalance <= 0 ? "paid" : invoice.status === "paid" ? "partial" : invoice.status,
+        status: statusForBalance(invoice.status, newBalance, alreadyPaid),
       });
 
       res.status(201).json(newItem);
@@ -1984,7 +1989,7 @@ export async function registerRoutes(
       await storage.updateInvoice(req.params.id, {
         amountPaid: String(newAmountPaid),
         balance: String(newBalance),
-        status: newBalance <= 0 ? "paid" : "partial",
+        status: statusForBalance(invoice.status === "paid" ? "paid" : "partial", newBalance, newAmountPaid),
       });
 
       res.status(201).json(payment);

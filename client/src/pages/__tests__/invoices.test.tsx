@@ -104,6 +104,7 @@ describe("Invoices list redesign", () => {
     mount(); await actions();
     expect(navigate).not.toHaveBeenCalled();
     expect(screen.getByTestId("button-view-invoice-sent")).toHaveAttribute("href", "/invoices/sent");
+    expect(screen.getByTestId("button-edit-invoice-sent")).toHaveAttribute("href", "/invoices/sent?edit=1");
     expect(screen.getByTestId("button-download-invoice-sent")).toHaveAttribute("href", "/invoices/sent?autoDownload=1");
     expect(screen.getByTestId("button-record-payment-sent")).toHaveAttribute("href", "/invoices/sent/payment");
     await userEvent.click(screen.getByTestId("button-send-invoice-sent"));
@@ -145,6 +146,7 @@ describe("Invoices list redesign", () => {
     mount(); await actions("paid");
     expect(screen.queryByTestId("button-send-invoice-paid")).not.toBeInTheDocument();
     expect(screen.queryByTestId("button-mark-paid-paid")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("button-edit-invoice-paid")).not.toBeInTheDocument();
     await userEvent.click(screen.getByTestId("button-delete-invoice-paid"));
     expect(screen.getByRole("alertdialog")).toHaveTextContent("all its line items");
     await userEvent.click(screen.getByTestId("button-cancel-delete-invoice"));

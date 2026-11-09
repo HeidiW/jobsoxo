@@ -1284,6 +1284,15 @@ export default function InvoiceDetail() {
     }
   };
 
+  // "Edit invoice" from the list lands here with ?edit=1. Drafts belong in
+  // the builder, so send them there instead.
+  useEffect(() => {
+    if (!invoice || new URLSearchParams(window.location.search).get("edit") !== "1") return;
+    if (invoice.status === "draft") setLocation(`/invoices/new?draft=${invoice.id}`, { replace: true });
+    else if (invoice.status !== "paid") setEditMode(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoice?.id]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("autoDownload") === "1" && invoice) {
@@ -1353,6 +1362,11 @@ export default function InvoiceDetail() {
                 <Pencil className="h-4 w-4 mr-2" />
                 Edit
               </Button>
+            )}
+            {!canEdit && (
+              <span className="self-center text-xs text-muted-foreground" data-testid="text-paid-locked">
+                Paid invoices are locked so the payment record stays accurate.
+              </span>
             )}
             {editMode && (
               <Button

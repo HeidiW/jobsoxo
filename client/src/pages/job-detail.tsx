@@ -365,7 +365,7 @@ export default function JobDetail() {
                 {invoices.length === 0 ? <div className="rounded-2xl bg-card/75 px-4 py-5 text-center">
                   <p className="text-sm font-semibold text-jx-ink">No invoices yet</p><p className="mt-1 text-xs text-jx-ink-2">Create one to bill this job or add change orders.</p>
                 </div> : invoices.map((invoice) => <div key={invoice.id} className="flex items-center gap-2 rounded-2xl bg-card px-3 py-3">
-                  <Link href={`/invoices/${invoice.id}`} className="min-w-0 flex-1 rounded-lg text-jx-ink hover:text-jx-green-ink" data-testid={`button-view-invoice-${invoice.id}`}>
+                  <Link href={invoice.status === "draft" ? `/invoices/new?draft=${invoice.id}` : `/invoices/${invoice.id}`} className="min-w-0 flex-1 rounded-lg text-jx-ink hover:text-jx-green-ink" data-testid={`button-view-invoice-${invoice.id}`}>
                     <span className="block truncate font-mono text-sm font-semibold">{invoice.invoiceNumber}</span>
                     <span className="mt-0.5 block text-xs text-jx-ink-2">{formatScheduleDate(invoice.issueDate)} · <span className="font-mono">{money(invoice.total)}</span></span>
                     <span className="mt-1 block text-xs text-jx-ink-2">Due {formatScheduleDate(invoice.dueDate)}</span>
