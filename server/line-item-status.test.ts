@@ -41,6 +41,21 @@ describe("line item work status", () => {
     expect(detail.body.total).toBe("100.00");
   });
 
+  it("accepts a status when the invoice is created and reports progress on the list", async () => {
+    const client = await storage.createClient({ name: "Progress Co" });
+    const created = await request(app).post("/api/invoices").send({
+      clientId: client.id, dueDate: "2026-12-01", taxRate: "0",
+      lineItems: [
+        { category: "labor", description: "Done already", quantity: 1, unit: "lump", rate: 50, status: "completed" },
+        { category: "labor", description: "Not started", quantity: 1, unit: "lump", rate: 50 },
+      ],
+    }).expect(201);
+
+    const list = await request(app).get("/api/invoices").expect(200);
+    const row = list.body.find((invoice: any) => invoice.id === created.body.id);
+    expect(row.workProgress).toEqual({ pending: 1, in_progress: 0, completed: 1, total: 2 });
+  });
+
   it("rejects a status it doesn't know", async () => {
     const item = await invoiceWithItem();
     await request(app).patch(`/api/line-items/${item.id}`).send({ status: "done" }).expect(400);

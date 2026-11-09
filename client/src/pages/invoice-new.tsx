@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { clientEmailOptions } from "@shared/client-emails";
+import { LINE_ITEM_STATUSES, LINE_ITEM_STATUS_LABELS, type LineItemStatus } from "@shared/line-item-status";
 import { InvoiceRecipients } from "@/components/invoices/invoice-recipients";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
@@ -102,6 +103,8 @@ interface NewLineItem extends Omit<LineItemFormValues, "quantity" | "rate" | "am
   refs?: string;
   section?: string;
   hasQty?: boolean;
+  /** Work status; new items start pending. */
+  status?: LineItemStatus;
 }
 
 // ── Shared style helpers ─────────────────────────────────────────────────────
@@ -613,7 +616,7 @@ export default function InvoiceNew() {
   const addItemToSection = (sec: string) =>
     setLineItems(prev => [...prev, {
       id: crypto.randomUUID(), description: "", refs: "", quantity: 1, unit: "lump",
-      rate: 0, amount: 0, category: "labor" as const, section: sec || undefined, hasQty: true,
+      rate: 0, amount: 0, category: "labor" as const, section: sec || undefined, hasQty: true, status: "pending",
     }]);
 
   const renameSection = (oldSec: string, newSec: string) =>
@@ -1019,6 +1022,16 @@ export default function InvoiceNew() {
                                           style={{ flex: 1, padding: "8px 10px", border: "1px solid #cbd5e1", borderRadius: "7px", fontSize: "13.5px", fontWeight: 600, color: "#0f172a", background: "#fff", fontFamily: "inherit" }}
                                           data-testid={`input-item-desc-${item.id}`}
                                         />
+                                        <select
+                                          value={item.status ?? "pending"}
+                                          onChange={e => updateItem(item.id, { status: e.target.value as LineItemStatus })}
+                                          aria-label="Work status"
+                                          title="Work status — for your team, not printed on the invoice"
+                                          style={{ height: "32px", padding: "0 8px", border: "1px solid #cbd5e1", borderRadius: "7px", fontSize: "12px", fontWeight: 600, background: "#fff", color: "#475569", fontFamily: "inherit" }}
+                                          data-testid={`select-item-status-${item.id}`}
+                                        >
+                                          {LINE_ITEM_STATUSES.map(value => <option key={value} value={value}>{LINE_ITEM_STATUS_LABELS[value]}</option>)}
+                                        </select>
                                         <button type="button" onClick={() => removeItem(item.id)}
                                           style={{ border: "1px solid #e2e8f0", background: "#fff", color: "#94a3b8", cursor: "pointer", width: "32px", height: "32px", borderRadius: "7px", fontSize: "18px", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}
                                           data-testid={`button-remove-item-${item.id}`}

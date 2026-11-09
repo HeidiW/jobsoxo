@@ -333,7 +333,12 @@ export default function Invoices() {
                           className="group mb-2 grid min-h-[76px] cursor-pointer grid-cols-[140px_minmax(190px,1fr)_minmax(170px,1fr)_120px_120px_130px_130px_130px_48px] items-center gap-3 rounded-2xl border-2 border-transparent bg-card px-[18px] py-3 transition-colors hover:border-jx-green focus-visible:border-jx-green focus-visible:outline-none motion-reduce:transition-none"
                           data-testid={`row-invoice-${invoice.id}`}>
                           <div className="min-w-0"><Link href={`/invoices/${invoice.id}`} onClick={(event: MouseEvent<HTMLAnchorElement>) => event.stopPropagation()}
-                            className="truncate font-mono text-[13px] font-semibold text-jx-green-ink hover:underline" data-testid={`link-invoice-${invoice.id}`}>{invoice.invoiceNumber}</Link></div>
+                            className="truncate font-mono text-[13px] font-semibold text-jx-green-ink hover:underline" data-testid={`link-invoice-${invoice.id}`}>{invoice.invoiceNumber}</Link>
+                            {invoice.workProgress && invoice.workProgress.total > 0 && (
+                              <span className={`mt-0.5 block text-[11px] ${invoice.workProgress.completed === invoice.workProgress.total ? "text-jx-green-ink" : "text-jx-ink-2"}`} data-testid={`work-progress-${invoice.id}`}>
+                                {invoice.workProgress.completed}/{invoice.workProgress.total} done{invoice.workProgress.in_progress ? ` · ${invoice.workProgress.in_progress} in progress` : ""}
+                              </span>
+                            )}</div>
                           <div className="truncate text-sm font-semibold text-jx-ink">{invoice.client?.name || "—"}</div>
                           <div className="truncate text-sm text-jx-ink-2">{invoice.job?.title || "—"}</div>
                           <span className="font-mono text-xs text-jx-ink-2">{dateLabel(invoice.issueDate)}</span>

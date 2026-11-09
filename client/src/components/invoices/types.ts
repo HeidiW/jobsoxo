@@ -4,6 +4,8 @@ export interface InvoiceWithRelations extends Invoice {
   client: Client;
   job?: Job;
   paymentDate?: Date;
+  /** Line item work status counts, from the list endpoint. */
+  workProgress?: { pending: number; in_progress: number; completed: number; total: number };
 }
 
 export interface CollectionsEntry {

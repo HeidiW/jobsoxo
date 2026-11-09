@@ -22,6 +22,7 @@ import { InvoiceStatusBadge, JobStatusBadge } from "@/components/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatScheduleDate } from "./scheduling-logic";
+import { lineItemProgressSummary } from "@shared/line-item-status";
 
 interface InvoiceWithItems extends Invoice { lineItems: LineItem[] }
 interface JobDetail extends Job {
@@ -369,6 +370,7 @@ export default function JobDetail() {
                     <span className="mt-0.5 block text-xs text-jx-ink-2">{formatScheduleDate(invoice.issueDate)} · <span className="font-mono">{money(invoice.total)}</span></span>
                     <span className="mt-1 block text-xs text-jx-ink-2">Due {formatScheduleDate(invoice.dueDate)}</span>
                     <span className="block text-xs text-jx-ink-2">Balance <span className="font-mono">{money(invoice.balance)}</span></span>
+                    {invoice.lineItems.length > 0 && <span className="block text-xs text-jx-ink-2" data-testid={`work-progress-${invoice.id}`}>Work: {lineItemProgressSummary(invoice.lineItems)}</span>}
                   </Link>
                   <InvoiceStatusBadge status={invoice.status} />
                   <Button variant="ghost" size="icon" aria-label={`Delete invoice ${invoice.invoiceNumber}`} className="h-9 w-9 shrink-0 rounded-full text-jx-ink-3 hover:text-destructive" onClick={() => setDeleteInvoiceId(invoice.id)} data-testid={`button-delete-invoice-${invoice.id}`}><Trash2 className="h-4 w-4" /></Button>

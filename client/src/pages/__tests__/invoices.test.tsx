@@ -19,6 +19,7 @@ const base = {
   balance: "1500.57", amountPaid: "0", issueDate: "2026-10-01", dueDate: "2026-11-30",
   client: { id: "client-1", name: "Northline Construction" },
   job: { id: "job-1", title: "Hotel restoration" }, paymentDate: null,
+  workProgress: { pending: 1, in_progress: 1, completed: 1, total: 3 },
 };
 const initialRecords = [
   base,
@@ -68,6 +69,7 @@ describe("Invoices list redesign", () => {
     expect(header.lastElementChild).toHaveClass("relative");
     expect(row).toHaveTextContent("Northline Construction");
     expect(row).toHaveTextContent("Hotel restoration");
+    expect(within(row).getByTestId("work-progress-sent")).toHaveTextContent("1/3 done · 1 in progress");
     expect(within(row).getAllByText("$1,500.57")).toHaveLength(2);
     expect(screen.getByTestId("stat-outstanding")).toHaveTextContent("$2,650.57");
     expect(screen.getByTestId("stat-overdue")).toHaveTextContent("$900.00");

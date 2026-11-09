@@ -3,6 +3,7 @@ import { createLinkToken, exchangePublicToken, getAccountInfo, getBalance, getTr
 import { seedDemoData } from "./seed";
 import { calendarDay } from "./business-time";
 import { invoiceRecipients } from "@shared/client-emails";
+import { LINE_ITEM_STATUSES, lineItemProgress } from "@shared/line-item-status";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
 import { inviteEmployeeToGusto, removeEmployeeEverywhere, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } from "./gusto-employee-invite";
 import { GustoConfigurationError, GustoProviderError } from "./gusto-client";
@@ -60,7 +61,7 @@ import {
   listGoogleDocs,
   parseGoogleDocText,
 } from "./google-docs";
-import { eq, sql, desc } from "drizzle-orm";
+import { inArray, eq, sql, desc } from "drizzle-orm";
 import { registerGustoRoutes } from "./gusto-routes";
 
 function parseNumeric(value: unknown): number {
@@ -1344,11 +1345,17 @@ export async function registerRoutes(
   app.get("/api/invoices", async (req, res) => {
     try {
       const allInvoices = await storage.getInvoices();
+      // Work status per invoice, in one query rather than one per row.
+      const statuses = allInvoices.length
+        ? await db.select({ invoiceId: lineItems.invoiceId, status: lineItems.status }).from(lineItems)
+          .where(inArray(lineItems.invoiceId, allInvoices.map((invoice) => invoice.id)))
+        : [];
       const invoicesWithRelations = await Promise.all(
         allInvoices.map(async (invoice) => {
           const client = await storage.getClient(invoice.clientId);
           const job = invoice.jobId ? await storage.getJob(invoice.jobId) : null;
-          return { ...invoice, client, job };
+          const workProgress = lineItemProgress(statuses.filter((row) => row.invoiceId === invoice.id));
+          return { ...invoice, client, job, workProgress };
         })
       );
       res.json(invoicesWithRelations);
@@ -1441,6 +1448,7 @@ export async function registerRoutes(
         changeOrderReason: z.string().optional().nullable(),
         section: z.string().optional().nullable(),
         refs: z.string().optional().nullable(),
+        status: z.enum(LINE_ITEM_STATUSES).optional(),
       }).superRefine((item, ctx) => {
         if (item.amount !== undefined) {
           const qty = parseFloat(String(item.quantity));
@@ -1591,6 +1599,7 @@ export async function registerRoutes(
             changeOrderReason: item.changeOrderReason || null,
             section: item.section || null,
             refs: item.refs || null,
+            status: item.status ?? "pending",
             jobId: invoiceData.jobId || null,
             invoiceId: invoice.id,
           });

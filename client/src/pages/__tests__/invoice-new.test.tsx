@@ -162,6 +162,17 @@ describe("New invoice redesign", () => {
     expect(clientPatches).toHaveLength(0);
   });
 
+  it("gives new items a pending work status that can be changed before saving", async () => {
+    mount(); await ready(); await addItem();
+    const select = screen.getAllByTestId(/^select-item-status-/)[0] as HTMLSelectElement;
+    expect(select.value).toBe("pending");
+    fireEvent.change(select, { target: { value: "in_progress" } });
+
+    await userEvent.click(screen.getByTestId("button-save-draft"));
+    await waitFor(() => expect(creates()).toHaveLength(1));
+    expect(JSON.parse(creates()[0][1].body as string).lineItems[0].status).toBe("in_progress");
+  });
+
   it("preserves send=true, server field errors and the unsaved form on failure", async () => {
     rejectSave = true; mount(); await ready(); await addItem();
     await userEvent.click(screen.getByTestId("button-send-invoice"));
