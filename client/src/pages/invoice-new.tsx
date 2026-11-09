@@ -27,6 +27,8 @@ import { positiveNumericField } from "@/lib/positive-numeric-field";
 import { ArrowLeft, Plus, FileText, Save, Send, Search, Sparkles } from "lucide-react";
 import { InvoiceAssistantPanel } from "@/components/invoices/invoice-assistant";
 import type { InvoiceProposal, InvoiceSnapshot } from "@shared/invoice-assistant";
+import { ProofreadDialog, issueKey, type ProofreadDecision } from "@/components/invoices/proofread-dialog";
+import { applyIssue, tidyText, usableIssues, type ProofreadField, type ProofreadIssue } from "@shared/invoice-proofread";
 import { format, addDays } from "date-fns";
 import type { Client, Job, Settings } from "@shared/schema";
 import { Link } from "wouter";
@@ -802,7 +804,32 @@ export default function InvoiceNew() {
   const toggleSection = (sec: string) =>
     setSectionsOpen(prev => ({ ...prev, [sec]: !(prev[sec] !== false) }));
 
-  const onSubmit = (data: InvoiceFormValues, send = false) => {
+  // ── Proofread gate ───────────────────────────────────────────────────────
+  // Save and Send first tidy the wording mechanically, then ask the
+  // proofreader for exact fixes. Every issue is fixed or kept before the
+  // invoice goes out; words kept once aren't flagged again on this invoice.
+  const [proofread, setProofread] = useState<{ fields: ProofreadField[]; issues: ProofreadIssue[]; decisions: Record<string, ProofreadDecision>; send: boolean } | null>(null);
+  const [proofreading, setProofreading] = useState(false);
+  const keptWords = useRef<string[]>([]);
+
+  const tidyInvoiceText = (data: InvoiceFormValues) => {
+    const items = lineItems.map((item) => ({ ...item, description: tidyText(item.description), section: item.section ? tidyText(item.section) : item.section }));
+    if (items.some((item, i) => item.description !== lineItems[i].description || item.section !== lineItems[i].section)) setLineItems(items);
+    const notes = tidyText(data.notes ?? "");
+    const termsAndConditions = tidyText(data.termsAndConditions ?? "");
+    if (notes !== (data.notes ?? "")) form.setValue("notes", notes, { shouldDirty: true });
+    if (termsAndConditions !== (data.termsAndConditions ?? "")) form.setValue("termsAndConditions", termsAndConditions, { shouldDirty: true });
+    const sections = Array.from(new Set(items.map((item) => item.section).filter((sec): sec is string => !!sec)));
+    const fields: ProofreadField[] = [
+      ...sections.map((sec) => ({ id: `section:${sec}`, label: "Section name", text: sec })),
+      ...items.map((item) => ({ id: `item:${item.id}`, label: "Line item", text: item.description })),
+      { id: "notes", label: "Notes", text: notes },
+      { id: "terms", label: "Terms", text: termsAndConditions },
+    ];
+    return fields;
+  };
+
+  const onSubmit = async (data: InvoiceFormValues, send = false) => {
     if (lineItems.length === 0) {
       toast({ title: "No line items", description: "Add at least one line item to the invoice.", variant: "destructive" });
       return;
@@ -811,7 +838,61 @@ export default function InvoiceNew() {
       toast({ title: "No email recipients", description: "Tick at least one email address to send this invoice to.", variant: "destructive" });
       return;
     }
-    createInvoiceMutation.mutate({ formData: data, send });
+    const fields = tidyInvoiceText(data);
+    setProofreading(true);
+    let issues: ProofreadIssue[] = [];
+    try {
+      const res = await fetch("/api/invoices/proofread", {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ fields, ignore: keptWords.current }),
+      });
+      if (res.ok) {
+        issues = usableIssues((await res.json()).issues ?? [], fields, keptWords.current);
+      } else if (res.status !== 503) {
+        // Not configured (503) means no checker; anything else is a hiccup
+        // that shouldn't stop an invoice going out.
+        const body = await res.json().catch(() => ({}));
+        toast({ title: "Couldn't check the wording", description: `${body.error || "The proofreader hit a problem."} Continuing without the check.` });
+      }
+    } catch {
+      toast({ title: "Couldn't check the wording", description: "Continuing without the check." });
+    } finally {
+      setProofreading(false);
+    }
+    if (issues.length === 0) {
+      createInvoiceMutation.mutate({ formData: form.getValues(), send });
+      return;
+    }
+    setProofread({ fields, issues, decisions: {}, send });
+  };
+
+  const fixIssue = (issue: ProofreadIssue) => {
+    const [kind, ...rest] = issue.fieldId.split(":");
+    const target = rest.join(":");
+    if (kind === "item") setLineItems((prev) => prev.map((item) => item.id === target ? { ...item, description: applyIssue(item.description, issue) } : item));
+    else if (kind === "section") renameSection(target, applyIssue(target, issue));
+    else if (issue.fieldId === "notes") form.setValue("notes", applyIssue(form.getValues("notes") ?? "", issue), { shouldDirty: true });
+    else if (issue.fieldId === "terms") form.setValue("termsAndConditions", applyIssue(form.getValues("termsAndConditions") ?? "", issue), { shouldDirty: true });
+    setProofread((prev) => prev && {
+      ...prev,
+      // A renamed section gets a new id; keep its other issues reachable.
+      fields: prev.fields.map((field) => field.id === issue.fieldId ? { ...field, text: applyIssue(field.text, issue) } : field),
+      decisions: { ...prev.decisions, [issueKey(issue)]: "fixed" },
+    });
+  };
+  const keepIssue = (issue: ProofreadIssue) => {
+    keptWords.current = [...keptWords.current, issue.original];
+    setProofread((prev) => prev && { ...prev, decisions: { ...prev.decisions, [issueKey(issue)]: "kept" } });
+  };
+  const fixAllIssues = () => {
+    if (!proofread) return;
+    for (const issue of proofread.issues) if (!proofread.decisions[issueKey(issue)]) fixIssue(issue);
+  };
+  const continueAfterProofread = () => {
+    if (!proofread) return;
+    const { send } = proofread;
+    setProofread(null);
+    createInvoiceMutation.mutate({ formData: form.getValues(), send });
   };
 
   const showDetails = viewMode !== "tabbed" || activeTab === "details";
@@ -852,27 +933,41 @@ export default function InvoiceNew() {
           </span>
           <button
             onClick={form.handleSubmit((d) => onSubmit(d, false))}
-            disabled={createInvoiceMutation.isPending}
+            disabled={createInvoiceMutation.isPending || proofreading}
             type="button"
             className="invoice-secondary-action"
             data-testid="button-save-draft"
           >
             <Save aria-hidden="true" size={16} />
-            Save draft
+            {proofreading ? "Checking…" : "Save draft"}
           </button>
           <button
             onClick={form.handleSubmit((d) => onSubmit(d, true))}
-            disabled={createInvoiceMutation.isPending}
+            disabled={createInvoiceMutation.isPending || proofreading}
             type="button"
             className="invoice-primary-action"
             data-testid="button-send-invoice"
           >
             <Send aria-hidden="true" size={16} />
-            SEND INVOICE
+            {proofreading ? "CHECKING…" : "SEND INVOICE"}
           </button>
         </div>
       </header>
 
+      {proofread && (
+        <ProofreadDialog
+          open
+          fields={proofread.fields}
+          issues={proofread.issues}
+          decisions={proofread.decisions}
+          continueLabel={proofread.send ? "Send invoice" : "Save draft"}
+          onFix={fixIssue}
+          onKeep={keepIssue}
+          onFixAll={fixAllIssues}
+          onContinue={continueAfterProofread}
+          onCancel={() => setProofread(null)}
+        />
+      )}
       <InvoiceAssistantPanel open={assistantOpen} onClose={() => setAssistantOpen(false)} snapshot={assistantSnapshot} onApply={applyAssistantProposal} />
 
       {/* ── Document import strip ── */}
@@ -1136,7 +1231,7 @@ export default function InvoiceNew() {
                     <FormField control={form.control} name="notes" render={({ field }) => (
                       <FormItem>
                         <FormControl>
-                          <textarea {...field} spellCheck={true} rows={2} placeholder="Summary line shown at the top of the invoice" style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} data-testid="input-invoice-notes" />
+                          <textarea {...field} onBlur={(e) => { field.onChange(tidyText(e.target.value)); field.onBlur(); }} spellCheck={true} rows={2} placeholder="Summary line shown at the top of the invoice" style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} data-testid="input-invoice-notes" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1203,6 +1298,8 @@ export default function InvoiceNew() {
                                         <input
                                           value={item.description}
                                           onChange={e => updateItem(item.id, { description: e.target.value })}
+                                          onBlur={e => { const tidy = tidyText(e.target.value); if (tidy !== e.target.value) updateItem(item.id, { description: tidy }); }}
+                                          spellCheck={true}
                                           placeholder="Description of work"
                                           style={{ flex: 1, padding: "8px 10px", border: "1px solid #cbd5e1", borderRadius: "7px", fontSize: "13.5px", fontWeight: 600, color: "#0f172a", background: "#fff", fontFamily: "inherit" }}
                                           data-testid={`input-item-desc-${item.id}`}
@@ -1350,7 +1447,7 @@ export default function InvoiceNew() {
                     <FormField control={form.control} name="termsAndConditions" render={({ field }) => (
                       <FormItem>
                         <FormControl>
-                          <textarea {...field} spellCheck={true} rows={3} placeholder="Payment terms and conditions" style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5, fontSize: "13px", color: "#475569", background: "#f8fafc" }} data-testid="input-invoice-terms" />
+                          <textarea {...field} onBlur={(e) => { field.onChange(tidyText(e.target.value)); field.onBlur(); }} spellCheck={true} rows={3} placeholder="Payment terms and conditions" style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5, fontSize: "13px", color: "#475569", background: "#f8fafc" }} data-testid="input-invoice-terms" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

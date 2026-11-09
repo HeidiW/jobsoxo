@@ -7,6 +7,8 @@ import { LINE_ITEM_STATUSES, lineItemProgress } from "@shared/line-item-status";
 import { invoicePrefixFromCompanyName, isDerivedInvoicePrefix } from "@shared/invoice-prefix";
 import { invoiceAssistantRequestSchema } from "@shared/invoice-assistant";
 import { assistantErrorMessage, invoiceAssistantConfigured, runAssistantTurn, startEventStream } from "./invoice-assistant";
+import { proofreadRequestSchema } from "@shared/invoice-proofread";
+import { proofreadErrorMessage, proofreadFields } from "./invoice-proofread";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
 import { inviteEmployeeToGusto, removeEmployeeEverywhere, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } from "./gusto-employee-invite";
 import { GustoConfigurationError, GustoProviderError } from "./gusto-client";
@@ -3655,6 +3657,24 @@ export async function registerRoutes(
       }
     } finally {
       events.end();
+    }
+  });
+
+  // Proofread invoice wording before it is saved or sent. 503 when no key is
+  // configured so the builder can fall back to its mechanical tidy-up.
+  app.post("/api/invoices/proofread", requireAuth, async (req, res) => {
+    if (!invoiceAssistantConfigured()) {
+      return res.status(503).json({ error: "The proofreader isn't set up on this server yet." });
+    }
+    const parsed = proofreadRequestSchema.safeParse(req.body);
+    if (!parsed.success) return badRequest(res, parsed.error);
+    try {
+      const settings = await storage.getSettings();
+      const issues = await proofreadFields(parsed.data.fields, parsed.data.ignore, settings);
+      res.json({ issues });
+    } catch (error) {
+      console.error("Invoice proofread error:", error);
+      res.status(502).json({ error: proofreadErrorMessage(error) });
     }
   });
 

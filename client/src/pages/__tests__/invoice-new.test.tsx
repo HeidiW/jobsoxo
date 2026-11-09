@@ -37,6 +37,8 @@ let fetchMock: ReturnType<typeof vi.fn>;
 let failures: Set<string>;
 let googleConnected: boolean;
 let rejectSave: boolean;
+let proofreadCalls: Array<Record<string, any>> = [];
+let proofreadResponse: () => Response = () => Response.json({ error: "not set up" }, { status: 503 });
 let draftPuts: Array<Record<string, unknown>>;
 let sends: number;
 let clientRecord: Record<string, unknown>;
@@ -93,6 +95,10 @@ describe("New invoice redesign", () => {
         sends += 1;
         return Response.json({ id: "new-invoice", status: "sent" });
       }
+      if (path === "/api/invoices/proofread" && init?.method === "POST") {
+        proofreadCalls.push(JSON.parse(String(init.body)));
+        return proofreadResponse();
+      }
       if (path === "/api/invoices" && init?.method === "POST") {
         return rejectSave
           ? Response.json({ error: "Check invoice", details: { dueDate: ["Due date needs correction"] } }, { status: 400 })
@@ -101,6 +107,8 @@ describe("New invoice redesign", () => {
       return Response.json({ error: "Not found" }, { status: 404 });
     });
     vi.stubGlobal("fetch", fetchMock);
+    proofreadCalls = [];
+    proofreadResponse = () => Response.json({ error: "not set up" }, { status: 503 });
   });
   afterEach(() => { queryClient.clear(); vi.unstubAllGlobals(); });
 
@@ -310,5 +318,74 @@ describe("New invoice redesign", () => {
     expect(screen.getAllByText("$250.00").length).toBeGreaterThan(0);
     expect(screen.getByText(/Preview only.*payment isn.t active/)).toBeInTheDocument();
     expect(creates()).toHaveLength(0);
+  });
+
+  it("tidies wording when a field is left", async () => {
+    mount(); await ready(); await addItem();
+    const desc = screen.getAllByTestId(/^input-item-desc-/)[0];
+    fireEvent.change(desc, { target: { value: "  prep walls ,two coats   eggshell" } });
+    fireEvent.blur(desc);
+    expect(desc).toHaveValue("Prep walls, two coats eggshell");
+    const notes = screen.getByTestId("input-invoice-notes");
+    fireEvent.change(notes, { target: { value: "thanks for your business!!" } });
+    fireEvent.blur(notes);
+    expect(notes).toHaveValue("Thanks for your business!");
+  });
+
+  it("proofreads before saving and only continues once every issue is fixed or kept", async () => {
+    proofreadResponse = () => {
+      const sent = proofreadCalls[proofreadCalls.length - 1].fields as Array<{ id: string; text: string }>;
+      const item = sent.find((field) => field.id.startsWith("item:"))!;
+      return Response.json({ issues: [
+        { fieldId: item.id, kind: "spelling", original: "wals", replacement: "walls", note: "Misspelled" },
+        { fieldId: "notes", kind: "spelling", original: "Sherwin-Wiliams", replacement: "Sherwin-Williams", note: "Brand name" },
+      ] });
+    };
+    mount(); await ready(); await addItem();
+    fireEvent.change(screen.getAllByTestId(/^input-item-desc-/)[0], { target: { value: "finish plaster wals ,two coats" } });
+    fireEvent.change(screen.getByTestId("input-invoice-notes"), { target: { value: "Paint by Sherwin-Wiliams" } });
+    await userEvent.click(screen.getByTestId("button-save-draft"));
+
+    const dialog = await screen.findByTestId("dialog-proofread");
+    expect(creates()).toHaveLength(0);
+    // Text was tidied before it was checked.
+    const checked = proofreadCalls[0].fields as Array<{ id: string; text: string }>;
+    expect(checked.find((field) => field.id.startsWith("item:"))!.text).toBe("Finish plaster wals, two coats");
+    expect(screen.getByTestId("button-proofread-continue")).toBeDisabled();
+
+    const itemId = checked.find((field) => field.id.startsWith("item:"))!.id;
+    await userEvent.click(screen.getByTestId(`button-fix-${itemId}`));
+    expect(screen.getAllByTestId(/^input-item-desc-/)[0]).toHaveValue("Finish plaster walls, two coats");
+    expect(screen.getByTestId("button-proofread-continue")).toBeDisabled();
+    await userEvent.click(screen.getByTestId("button-keep-notes"));
+    expect(dialog).toHaveTextContent("ready");
+    await userEvent.click(screen.getByTestId("button-proofread-continue"));
+
+    await waitFor(() => expect(creates()).toHaveLength(1));
+    const payload = JSON.parse(creates()[0][1].body as string);
+    expect(payload.lineItems[0].description).toBe("Finish plaster walls, two coats");
+    expect(payload.notes).toBe("Paint by Sherwin-Wiliams");
+    expect(screen.queryByTestId("dialog-proofread")).not.toBeInTheDocument();
+  });
+
+  it("remembers kept words and saves straight through when the proofreader finds nothing", async () => {
+    let calls = 0;
+    proofreadResponse = () => {
+      calls += 1;
+      return calls === 1
+        ? Response.json({ issues: [{ fieldId: "notes", kind: "spelling", original: "Wiliams", replacement: "Williams", note: "?" }] })
+        : Response.json({ issues: [] });
+    };
+    mount(); await ready(); await addItem();
+    fireEvent.change(screen.getByTestId("input-invoice-notes"), { target: { value: "Wiliams job" } });
+    await userEvent.click(screen.getByTestId("button-save-draft"));
+    await screen.findByTestId("dialog-proofread");
+    await userEvent.click(screen.getByTestId("button-keep-notes"));
+    await userEvent.click(screen.getByTestId("button-proofread-cancel"));
+    expect(creates()).toHaveLength(0);
+
+    await userEvent.click(screen.getByTestId("button-save-draft"));
+    await waitFor(() => expect(creates()).toHaveLength(1));
+    expect(proofreadCalls[1].ignore).toEqual(["Wiliams"]);
   });
 });
