@@ -651,8 +651,13 @@ export default function InvoiceNew() {
       const id = await persistDraft();
       if (!id) throw new Error("The draft couldn't be saved.");
       if (!data.send) return { id, invoiceNumber: draftNumber };
-      const res = await apiRequest("POST", `/api/invoices/${id}/send`);
-      return res.json();
+      try {
+        const res = await apiRequest("POST", `/api/invoices/${id}/send`);
+        return res.json();
+      } catch (error) {
+        // The invoice is saved; only the email failed. Say so and show the invoice.
+        return { id, invoiceNumber: draftNumber, emailError: error instanceof Error ? error.message : "The email couldn't be sent." };
+      }
     },
     onSuccess: (data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
@@ -662,7 +667,13 @@ export default function InvoiceNew() {
         import_source: importSource,
         item_count: lineItems.length,
       });
-      toast({ title: "Invoice created", description: `Invoice ${data.invoiceNumber} has been created.` });
+      if (vars.send && data.emailError) {
+        toast({ title: "Saved, but the email wasn't sent", description: data.emailError, variant: "destructive" });
+      } else if (vars.send) {
+        toast({ title: "Invoice emailed", description: `${data.invoiceNumber} is on its way. Delivery status shows on the invoice.` });
+      } else {
+        toast({ title: "Invoice saved", description: `Invoice ${data.invoiceNumber} has been saved as a draft.` });
+      }
       setLocation(`/invoices/${data.id}`);
     },
     onError: (error: Error) => {

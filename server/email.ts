@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { postToResend, recordDelivery } from "./email-delivery";
 import { invoiceRecipients } from "@shared/client-emails";
 import { db } from "./db";
 import { invoices, clients, jobs } from "@shared/schema";
@@ -126,27 +127,14 @@ export async function sendInvoiceEmail(
     const body = generateInvoiceEmailBody(invoice, client, settings, jobReferenceCodes);
 
     if (config.provider === "resend" && config.apiKey) {
-      const response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${config.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: config.fromEmail || fromHeader(settings?.companyName || "Invoicing"),
-          to: toEmails,
-          subject,
-          html: body,
-        }),
+      const result = await postToResend(config.apiKey, {
+        from: config.fromEmail || fromHeader(settings?.companyName || "Invoicing"),
+        to: toEmails,
+        subject,
+        html: body,
       });
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        console.error("[Email] Resend API error:", errorData);
-        return { success: false, error: `Email send failed: ${response.status}` };
-      }
-
-      return { success: true };
+      await recordDelivery({ invoiceId, kind: "invoice", recipients: toEmails, result });
+      return result.success ? { success: true } : { success: false, error: result.error };
     }
 
     console.log(`[Email] Email would be sent to ${toEmails.join(", ")} with subject: ${subject}`);
@@ -195,25 +183,14 @@ export async function sendPaymentReminder(
     const body = generateReminderEmailBody(invoice, client, reminderNumber, settings, tone?.body, paymentLink);
 
     if (config.apiKey && config.provider === "resend") {
-      const response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${config.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: config.fromEmail || fromHeader(settings?.companyName || "Invoicing"),
-          to: recipients,
-          subject,
-          html: body,
-        }),
+      const result = await postToResend(config.apiKey, {
+        from: config.fromEmail || fromHeader(settings?.companyName || "Invoicing"),
+        to: recipients,
+        subject,
+        html: body,
       });
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        console.error("[Reminder] Resend API error:", errorData);
-        return { success: false, error: `Reminder send failed: ${response.status}` };
-      }
+      await recordDelivery({ invoiceId: invoice.id, kind: "reminder", recipients, result });
+      if (!result.success) return { success: false, error: result.error };
     } else {
       console.log(`[Reminder] Would send reminder ${reminderNumber} for invoice ${invoice.invoiceNumber} to ${recipients.join(", ")}`);
     }
@@ -789,27 +766,14 @@ export async function sendChangeOrderEmail(
     const subject = `Change Order — ${invoice.invoiceNumber} | ${companyName}`;
 
     if (config.provider === "resend" && config.apiKey) {
-      const response = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${config.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: config.fromEmail || fromHeader(companyName),
-          to: toEmails,
-          subject,
-          html,
-        }),
+      const result = await postToResend(config.apiKey, {
+        from: config.fromEmail || fromHeader(companyName),
+        to: toEmails,
+        subject,
+        html,
       });
-
-      if (!response.ok) {
-        const err = await response.text();
-        console.error("[ChangeOrder] Resend error:", err);
-        return { success: false, error: `Email failed: ${response.status}` };
-      }
-
-      return { success: true };
+      await recordDelivery({ invoiceId, kind: "change_order", recipients: toEmails, result });
+      return result.success ? { success: true } : { success: false, error: result.error };
     }
 
     console.log(`[ChangeOrder] Would send to ${toEmails.join(", ")}: ${subject}`);

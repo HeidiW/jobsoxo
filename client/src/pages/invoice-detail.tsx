@@ -23,6 +23,7 @@ import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { invoiceRecipients } from "@shared/client-emails";
 import { InvoiceRecipients } from "@/components/invoices/invoice-recipients";
+import { EmailDeliveryPanel } from "@/components/invoices/email-delivery-panel";
 import { LineItemProgress } from "@/components/invoices/line-item-progress";
 import { formatPhone } from "@/lib/formatPhone";
 import {
@@ -1209,10 +1210,11 @@ export default function InvoiceDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", id] });
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      toast({ title: "Invoice sent", description: "The invoice has been sent to the client." });
+      toast({ title: "Invoice emailed", description: "Delivery status shows under Email delivery and updates once the client's mail server confirms." });
     },
     onError: (err: Error) => {
-      toast({ title: "Error sending invoice", description: err.message, variant: "destructive" });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices", id, "deliveries"] });
+      toast({ title: "The invoice wasn't sent", description: err.message, variant: "destructive" });
     },
   });
 
@@ -1676,6 +1678,7 @@ export default function InvoiceDetail() {
         <LineItemProgress invoiceId={invoice.id} items={invoice.lineItems ?? []} />
 
         {/* ── Recipients ── */}
+        <EmailDeliveryPanel invoiceId={invoice.id} />
         <SendsToPanel invoice={invoice} />
 
         {/* ── Change Orders panel ── */}

@@ -88,6 +88,8 @@ services:
         sync: false
       - key: EMAIL_FROM # Sender on a domain verified in Resend, e.g. noreply@jobsoxo.com
         sync: false
+      - key: RESEND_WEBHOOK_SECRET # Resend → Webhooks signing secret (whsec_...), endpoint <APP_URL>/api/webhooks/resend
+        sync: false
       - key: TWILIO_ACCOUNT_SID
         sync: false
       - key: TWILIO_AUTH_TOKEN

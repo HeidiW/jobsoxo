@@ -729,6 +729,27 @@ export const reminderLogs = pgTable("reminder_logs", {
   errorMessage: text("error_message"),
 });
 
+// Every client email about an invoice (the invoice itself, change orders,
+// reminders) and what Resend reported back, so people can see whether it
+// arrived and, if not, why.
+export const emailDeliveries = pgTable("email_deliveries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // invoice | change_order | reminder
+  recipients: jsonb("recipients").$type<string[]>().notNull(),
+  providerId: text("provider_id"), // Resend email id
+  status: text("status").notNull(), // sent | delayed | delivered | complained | bounced | failed | suppressed
+  detail: text("detail"), // plain-language reason shown to people
+  providerReason: text("provider_reason"), // raw reason from Resend, for support
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  lastCheckedAt: timestamp("last_checked_at"),
+}, (table) => [
+  index("email_deliveries_invoice_idx").on(table.invoiceId),
+  index("email_deliveries_provider_idx").on(table.providerId),
+]);
+export type EmailDelivery = typeof emailDeliveries.$inferSelect;
+
 export const insertReminderLogSchema = createInsertSchema(reminderLogs).omit({ id: true, sentAt: true });
 export type InsertReminderLog = z.infer<typeof insertReminderLogSchema>;
 export type ReminderLog = typeof reminderLogs.$inferSelect;

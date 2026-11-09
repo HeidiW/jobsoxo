@@ -6,6 +6,8 @@ export interface InvoiceWithRelations extends Invoice {
   paymentDate?: Date;
   /** Line item work status counts, from the list endpoint. */
   workProgress?: { pending: number; in_progress: number; completed: number; total: number };
+  /** Latest client email about this invoice and what happened to it. */
+  lastEmail?: { kind: string; status: string; detail: string | null; createdAt: string } | null;
 }
 
 export interface CollectionsEntry {

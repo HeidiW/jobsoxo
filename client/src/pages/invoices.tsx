@@ -1,4 +1,5 @@
 import { useMemo, useState, type MouseEvent } from "react";
+import { DELIVERY_LABELS, PROBLEM_STATUSES, type DeliveryStatus } from "@shared/email-delivery";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
@@ -18,7 +19,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { trackEvent } from "@/lib/analytics";
 import {
   Banknote, Building2, Check, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert,
-  CreditCard, Download, Eye, FileText, Landmark, Mail, MoreHorizontal, Pencil, Plus,
+  CreditCard, Download, Eye, FileText, Landmark, Mail, MailX, MoreHorizontal, Pencil, Plus,
   RefreshCw, Search, Trash2, X,
 } from "lucide-react";
 import { CollectionsView } from "@/components/invoices/CollectionsView";
@@ -83,9 +84,12 @@ export default function Invoices() {
     mutationFn: async (id: string) => (await apiRequest("POST", `/api/invoices/${id}/send`)).json(),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      toast({ title: "Invoice sent", description: "The invoice has been sent to the client." });
+      toast({ title: "Invoice emailed", description: "Open the invoice to see when it's delivered." });
     },
-    onError: (error: Error) => toast({ title: "Error sending invoice", description: error.message, variant: "destructive" }),
+    onError: (error: Error) => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      toast({ title: "The invoice wasn't sent", description: error.message, variant: "destructive" });
+    },
   });
   const paidMutation = useMutation({
     mutationFn: async ({ id, method, date }: { id: string; method: string; date: string }) =>
@@ -340,6 +344,11 @@ export default function Invoices() {
                             {invoice.workProgress && invoice.workProgress.total > 0 && (
                               <span className={`mt-0.5 block text-[11px] ${invoice.workProgress.completed === invoice.workProgress.total ? "text-jx-green-ink" : "text-jx-ink-2"}`} data-testid={`work-progress-${invoice.id}`}>
                                 {invoice.workProgress.completed}/{invoice.workProgress.total} done{invoice.workProgress.in_progress ? ` · ${invoice.workProgress.in_progress} in progress` : ""}
+                              </span>
+                            )}
+                            {invoice.lastEmail && (PROBLEM_STATUSES as readonly string[]).includes(invoice.lastEmail.status) && (
+                              <span className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-red-700" title={invoice.lastEmail.detail ?? undefined} data-testid={`email-problem-${invoice.id}`}>
+                                <MailX className="h-3 w-3" aria-hidden="true" />Email {DELIVERY_LABELS[invoice.lastEmail.status as DeliveryStatus].toLowerCase()}
                               </span>
                             )}</div>
                           <div className="truncate text-sm font-semibold text-jx-ink">{invoice.client?.name || "—"}</div>

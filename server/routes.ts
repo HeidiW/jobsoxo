@@ -9,6 +9,7 @@ import { invoiceAssistantRequestSchema } from "@shared/invoice-assistant";
 import { assistantErrorMessage, invoiceAssistantConfigured, runAssistantTurn, startEventStream } from "./invoice-assistant";
 import { proofreadRequestSchema } from "@shared/invoice-proofread";
 import { proofreadErrorMessage, proofreadFields } from "./invoice-proofread";
+import { applyResendEvent, latestDeliveries, listDeliveries, refreshDeliveries, verifyResendSignature } from "./email-delivery";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
 import { inviteEmployeeToGusto, removeEmployeeEverywhere, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } from "./gusto-employee-invite";
 import { GustoConfigurationError, GustoProviderError } from "./gusto-client";
@@ -714,10 +715,28 @@ export async function registerRoutes(
     }
   });
 
+  // Resend reports what happened to each email (delivered, bounced, ...).
+  // Signed with RESEND_WEBHOOK_SECRET; no JobsOxo session.
+  app.post("/api/webhooks/resend", async (req, res) => {
+    const secret = process.env.RESEND_WEBHOOK_SECRET;
+    if (!secret) return res.status(503).json({ error: "Resend webhook secret is not configured" });
+    const valid = Buffer.isBuffer(req.rawBody) && verifyResendSignature(req.rawBody, {
+      id: req.get("svix-id"), timestamp: req.get("svix-timestamp"), signature: req.get("svix-signature"),
+    }, secret);
+    if (!valid) return res.status(401).json({ error: "Invalid webhook signature" });
+    try {
+      await applyResendEvent(req.body);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("Resend webhook error:", error);
+      res.status(500).json({ error: "Failed to process webhook" });
+    }
+  });
+
   // All routes below require authentication
   app.use("/api", (req, res, next) => {
-    // Gusto delivers signed provider webhooks without a JobsOxo session.
-    if (req.path === "/gusto/webhook") return next();
+    // Signed provider webhooks arrive without a JobsOxo session.
+    if (req.path === "/gusto/webhook" || req.path === "/webhooks/resend") return next();
     return requireAuth(req, res, next);
   });
 
@@ -1360,12 +1379,15 @@ export async function registerRoutes(
         ? await db.select({ invoiceId: lineItems.invoiceId, status: lineItems.status }).from(lineItems)
           .where(inArray(lineItems.invoiceId, allInvoices.map((invoice) => invoice.id)))
         : [];
+      const deliveries = await latestDeliveries(allInvoices.map((invoice) => invoice.id));
       const invoicesWithRelations = await Promise.all(
         allInvoices.map(async (invoice) => {
           const client = await storage.getClient(invoice.clientId);
           const job = invoice.jobId ? await storage.getJob(invoice.jobId) : null;
           const workProgress = lineItemProgress(statuses.filter((row) => row.invoiceId === invoice.id));
-          return { ...invoice, client, job, workProgress };
+          const latest = deliveries.get(invoice.id);
+          const lastEmail = latest ? { kind: latest.kind, status: latest.status, detail: latest.detail, createdAt: latest.createdAt } : null;
+          return { ...invoice, client, job, workProgress, lastEmail };
         })
       );
       res.json(invoicesWithRelations);
@@ -1395,6 +1417,18 @@ export async function registerRoutes(
       res.status(201).json(order);
     } catch (error) {
       res.status(500).json({ error: "Failed to create change order" });
+    }
+  });
+
+  // Every client email about this invoice and whether it arrived. Checks
+  // Resend for unfinished ones, so this works even without the webhook.
+  app.get("/api/invoices/:id/deliveries", async (req, res) => {
+    try {
+      await refreshDeliveries(req.params.id, process.env.RESEND_API_KEY);
+      res.json(await listDeliveries(req.params.id));
+    } catch (error) {
+      console.error("Get email deliveries error:", error);
+      res.status(500).json({ error: "Failed to get email deliveries" });
     }
   });
 

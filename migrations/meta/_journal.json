@@ -57,6 +57,13 @@
       "when": 1794192808201,
       "tag": "0007_repair_unpaid_paid_invoices",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794195427523,
+      "tag": "0008_email_deliveries",
+      "breakpoints": true
     }
   ]
 }
