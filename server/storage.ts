@@ -120,6 +120,7 @@ export interface IStorage {
   getJobMaterialTotal(jobId: string): Promise<string>;
   getJobMaterial(id: string): Promise<JobMaterial | undefined>;
   createJobMaterial(material: InsertJobMaterial): Promise<JobMaterial>;
+  createJobMaterials(materials: InsertJobMaterial[]): Promise<JobMaterial[]>;
   updateJobMaterial(id: string, material: Partial<InsertJobMaterial>): Promise<JobMaterial | undefined>;
   deleteJobMaterial(id: string): Promise<void>;
 
@@ -459,6 +460,12 @@ export class DatabaseStorage implements IStorage {
   async createJobMaterial(material: InsertJobMaterial): Promise<JobMaterial> {
     const [created] = await db.insert(jobMaterials).values(material).returning();
     return created;
+  }
+
+  /** Saves a batch (e.g. one scanned receipt) all or nothing. */
+  async createJobMaterials(materials: InsertJobMaterial[]): Promise<JobMaterial[]> {
+    if (materials.length === 0) return [];
+    return db.transaction(async (tx) => tx.insert(jobMaterials).values(materials).returning());
   }
 
   async updateJobMaterial(id: string, material: Partial<InsertJobMaterial>): Promise<JobMaterial | undefined> {

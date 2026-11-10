@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type { Client, Employee, Invoice, Job, JobDocument, JobMaterial, LineItem } from "@shared/schema";
 import JobForm from "@/components/job-form";
+import { ReceiptScanDialog } from "@/components/materials/receipt-scan-dialog";
 import { InvoiceStatusBadge, JobStatusBadge } from "@/components/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -105,6 +106,7 @@ export default function JobDetail() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [editOpen, setEditOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const [deleteInvoiceId, setDeleteInvoiceId] = useState<string | null>(null);
   const [deleteDocId, setDeleteDocId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -379,7 +381,12 @@ export default function JobDetail() {
             </Card>
 
             <Card className="rounded-3xl border-jx-line bg-jx-surface shadow-none">
-              <CardHeader className="px-5 pb-2 pt-5"><SectionTitle count={materialsError ? undefined : materialRows.length}>Materials</SectionTitle><p className="mt-1 text-sm text-jx-ink-2">Purchased for this job</p></CardHeader>
+              <CardHeader className="px-5 pb-2 pt-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div><SectionTitle count={materialsError ? undefined : materialRows.length}>Materials</SectionTitle><p className="mt-1 text-sm text-jx-ink-2">Purchased for this job</p></div>
+                  <Button type="button" variant="outline" size="sm" className="min-h-10 rounded-full border-2 border-jx-ink px-4 text-xs font-bold text-jx-ink" onClick={() => setScanOpen(true)} data-testid="button-scan-receipt">Scan receipt</Button>
+                </div>
+              </CardHeader>
               <CardContent className="space-y-2 px-5 pb-5">
                 {materialsLoading ? [0, 1].map((item) => <Skeleton key={item} className="h-12 rounded-xl" />) :
                   materialsError ? <p role="alert" className="rounded-2xl bg-jx-orange-tint px-4 py-4 text-sm text-jx-orange-ink">Materials couldn’t be loaded. Refresh the page to try again.</p> :
@@ -470,5 +477,6 @@ export default function JobDetail() {
         </Card>
       </div>
     </main>
+    <ReceiptScanDialog open={scanOpen} onOpenChange={setScanOpen} jobs={job ? [job] : []} defaultJobId={job?.id ?? ""} />
   </>;
 }

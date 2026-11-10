@@ -9,6 +9,8 @@ import { invoiceAssistantRequestSchema } from "@shared/invoice-assistant";
 import { assistantErrorMessage, invoiceAssistantConfigured, runAssistantTurn, startEventStream } from "./invoice-assistant";
 import { proofreadRequestSchema } from "@shared/invoice-proofread";
 import { proofreadErrorMessage, proofreadFields } from "./invoice-proofread";
+import { isReceiptMediaType, receiptScanErrorMessage, scanReceipt } from "./receipt-scan";
+import { RECEIPT_MAX_BYTES } from "@shared/receipt-scan";
 import { applyResendEvent, latestDeliveries, listDeliveries, refreshDeliveries, verifyResendSignature } from "./email-delivery";
 import { registerNotepadRoutes } from "./notepads";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
@@ -1188,6 +1190,57 @@ export async function registerRoutes(
   // Job Documents
   const multerDocLib = _require("multer") as typeof import("multer");
   const docUpload = multerDocLib({ storage: multerDocLib.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+  // Receipt scanning: Claude reads a photo or PDF of a receipt into proposed
+  // material lines; the browser shows them for review and saves the kept ones
+  // through /api/materials/bulk. Nothing is written during the scan.
+  app.get("/api/materials/scan-receipt/status", requireAuth, (_req, res) => {
+    res.json({ available: invoiceAssistantConfigured() });
+  });
+
+  const receiptUpload = multerDocLib({ storage: multerDocLib.memoryStorage(), limits: { fileSize: RECEIPT_MAX_BYTES, files: 1 } });
+  app.post("/api/materials/scan-receipt", requireAuth, (req, res) => {
+    if (!invoiceAssistantConfigured()) {
+      return res.status(503).json({ error: "Receipt scanning isn't set up on this server yet." });
+    }
+    receiptUpload.single("receipt")(req, res, async (err: unknown) => {
+      if (err) {
+        if ((err as { code?: string }).code === "LIMIT_FILE_SIZE") {
+          return res.status(413).json({ error: "That file is too large. Receipts must be under 10 MB." });
+        }
+        console.error("Receipt upload error:", err);
+        return res.status(400).json({ error: "The receipt couldn't be uploaded." });
+      }
+      if (!req.file) return res.status(400).json({ error: "Choose a photo or PDF of the receipt." });
+      if (!isReceiptMediaType(req.file.mimetype)) {
+        return res.status(415).json({ error: "Use a JPEG, PNG, WebP or GIF photo, or a PDF." });
+      }
+      try {
+        const settings = await storage.getSettings();
+        const scan = await scanReceipt({ data: req.file.buffer, mediaType: req.file.mimetype }, settings);
+        res.json(scan);
+      } catch (error) {
+        console.error("Receipt scan error:", error);
+        res.status(502).json({ error: receiptScanErrorMessage(error) });
+      }
+    });
+  });
+
+  app.post("/api/materials/bulk", async (req, res) => {
+    const parsed = z.object({ materials: z.array(insertJobMaterialSchema).min(1, "Pick at least one item to save").max(200) }).safeParse(req.body);
+    if (!parsed.success) return badRequest(res, parsed.error);
+    try {
+      const jobIds = [...new Set(parsed.data.materials.map((material) => material.jobId).filter((id): id is string => !!id))];
+      for (const jobId of jobIds) {
+        if (!(await storage.getJob(jobId))) return res.status(400).json({ error: "Job not found" });
+      }
+      const created = await storage.createJobMaterials(parsed.data.materials);
+      res.status(201).json(created);
+    } catch (error) {
+      console.error("Create materials error:", error);
+      res.status(500).json({ error: "Failed to save the materials" });
+    }
+  });
 
   app.get("/api/jobs/:id/documents", async (req, res) => {
     try {

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { AlertTriangle, Edit, Package, Plus, Search, Trash2 } from "lucide-react";
+import { AlertTriangle, Edit, Package, Plus, ScanLine, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MaterialFormDialog } from "@/components/materials/material-form-dialog";
+import { ReceiptScanDialog } from "@/components/materials/receipt-scan-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { trackEvent } from "@/lib/analytics";
@@ -42,6 +43,7 @@ export default function Materials() {
   const [jobFilter, setJobFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<MaterialWithJob | null>(null);
   const [deletingMaterial, setDeletingMaterial] = useState<MaterialWithJob | null>(null);
   const [deleteError, setDeleteError] = useState("");
@@ -87,9 +89,14 @@ export default function Materials() {
             {isLoading ? "Loading purchase totals…" : materialsError ? "Purchase totals are unavailable" : `${monthName} purchases across ${summary.jobs.length} ${summary.jobs.length === 1 ? "job" : "jobs"}${summary.unassigned.count ? " and unassigned purchases" : ""}`}
           </p>
         </div>
-        <Button type="button" onClick={openNew} className="min-h-12 rounded-full bg-jx-green px-6 text-xs font-bold tracking-[.08em] text-white hover:bg-jx-green-hover sm:px-7 sm:text-sm" data-testid="button-add-material">
-          <Plus className="mr-2 h-4 w-4" aria-hidden="true" /> LOG PURCHASE
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          <Button type="button" variant="outline" onClick={() => setScanOpen(true)} className="min-h-12 rounded-full border-2 border-jx-ink px-6 text-xs font-bold tracking-[.08em] text-jx-ink sm:px-7 sm:text-sm" data-testid="button-scan-receipt">
+            <ScanLine className="mr-2 h-4 w-4" aria-hidden="true" /> SCAN RECEIPT
+          </Button>
+          <Button type="button" onClick={openNew} className="min-h-12 rounded-full bg-jx-green px-6 text-xs font-bold tracking-[.08em] text-white hover:bg-jx-green-hover sm:px-7 sm:text-sm" data-testid="button-add-material">
+            <Plus className="mr-2 h-4 w-4" aria-hidden="true" /> LOG PURCHASE
+          </Button>
+        </div>
       </header>
 
       <section aria-label={`${monthName} purchase totals`} className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3" data-testid="materials-monthly-summary">
@@ -179,6 +186,7 @@ export default function Materials() {
       </section>
     </div>
 
+    <ReceiptScanDialog open={scanOpen} onOpenChange={setScanOpen} jobs={safeJobs} jobsLoading={jobsLoading} jobsError={jobsError} />
     <MaterialFormDialog key={editingMaterial?.id ?? "new"} open={dialogOpen} onOpenChange={closeForm} material={editingMaterial} jobs={safeJobs} jobsLoading={jobsLoading} jobsError={jobsError} jobsRetry={() => void retryJobs()} />
     <AlertDialog open={!!deletingMaterial} onOpenChange={(open) => { if (!open && !deleteMutation.isPending) { setDeletingMaterial(null); setDeleteError(""); } }}>
       <AlertDialogContent className="rounded-[26px] border-jx-line bg-card text-jx-ink">

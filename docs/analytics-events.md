@@ -19,7 +19,8 @@ invoice numbers, document content, account IDs, or financial amounts.
 | --- | --- | --- |
 | `job_saved` | `action`, `status` | A job was created or updated successfully |
 | `job_deleted` | None | A job was deleted successfully |
-| `material_saved` | `action` | A material was created or updated successfully |
+| `material_saved` | `action`, `count` | A material was created or updated successfully; `action: "scanned"` with `count` when saved from a receipt scan |
+| `receipt_scanned` | `items`, `isReceipt` | Claude read an uploaded receipt (before the person reviewed or saved anything) |
 | `material_deleted` | None | A material was deleted successfully |
 
 ## Account connections
