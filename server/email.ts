@@ -60,6 +60,16 @@ export function senderAddress(): string {
 }
 
 /** A From header with the given display name and the configured sender address. */
+/**
+ * Where a client's reply should go: the company email from Settings. Mail is
+ * sent from the verified (no-reply) domain, so without this a client hitting
+ * Reply would write to an address nobody reads.
+ */
+export function replyToFor(settings: { companyEmail?: string | null } | null | undefined): string | undefined {
+  const email = settings?.companyEmail?.trim();
+  return email && /^[^\s@<>",]+@[^\s@<>",]+\.[^\s@<>",]+$/.test(email) ? email : undefined;
+}
+
 export function fromHeader(displayName: string): string {
   const name = displayName.replace(/[<>"\r\n]/g, "").trim() || "JobsOxo";
   return `${name} <${senderAddress()}>`;
@@ -130,6 +140,7 @@ export async function sendInvoiceEmail(
       const result = await postToResend(config.apiKey, {
         from: config.fromEmail || fromHeader(settings?.companyName || "Invoicing"),
         to: toEmails,
+        reply_to: replyToFor(settings),
         subject,
         html: body,
       });
@@ -186,6 +197,7 @@ export async function sendPaymentReminder(
       const result = await postToResend(config.apiKey, {
         from: config.fromEmail || fromHeader(settings?.companyName || "Invoicing"),
         to: recipients,
+        reply_to: replyToFor(settings),
         subject,
         html: body,
       });
@@ -769,6 +781,7 @@ export async function sendChangeOrderEmail(
       const result = await postToResend(config.apiKey, {
         from: config.fromEmail || fromHeader(companyName),
         to: toEmails,
+        reply_to: replyToFor(settings),
         subject,
         html,
       });

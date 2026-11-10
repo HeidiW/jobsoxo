@@ -3,7 +3,7 @@ import request from "supertest";
 import type { Express } from "express";
 import { buildTestApp } from "./test-helpers";
 import { storage } from "./storage";
-import { sendPaymentReminder } from "./email";
+import { replyToFor, sendChangeOrderEmail, sendInvoiceEmail, sendPaymentReminder } from "./email";
 import { clientEmailOptions, dedupeEmails, invoiceRecipients } from "@shared/client-emails";
 
 const originalKey = process.env.RESEND_API_KEY;
@@ -109,5 +109,33 @@ describe("client and invoice email routes", () => {
 
     expect(result.success).toBe(true);
     expect(sent).toEqual([["ap@northline.test", "pm@northline.test"]]);
+  });
+
+  it("lets clients reply to the company email, not the no-reply sender", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "https://api.resend.com/emails") bodies.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ id: "email_1" }), { status: 200 });
+    }));
+    process.env.RESEND_API_KEY = "re_test";
+    const client = await storage.createClient({ name: "Reply Co", email: "ap@reply.example" });
+    const invoice = await makeInvoice(client.id, null);
+
+    await storage.updateSettings({ companyEmail: " office@conorfoy.example " });
+    await sendInvoiceEmail(invoice.id, ["ap@reply.example"], { apiKey: "re_test", provider: "resend" });
+    await sendChangeOrderEmail(invoice.id, ["ap@reply.example"], { apiKey: "re_test", provider: "resend" });
+    expect(bodies.map((body) => body.reply_to)).toEqual(["office@conorfoy.example", "office@conorfoy.example"]);
+
+    await storage.updateSettings({ companyEmail: "" });
+    await sendInvoiceEmail(invoice.id, ["ap@reply.example"], { apiKey: "re_test", provider: "resend" });
+    expect(bodies[2]).not.toHaveProperty("reply_to");
+  });
+
+  it("only uses a well-formed company email as the reply address", () => {
+    expect(replyToFor({ companyEmail: "office@conorfoy.example" })).toBe("office@conorfoy.example");
+    expect(replyToFor({ companyEmail: "  " })).toBeUndefined();
+    expect(replyToFor({ companyEmail: "not an email" })).toBeUndefined();
+    expect(replyToFor({ companyEmail: "Bad <x@y.com>" })).toBeUndefined();
+    expect(replyToFor(null)).toBeUndefined();
   });
 });
