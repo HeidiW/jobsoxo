@@ -855,6 +855,25 @@ describe("POST /api/payroll-records/run — zero-hour employee filtering", () =>
   });
 });
 
+describe("POST /api/payroll-records/run — gross estimate from the day rate", () => {
+  it("pays logged hours at the day rate divided by an 8-hour day, overtime at 1.5×", async () => {
+    const empRes = await request(app)
+      .post("/api/employees")
+      .send({ name: "Day Rate Estimate Employee", dayRate: "200", status: "active", payType: "hourly", employmentType: "w2" })
+      .expect(201);
+    // 44 hours in one week: 40 regular at $25/hr + 4 overtime at $37.50/hr = $1,150.
+    for (const [date, hours] of [["2003-03-03", "10"], ["2003-03-04", "10"], ["2003-03-05", "10"], ["2003-03-06", "10"], ["2003-03-07", "4"]]) {
+      await request(app).post("/api/time-entries").send({ employeeId: empRes.body.id, date: `${date}T00:00:00.000Z`, hoursWorked: hours }).expect(201);
+    }
+    const res = await request(app)
+      .post("/api/payroll-records/run")
+      .send({ periodStart: "2003-03-01", periodEnd: "2003-03-15" })
+      .expect(201);
+    const record = res.body.find((row: { employeeId: string }) => row.employeeId === empRes.body.id);
+    expect(record).toMatchObject({ totalHours: "44.00", regularHours: "40.00", overtimeHours: "4.00", grossPay: "1150.00" });
+  });
+});
+
 describe("POST /api/payroll-records/run — per-employee deductions (global deductionRate removed)", () => {
   it("accepts a run without deductionRate (deductions are now per-employee)", async () => {
     const res = await request(app)
@@ -981,6 +1000,22 @@ describe("POST /api/time-entries — validation", () => {
 
     expect(res.body.error).toBe("Invalid request data");
     expect(res.body.details).toHaveProperty("date");
+  });
+
+  it("accepts hours posted as a number, the way the Log hours dialog sends them", async () => {
+    const empRes = await request(app)
+      .post("/api/employees")
+      .send({ name: "Numeric Hours Employee", dayRate: "15", status: "active" })
+      .expect(201);
+    const res = await request(app)
+      .post("/api/time-entries")
+      .send({ employeeId: empRes.body.id, date: "2025-01-15T00:00:00.000Z", hoursWorked: 7.5, jobId: null })
+      .expect(201);
+    expect(res.body.hoursWorked).toBe("7.50");
+    await request(app)
+      .post("/api/time-entries")
+      .send({ employeeId: empRes.body.id, date: "2025-01-16T00:00:00.000Z", hoursWorked: Number.NaN })
+      .expect(400);
   });
 
   it("returns 400 when adding an entry would push the daily total past 24 hours", async () => {

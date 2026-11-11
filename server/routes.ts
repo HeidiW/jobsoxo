@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { createLinkToken, exchangePublicToken, getAccountInfo, getBalance, getTransactions, isPlaidConfigured } from "./plaid";
 import { seedDemoData } from "./seed";
 import { addCalendarDays, businessDay, calendarDay, parseCalendarDay, workweekOf } from "./business-time";
+import { estimatedPayForHours, hourlyRateFromDayRate } from "@shared/pay-rates";
 import { invoiceRecipients } from "@shared/client-emails";
 import { LINE_ITEM_STATUSES, lineItemProgress } from "@shared/line-item-status";
 import { invoicePrefixFromCompanyName, isDerivedInvoicePrefix } from "@shared/invoice-prefix";
@@ -2115,7 +2116,7 @@ export async function registerRoutes(
             (sum, entry) => sum + Number(entry.hoursWorked),
             0
           );
-          const totalPay = hoursThisPeriod * Number(employee.dayRate);
+          const totalPay = estimatedPayForHours(hoursThisPeriod, employee.dayRate);
           const onboardingIncomplete = employee.status === "active" && onboarding.some(item => !item.completed);
           
           return { ...employee, hoursThisPeriod, totalPay, deductions, deductionsCount: deductions.length, onboardingIncomplete };
@@ -2702,8 +2703,10 @@ export async function registerRoutes(
       regularHours += Math.min(wkHours, 40);
       overtimeHours += Math.max(0, wkHours - 40);
     }
-    const regularPay = regularHours * dayRate;
-    const overtimePay = overtimeHours * dayRate * 1.5;
+    // dayRate is per day; pay hours at the derived hourly rate, overtime at 1.5×.
+    const hourly = hourlyRateFromDayRate(dayRate);
+    const regularPay = regularHours * hourly;
+    const overtimePay = overtimeHours * hourly * 1.5;
     const grossPay = regularPay + overtimePay;
     return { regularHours, overtimeHours, regularPay, overtimePay, grossPay };
   }

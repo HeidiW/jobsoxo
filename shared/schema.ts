@@ -5,14 +5,19 @@ import { z } from "zod";
 import { emailListSchema } from "./client-emails";
 import { LINE_ITEM_STATUSES } from "./line-item-status";
 
+// Decimal columns travel as strings, but forms often post a parsed number
+// (e.g. hours worked); accept either and validate the string form.
 function numericString(label: string) {
-  return z
-    .string()
-    .min(1, `${label} is required`)
-    .refine(
-      (val) => !isNaN(parseFloat(val)) && isFinite(Number(val)),
-      `${label} must be a valid number`
-    );
+  return z.preprocess(
+    (value) => (typeof value === "number" && Number.isFinite(value) ? String(value) : value),
+    z
+      .string({ invalid_type_error: `${label} must be a valid number`, required_error: `${label} is required` })
+      .min(1, `${label} is required`)
+      .refine(
+        (val) => !isNaN(parseFloat(val)) && isFinite(Number(val)),
+        `${label} must be a valid number`
+      ),
+  );
 }
 
 function positiveNumericString(label: string) {

@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import { estimatedPayForHours, hourlyRateFromDayRate } from "@shared/pay-rates";
 import { Link, useLocation } from "wouter";
 import { formatPhone } from "@/lib/formatPhone";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -1007,7 +1008,7 @@ function PayStubDialog({ record, onClose }: { record: PayrollRecordWithEmployee;
       <div style={{ fontSize: "10.5px", fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--faint)", marginBottom: "6px" }}>Earnings</div>
       <div style={{ background: "var(--track)", borderRadius: "8px", overflow: "hidden", marginBottom: "12px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", fontSize: "13px" }}>
-          <span>Regular pay ({regHrs.toFixed(1)} hrs × ${Number(record.dayRate).toFixed(2)}/day)</span>
+          <span>Regular pay ({regHrs.toFixed(1)} hrs × ${hourlyRateFromDayRate(record.dayRate).toFixed(2)}/hr, from ${Number(record.dayRate).toFixed(2)}/day)</span>
           <span className="font-mono" style={{ fontWeight: 600 }}>{fmtFull(regPay)}</span>
         </div>
         {otHrs > 0 && (
@@ -2255,7 +2256,7 @@ export default function Payroll() {
                       )}
                     </span>
                     <span className="font-mono" style={{ width: "80px", flexShrink: 0, textAlign: "right", fontSize: "13px", fontWeight: 600 }}>{Number(entry.hoursWorked).toFixed(1)} hrs</span>
-                    <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "12.5px" }}>{fmtFull(Number(entry.hoursWorked) * Number(entry.employee?.dayRate ?? 0))}</span>
+                    <span className="font-mono" style={{ width: "96px", flexShrink: 0, textAlign: "right", fontSize: "12.5px" }}>{fmtFull(estimatedPayForHours(entry.hoursWorked, entry.employee?.dayRate ?? 0))}</span>
                     <span style={{ width: "160px", flexShrink: 0, paddingLeft: "16px", boxSizing: "border-box", fontSize: "12px", color: "var(--faint)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.description || "—"}</span>
                     <span style={{ width: "28px", flexShrink: 0, display: "flex", justifyContent: "flex-end" }}>
                       <button onClick={() => setDeleteTimeEntryId(entry.id)} style={{ border: "none", background: "none", cursor: "pointer", color: "var(--faint)", padding: "2px", display: "flex" }} data-testid={`button-delete-time-${entry.id}`}>
