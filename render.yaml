@@ -99,14 +99,17 @@ services:
       - key: STRIPE_SECRET_KEY
         sync: false
 
-      # Invoice assistant + proofreader (Claude), via OIDC workload identity federation
+      # Claude (invoice assistant, proofreader, receipt scanner) via Render's
+      # managed OIDC (Pro workspace): https://render.com/docs/oidc. Set these
+      # four; Render adds ANTHROPIC_IDENTITY_TOKEN_FILE itself on deploy once
+      # it sees ANTHROPIC_FEDERATION_RULE_ID. Never set the token file by hand.
       - key: ANTHROPIC_FEDERATION_RULE_ID
         sync: false
       - key: ANTHROPIC_ORGANIZATION_ID
         sync: false
       - key: ANTHROPIC_SERVICE_ACCOUNT_ID
         sync: false
-      - key: ANTHROPIC_IDENTITY_TOKEN_FILE # or ANTHROPIC_IDENTITY_TOKEN
+      - key: ANTHROPIC_WORKSPACE_ID
         sync: false
 
 databases:

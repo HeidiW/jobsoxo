@@ -19,9 +19,20 @@ export const PROPOSAL_TOOL_NAME = "propose_invoice_changes";
 // workload identity federation (how Render connects). This mirrors its
 // federation trigger so the panel only says "not set up" when none is present.
 export function invoiceAssistantConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return true;
-  return !!(env.ANTHROPIC_FEDERATION_RULE_ID && env.ANTHROPIC_ORGANIZATION_ID
-    && (env.ANTHROPIC_IDENTITY_TOKEN_FILE || env.ANTHROPIC_IDENTITY_TOKEN));
+  return claudeCredentialsMissing(env).length === 0;
+}
+
+const FEDERATION_VARS = ["ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID", "ANTHROPIC_IDENTITY_TOKEN_FILE"] as const;
+
+/**
+ * Names (never values) of the federation variables the SDK still needs, so an
+ * admin can see which one the host didn't provide. Empty when a key, an auth
+ * token, or a complete federation set is present. On Render the token file is
+ * set by the platform itself once ANTHROPIC_FEDERATION_RULE_ID is present.
+ */
+export function claudeCredentialsMissing(env: NodeJS.ProcessEnv = process.env): string[] {
+  if (env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return [];
+  return FEDERATION_VARS.filter((name) => !env[name] && !(name === "ANTHROPIC_IDENTITY_TOKEN_FILE" && env.ANTHROPIC_IDENTITY_TOKEN));
 }
 
 let client: Anthropic | null = null;

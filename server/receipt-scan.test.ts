@@ -83,9 +83,9 @@ describe("receipt routes", () => {
   beforeEach(() => { mocks.configured = true; mocks.scanReceipt.mockReset(); });
 
   it("reports whether scanning is available", async () => {
-    expect((await request(app).get("/api/materials/scan-receipt/status").expect(200)).body).toEqual({ available: true });
+    expect((await request(app).get("/api/materials/scan-receipt/status").expect(200)).body).toMatchObject({ available: true });
     mocks.configured = false;
-    expect((await request(app).get("/api/materials/scan-receipt/status").expect(200)).body).toEqual({ available: false });
+    expect((await request(app).get("/api/materials/scan-receipt/status").expect(200)).body).toMatchObject({ available: false });
   });
 
   it("scans an uploaded photo and returns the proposal", async () => {

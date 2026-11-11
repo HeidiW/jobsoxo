@@ -46,6 +46,14 @@ describe("invoiceAssistantConfigured", () => {
     expect(invoiceAssistantConfigured({ ...federation, ANTHROPIC_IDENTITY_TOKEN: "jwt" })).toBe(true);
     expect(invoiceAssistantConfigured({ ANTHROPIC_FEDERATION_RULE_ID: "fdrl_1", ANTHROPIC_IDENTITY_TOKEN: "jwt" })).toBe(false);
   });
+
+  it("names the federation variables that are still missing, never their values", async () => {
+    const { claudeCredentialsMissing } = await vi.importActual<typeof import("./invoice-assistant")>("./invoice-assistant");
+    expect(claudeCredentialsMissing({ ANTHROPIC_API_KEY: "k" })).toEqual([]);
+    expect(claudeCredentialsMissing({})).toEqual(["ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID", "ANTHROPIC_IDENTITY_TOKEN_FILE"]);
+    expect(claudeCredentialsMissing({ ANTHROPIC_FEDERATION_RULE_ID: "fdrl_1", ANTHROPIC_ORGANIZATION_ID: "org_1" })).toEqual(["ANTHROPIC_IDENTITY_TOKEN_FILE"]);
+    expect(claudeCredentialsMissing({ ANTHROPIC_FEDERATION_RULE_ID: "fdrl_1", ANTHROPIC_ORGANIZATION_ID: "org_1", ANTHROPIC_IDENTITY_TOKEN: "jwt" })).toEqual([]);
+  });
 });
 
 describe("invoice assistant prompt", () => {
@@ -90,9 +98,9 @@ describe("POST /api/invoices/assistant", () => {
   beforeEach(() => { mocks.configured = true; mocks.runAssistantTurn.mockReset(); });
 
   it("reports whether the assistant is set up", async () => {
-    expect((await request(app).get("/api/invoices/assistant/status").expect(200)).body).toEqual({ available: true });
+    expect((await request(app).get("/api/invoices/assistant/status").expect(200)).body).toMatchObject({ available: true });
     mocks.configured = false;
-    expect((await request(app).get("/api/invoices/assistant/status").expect(200)).body).toEqual({ available: false });
+    expect((await request(app).get("/api/invoices/assistant/status").expect(200)).body).toMatchObject({ available: false });
     await request(app).post("/api/invoices/assistant").send({ messages: [{ role: "user", content: [{ type: "text", text: "Hi" }] }], invoice }).expect(503);
   });
 

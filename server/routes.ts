@@ -6,7 +6,7 @@ import { invoiceRecipients } from "@shared/client-emails";
 import { LINE_ITEM_STATUSES, lineItemProgress } from "@shared/line-item-status";
 import { invoicePrefixFromCompanyName, isDerivedInvoicePrefix } from "@shared/invoice-prefix";
 import { invoiceAssistantRequestSchema } from "@shared/invoice-assistant";
-import { assistantErrorMessage, invoiceAssistantConfigured, runAssistantTurn, startEventStream } from "./invoice-assistant";
+import { assistantErrorMessage, claudeCredentialsMissing, invoiceAssistantConfigured, runAssistantTurn, startEventStream } from "./invoice-assistant";
 import { proofreadRequestSchema } from "@shared/invoice-proofread";
 import { proofreadErrorMessage, proofreadFields } from "./invoice-proofread";
 import { isReceiptMediaType, receiptScanErrorMessage, scanReceipt } from "./receipt-scan";
@@ -1195,7 +1195,8 @@ export async function registerRoutes(
   // material lines; the browser shows them for review and saves the kept ones
   // through /api/materials/bulk. Nothing is written during the scan.
   app.get("/api/materials/scan-receipt/status", requireAuth, (_req, res) => {
-    res.json({ available: invoiceAssistantConfigured() });
+    const available = invoiceAssistantConfigured();
+    res.json({ available, missing: available ? [] : claudeCredentialsMissing() });
   });
 
   const receiptUpload = multerDocLib({ storage: multerDocLib.memoryStorage(), limits: { fileSize: RECEIPT_MAX_BYTES, files: 1 } });
@@ -3725,7 +3726,8 @@ export async function registerRoutes(
   // The browser keeps the conversation; the server adds the live invoice and
   // the company context, and never writes to the invoice itself.
   app.get("/api/invoices/assistant/status", requireAuth, (_req, res) => {
-    res.json({ available: invoiceAssistantConfigured() });
+    const available = invoiceAssistantConfigured();
+    res.json({ available, missing: available ? [] : claudeCredentialsMissing() });
   });
 
   app.post("/api/invoices/assistant", requireAuth, async (req, res) => {
