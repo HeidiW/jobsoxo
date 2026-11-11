@@ -1,4 +1,5 @@
 import type { Express, RequestHandler } from "express";
+import { gustoActor } from "./gusto-company";
 import { and, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
@@ -50,7 +51,7 @@ export function registerGustoRemovalRoutes(app: Express, requireAdmin: RequestHa
     if (!req.session?.userId) return void res.status(401).json({ error: "Sign in to manage payroll." });
     if (!req.is("application/json")) return void res.status(415).json({ error: "Send removal confirmation as JSON." });
     try {
-      res.json(await removeDemoCompany(req.session.userId, req.body));
+      res.json(await removeDemoCompany(await gustoActor(req.session.userId), req.body));
     } catch (error) {
       if (error instanceof z.ZodError) return void res.status(400).json({ error: "Confirm removal of the selected demo company." });
       if (error instanceof RemovalError) return void res.status(error.status).json({ error: error.message });

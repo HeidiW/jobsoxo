@@ -13,9 +13,10 @@ the execution path for new payroll.
 
 ## Authorization and environments
 
-The application currently represents one business. A Gusto company is bound to
-an authenticated administrator. Other administrators cannot read or submit that
-administrator's runs or attach the same company to a different ownership boundary.
+The application currently represents one business. The Gusto company is stored
+against the administrator who connected it, and `gustoActor()` resolves every
+administrator's payroll request to that connection, so any admin can run,
+review and submit payroll. A second company cannot be attached alongside it.
 This is not a multi-company payroll tenancy implementation.
 
 Use the secure integration/Secrets setup, never credentials in chat or source.

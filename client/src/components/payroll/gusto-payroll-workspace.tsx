@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Building2, RefreshCw, Users } from "lucide-react";
+import { AlertTriangle, Building2, FlaskConical, RefreshCw, Users } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import GustoDemoCompanySetup, { type GustoDemoSetupStatus } from "./gusto-demo-company-setup";
 import { useToast } from "@/hooks/use-toast";
@@ -397,38 +397,11 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                     disabled={busy} onClick={() => void openFlow("company_onboarding", "Complete company setup")}
                     data-testid="button-gusto-complete-setup"
                   >Complete company setup</button>}
-                  {status.environment === "demo" && status.companyId && !approved && <button
-                    type="button" style={{ ...buttonStyle, background: "var(--jox-primary)", color: "#fff", border: 0 }} disabled={busy}
-                    onClick={async () => {
-                      const result = await perform<GustoStatus>("POST", "/api/gusto/demo-company/approve");
-                      if (result?.companyStatus === "Approved") { toast({ title: "Demo company approved", description: "Gusto will now generate upcoming payrolls." }); await queryClient.invalidateQueries({ queryKey: ["/api/gusto/payrolls/upcoming"] }); }
-                    }}
-                    data-testid="button-gusto-approve-company"
-                    title="Demo only: Gusto approves production companies itself"
-                  >Approve demo company</button>}
                   {status.fundingAccount && status.fundingAccount.status !== "verified" && <button
                     type="button" style={buttonStyle} disabled={busy}
                     onClick={() => void openFlow("verify_bank_info", "Verify funding in Gusto")}
                     data-testid="button-gusto-verify-funding"
                   >Verify funding</button>}
-                  {status.environment === "demo" && status.companyId && status.onboardingComplete === false && <button
-                    type="button" style={buttonStyle} disabled={busy}
-                    onClick={async () => {
-                      const result = await perform<{ results?: SampleStep[] }>("POST", "/api/gusto/demo-company/sample-data");
-                      if (result?.results) setSampleSteps(result.results);
-                    }}
-                    data-testid="button-gusto-sample-data"
-                    title="Demo only: enters Gusto's test company, bank, pay schedule and employee details"
-                  >Fill with sample data</button>}
-                  {status.environment === "demo" && status.fundingAccount && status.fundingAccount.status !== "verified" && <button
-                    type="button" style={buttonStyle} disabled={busy}
-                    onClick={async () => {
-                      const result = await perform<{ fundingAccount?: { status?: string } }>("POST", "/api/gusto/funding-account/test-deposits");
-                      if (result?.fundingAccount?.status === "verified") toast({ title: "Demo funding account verified" });
-                    }}
-                    data-testid="button-gusto-test-deposits"
-                    title="Demo only: Gusto doesn't send real test deposits in demo"
-                  >Simulate test deposits</button>}
                   <button type="button" style={buttonStyle} disabled={busy} onClick={async () => {
                     const result = await perform<{ imported?: ImportResult }>("POST", "/api/gusto/sync");
                     if (result?.imported) {
@@ -438,17 +411,65 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                   }}>Sync readiness</button>
                   <button type="button" style={buttonStyle} disabled={busy} onClick={() => void openFlow("add_bank_info", "Set up Gusto funding")}>Funding setup</button>
                 </>}
-                {status.companyId && status.environment === "demo" && <button
-                  type="button" style={{ ...buttonStyle, color: "var(--jx-orange-ink)" }}
-                  disabled={busy || !!flowUrl}
-                  onClick={() => setRemoveCompanyId(status.companyId!)}
-                >Remove demo company</button>}
               </div>
             </div>
             {!status.configured && <p style={{ color: "var(--jx-orange-ink)", fontSize: "12px", margin: "10px 0 0" }}>{status.setup?.clientConfigured
               ? "The Gusto application is configured, but company credentials are not ready. A company must be created or connected before payroll is available."
               : "Gusto application credentials are not configured."} Payroll submission is unavailable; no manual payment route is offered.</p>}
           </div>
+
+          {status.environment === "demo" && status.companyId && (
+            <section aria-labelledby="gusto-demo-tools-title" style={{ ...panel, borderStyle: "dashed", background: "var(--jx-gold-tint)" }} data-testid="gusto-demo-tools">
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: 700 }}>
+                <FlaskConical aria-hidden="true" style={{ width: "15px", height: "15px" }} /><span id="gusto-demo-tools-title">Demo tools</span>
+              </div>
+              <p style={{ color: "var(--muted)", fontSize: "12px", margin: "4px 0 10px" }}>Shortcuts that only exist in Gusto's demo environment. They stand in for steps Gusto performs itself for a real company (approval, bank verification, onboarding) and never appear in production.</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
+                {!approved && <button
+                  type="button" style={{ ...buttonStyle, background: "var(--jox-primary)", color: "#fff", border: 0 }} disabled={busy}
+                  onClick={async () => {
+                    const result = await perform<GustoStatus>("POST", "/api/gusto/demo-company/approve");
+                    if (result?.companyStatus === "Approved") { toast({ title: "Demo company approved", description: "Gusto will now generate upcoming payrolls." }); await queryClient.invalidateQueries({ queryKey: ["/api/gusto/payrolls/upcoming"] }); }
+                  }}
+                  data-testid="button-gusto-approve-company"
+                  title="Demo only: Gusto approves production companies itself"
+                >Approve demo company</button>}
+                {status.onboardingComplete === false && <button
+                  type="button" style={buttonStyle} disabled={busy}
+                  onClick={async () => {
+                    const result = await perform<{ results?: SampleStep[] }>("POST", "/api/gusto/demo-company/sample-data");
+                    if (result?.results) setSampleSteps(result.results);
+                  }}
+                  data-testid="button-gusto-sample-data"
+                  title="Demo only: enters Gusto's test company, bank, pay schedule and employee details"
+                >Fill with sample data</button>}
+                {status.fundingAccount && status.fundingAccount.status !== "verified" && <button
+                  type="button" style={buttonStyle} disabled={busy}
+                  onClick={async () => {
+                    const result = await perform<{ fundingAccount?: { status?: string } }>("POST", "/api/gusto/funding-account/test-deposits");
+                    if (result?.fundingAccount?.status === "verified") toast({ title: "Demo funding account verified" });
+                  }}
+                  data-testid="button-gusto-test-deposits"
+                  title="Demo only: Gusto doesn't send real test deposits in demo"
+                >Simulate test deposits</button>}
+                <button
+                  type="button" style={buttonStyle} disabled={busy}
+                  onClick={async () => {
+                    const result = await perform<{ results?: SampleStep[] }>("POST", "/api/gusto/demo-company/sample-employees");
+                    if (result?.results) setEmployeeSampleSteps(result.results);
+                    await queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
+                  }}
+                  data-testid="button-gusto-sample-employees"
+                  title="Demo only: adds the two sample employees in Gusto and JobsOxo and links them"
+                >Add sample employees</button>
+                <button
+                  type="button" style={{ ...buttonStyle, color: "var(--jx-orange-ink)" }}
+                  disabled={busy || !!flowUrl}
+                  onClick={() => setRemoveCompanyId(status.companyId!)}
+                >Remove demo company</button>
+              </div>
+            </section>
+          )}
 
           <div ref={demoSetupRef} tabIndex={-1}>
             <GustoDemoCompanySetup status={status} statusReady={statusQuery.isSuccess && !statusQuery.isFetching} />
@@ -469,16 +490,6 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                   data-testid="button-gusto-import-employees"
                   title="Creates a JobsOxo employee for each current Gusto employee not already here"
                 >Import employees from Gusto</button>}
-                {status.environment === "demo" && status.companyId && <button
-                  type="button" style={buttonStyle} disabled={busy}
-                  onClick={async () => {
-                    const result = await perform<{ results?: SampleStep[] }>("POST", "/api/gusto/demo-company/sample-employees");
-                    if (result?.results) setEmployeeSampleSteps(result.results);
-                    await queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
-                  }}
-                  data-testid="button-gusto-sample-employees"
-                  title="Demo only: adds the two sample employees in Gusto and JobsOxo and links them"
-                >Add sample employees</button>}
                 <button type="button" style={buttonStyle} disabled={busy || !status.configured} onClick={() => void openFlow("add_employees", "Add employees in Gusto")}>Add employees</button>
                 <button type="button" style={buttonStyle} disabled={busy} onClick={async () => {
                   const result = await perform("POST", "/api/gusto/employees/sync");

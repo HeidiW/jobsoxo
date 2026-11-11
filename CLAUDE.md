@@ -39,6 +39,9 @@ These protect real payroll, real funds and audit history. Don't relax them witho
 
 ## Domain rules
 
+- **Employee pay is a day rate** (`employees.day_rate`). Convert to hours only through `shared/pay-rates.ts` (8-hour day), which matches the Gusto import (× 8) and invite (÷ 8). Local gross figures are estimates; Gusto's calculation is the number that pays.
+- **One Gusto connection per business.** `gustoActor()` in `server/gusto-company.ts` maps every admin's payroll request to the admin row that holds the connection, so any admin can run payroll. Demo-only actions live in the Payroll page's "Demo tools" panel and never render in production.
+
 - **Change orders**: once an invoice is saved, any addition, removal or change to its scope/line items is a *change order* (table `change_orders`, status pending/approved/rejected), not an edit. UI copy says "Change Order". Header fixes (dates, client, tax rate, notes) can stay plain edits.
 - An admin marking a change order approved is **not** client sign-off. Use pending-review wording until real client approval exists.
 

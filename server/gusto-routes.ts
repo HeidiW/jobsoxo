@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { db } from "./db";
 import { employees, gustoIntegrations, gustoPayrollItems, gustoPayrollRuns, gustoWebhookEvents } from "@shared/schema";
 import { GustoConfigurationError, GustoProviderError, gustoConfigured, gustoEnvironment, verifyGustoSignature } from "./gusto-client";
-import { approveDemoCompany, companyIntegration, connectCompany, createFlow, employeeReadiness, syncCompany, syncEmployees, upcomingPayrolls, verifyDemoFunding } from "./gusto-company";
+import { approveDemoCompany, companyIntegration, connectCompany, createFlow, employeeReadiness, gustoActor, syncCompany, syncEmployees, upcomingPayrolls, verifyDemoFunding } from "./gusto-company";
 import { fillDemoCompany, setUpSampleEmployees } from "./gusto-demo-sample";
 import { importGustoEmployees, syncCompanyAndImport } from "./gusto-employee-import";
 import { calculatePayroll, cancelPayroll, PayrollConflict, pendingPayrollStates, reconcilePayroll, runForUser, submitPayroll } from "./gusto-payroll";
@@ -61,8 +61,8 @@ export function registerGustoRoutes(app: Express, requireAdmin: (req: Request, r
   registerGustoRemovalRoutes(app, requireAdmin);
   app.get("/api/gusto/status", requireAdmin, async (req, res) => {
     try {
-      const setup = await demoCompanySetup(req.session.userId!);
-      const integration = await db.query.gustoIntegrations.findFirst({ where: eq(gustoIntegrations.userId, req.session.userId!) });
+      const setup = await demoCompanySetup(await gustoActor(req.session.userId!));
+      const integration = await db.query.gustoIntegrations.findFirst({ where: eq(gustoIntegrations.userId, await gustoActor(req.session.userId!)) });
       if (!integration?.encryptedAccessToken) return res.json({
         setup,
         configured: gustoConfigured(), available: false, state: "not_connected", environment: gustoEnvironment(),
@@ -70,46 +70,46 @@ export function registerGustoRoutes(app: Express, requireAdmin: (req: Request, r
           : setup.clientConfigured ? "Gusto application credentials are saved. Set up a demo company to continue."
           : "Gusto Embedded company credentials are not configured."),
       });
-      res.json({ ...await syncCompany(req.session.userId!), setup });
+      res.json({ ...await syncCompany(await gustoActor(req.session.userId!)), setup });
     } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/connect", requireAdmin, async (req, res) => {
-    try { res.json(await connectCompany(req.session.userId!)); } catch (error) { fail(res, error); }
+    try { res.json(await connectCompany(await gustoActor(req.session.userId!))); } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/sync", requireAdmin, async (req, res) => {
-    try { res.json(await syncCompanyAndImport(req.session.userId!)); } catch (error) { fail(res, error); }
+    try { res.json(await syncCompanyAndImport(await gustoActor(req.session.userId!))); } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/demo-company/approve", requireAdmin, async (req, res) => {
-    try { res.json(await approveDemoCompany(req.session.userId!)); } catch (error) { fail(res, error); }
+    try { res.json(await approveDemoCompany(await gustoActor(req.session.userId!))); } catch (error) { fail(res, error); }
   });
   app.get("/api/gusto/payrolls/upcoming", requireAdmin, async (req, res) => {
-    try { res.json({ payrolls: await upcomingPayrolls(req.session.userId!) }); } catch (error) { fail(res, error); }
+    try { res.json({ payrolls: await upcomingPayrolls(await gustoActor(req.session.userId!)) }); } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/demo-company/sample-employees", requireAdmin, async (req, res) => {
-    try { res.json(await setUpSampleEmployees(req.session.userId!)); } catch (error) { fail(res, error); }
+    try { res.json(await setUpSampleEmployees(await gustoActor(req.session.userId!))); } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/demo-company/sample-data", requireAdmin, async (req, res) => {
-    try { res.json(await fillDemoCompany(req.session.userId!)); } catch (error) { fail(res, error); }
+    try { res.json(await fillDemoCompany(await gustoActor(req.session.userId!))); } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/funding-account/test-deposits", requireAdmin, async (req, res) => {
-    try { res.json(await verifyDemoFunding(req.session.userId!)); } catch (error) { fail(res, error); }
+    try { res.json(await verifyDemoFunding(await gustoActor(req.session.userId!))); } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/funding-account", requireAdmin, async (req, res) => {
     // Compatibility endpoint is now discovery only: never create/replace a
     // company bank account using a Plaid processor token.
-    try { res.json(await syncCompany(req.session.userId!)); } catch (error) { fail(res, error); }
+    try { res.json(await syncCompany(await gustoActor(req.session.userId!))); } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/flows", requireAdmin, async (req, res) => {
-    try { res.json(await createFlow(req.session.userId!, req.body.flowType)); } catch (error) { fail(res, error); }
+    try { res.json(await createFlow(await gustoActor(req.session.userId!), req.body.flowType)); } catch (error) { fail(res, error); }
   });
   app.get("/api/gusto/employees/readiness", requireAdmin, async (req, res) => {
-    try { res.json({ employees: await employeeReadiness(req.session.userId!) }); } catch (error) { fail(res, error); }
+    try { res.json({ employees: await employeeReadiness(await gustoActor(req.session.userId!)) }); } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/employees/import", requireAdmin, async (req, res) => {
-    try { res.json(await importGustoEmployees(req.session.userId!)); } catch (error) { fail(res, error); }
+    try { res.json(await importGustoEmployees(await gustoActor(req.session.userId!))); } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/employees/sync", requireAdmin, async (req, res) => {
-    try { res.json({ synced: await syncEmployees(req.session.userId!) }); } catch (error) { fail(res, error); }
+    try { res.json({ synced: await syncEmployees(await gustoActor(req.session.userId!)) }); } catch (error) { fail(res, error); }
   });
 
   app.post("/api/gusto/payroll-runs", requireAdmin, async (req, res) => {
@@ -121,7 +121,7 @@ export function registerGustoRoutes(app: Express, requireAdmin: (req: Request, r
       if (req.body.idempotencyKey !== undefined && (typeof req.body.idempotencyKey !== "string" || !/^[a-zA-Z0-9:_-]{1,120}$/.test(req.body.idempotencyKey))) throw new Error("Invalid payroll request key.");
     } catch (error) { return res.status(400).json({ error: (error as Error).message }); }
     try {
-      const userId = req.session.userId!;
+      const userId = await gustoActor(req.session.userId!);
       const integration = await companyIntegration(userId);
       const clientKey = req.body.idempotencyKey ?? crypto.randomUUID();
       const key = crypto.createHash("sha256").update(`${userId}:${clientKey}`).digest("hex");
@@ -154,32 +154,33 @@ export function registerGustoRoutes(app: Express, requireAdmin: (req: Request, r
   });
   app.get("/api/gusto/payroll-runs", requireAdmin, async (req, res) => {
     try {
-      const rows = await db.select({ id: gustoPayrollRuns.id }).from(gustoPayrollRuns).where(eq(gustoPayrollRuns.userId, req.session.userId!))
+      const actor = await gustoActor(req.session.userId!);
+      const rows = await db.select({ id: gustoPayrollRuns.id }).from(gustoPayrollRuns).where(eq(gustoPayrollRuns.userId, actor))
         .orderBy(desc(gustoPayrollRuns.createdAt)).limit(50);
-      res.json({ runs: await Promise.all(rows.map(row => publicRun(row.id, req.session.userId!))) });
+      res.json({ runs: await Promise.all(rows.map(row => publicRun(row.id, actor))) });
     } catch (error) { fail(res, error); }
   });
   app.get("/api/gusto/payroll-runs/:id", requireAdmin, async (req, res) => {
     try {
-      const run = await runForUser(req.params.id, req.session.userId!);
+      const run = await runForUser(req.params.id, await gustoActor(req.session.userId!));
       if (!run) return res.status(404).json({ error: "Payroll run not found" });
       if (run.gustoPayrollId && pendingPayrollStates.has(run.status)) {
-        try { await reconcilePayroll(run.id, req.session.userId!); }
-        catch { return res.json({ ...await publicRun(run.id, req.session.userId!), error: "Gusto status could not be refreshed. The last confirmed state is shown; no payroll was retried." }); }
+        try { await reconcilePayroll(run.id, await gustoActor(req.session.userId!)); }
+        catch { return res.json({ ...await publicRun(run.id, await gustoActor(req.session.userId!)), error: "Gusto status could not be refreshed. The last confirmed state is shown; no payroll was retried." }); }
       }
-      res.json(await publicRun(run.id, req.session.userId!));
+      res.json(await publicRun(run.id, await gustoActor(req.session.userId!)));
     } catch (error) { fail(res, error); }
   });
   for (const action of ["calculate", "submit", "status", "cancel"] as const) {
     app.post(`/api/gusto/payroll-runs/:id/${action}`, requireAdmin, async (req, res) => {
       try {
-        const run = await runForUser(req.params.id, req.session.userId!);
+        const run = await runForUser(req.params.id, await gustoActor(req.session.userId!));
         if (!run) return res.status(404).json({ error: "Payroll run not found" });
-        if (action === "calculate") await calculatePayroll(run.id, req.session.userId!);
-        if (action === "submit") await submitPayroll(run.id, req.session.userId!, req.body.reviewedUpdatedAt);
-        if (action === "status") await reconcilePayroll(run.id, req.session.userId!);
-        if (action === "cancel") await cancelPayroll(run.id, req.session.userId!);
-        res.json(await publicRun(run.id, req.session.userId!));
+        if (action === "calculate") await calculatePayroll(run.id, await gustoActor(req.session.userId!));
+        if (action === "submit") await submitPayroll(run.id, await gustoActor(req.session.userId!), req.body.reviewedUpdatedAt);
+        if (action === "status") await reconcilePayroll(run.id, await gustoActor(req.session.userId!));
+        if (action === "cancel") await cancelPayroll(run.id, await gustoActor(req.session.userId!));
+        res.json(await publicRun(run.id, await gustoActor(req.session.userId!)));
       } catch (error) { fail(res, error); }
     });
   }

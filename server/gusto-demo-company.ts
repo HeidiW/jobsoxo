@@ -1,4 +1,5 @@
 import type { Express, RequestHandler } from "express";
+import { gustoActor } from "./gusto-company";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
@@ -91,7 +92,7 @@ export function registerGustoDemoRoutes(app: Express, requireAdmin: RequestHandl
     if (!req.session?.userId) return void res.status(401).json({ error: "Sign in to manage payroll." });
     if (!req.is("application/json")) return void res.status(415).json({ error: "Send demo setup as JSON." });
     try {
-      res.status(201).json(await createDemoCompany(req.session.userId, req.body));
+      res.status(201).json(await createDemoCompany(await gustoActor(req.session.userId), req.body));
     } catch (error) {
       if (error instanceof z.ZodError) return void res.status(400).json({ error: "Enter a company name, administrator name and valid email, and confirm demo setup.", code: "invalid_input" });
       if (error instanceof DemoConflict) return void res.status(409).json({ error: error.message, code: "setup_conflict" });

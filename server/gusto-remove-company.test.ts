@@ -10,10 +10,15 @@ vi.mock("./db", async () => {
   const { gustoIntegrations, gustoPayrollRuns, gustoEmployeeMappings } = await import("@shared/schema");
   const store = {
     execute: mock.lock,
-    select: () => ({ from: (table: unknown) => ({ where: () => ({
-      for: async () => mock.integration ? [mock.integration] : [],
-      limit: async () => table === gustoPayrollRuns ? mock.history : [],
-    }) }) }),
+    select: () => ({ from: (table: unknown) => ({
+      // gustoActor() reads the whole integrations table without a where clause.
+      then: (resolve: (rows: unknown[]) => unknown, reject: (error: unknown) => unknown) =>
+        Promise.resolve(table === gustoIntegrations && mock.integration ? [mock.integration] : []).then(resolve, reject),
+      where: () => ({
+        for: async () => mock.integration ? [mock.integration] : [],
+        limit: async () => table === gustoPayrollRuns ? mock.history : [],
+      }),
+    }) }),
     delete: (table: unknown) => ({ where: async () => {
       if (table === gustoIntegrations && mock.failDelete) throw new Error("test database failure secret");
       mock.deleted.push(table === gustoEmployeeMappings ? "mappings" : "integration");
@@ -67,10 +72,10 @@ describe("remove demo company locally", () => {
       expect(mock.deleted).toEqual([]);
     },
   );
-  it("does not remove another admin's connection", async () => {
+  it("lets any admin remove the business's demo connection, whoever connected it", async () => {
     mock.integration.userId = "other-admin";
-    expect((await remove()).status).toBe(404);
-    expect(mock.deleted).toEqual([]);
+    expect((await remove()).status).toBe(200);
+    expect(mock.deleted).toEqual(["mappings", "integration"]);
   });
   it("rejects stale confirmation and an already removed connection", async () => {
     mock.integration.companyId = "different-company";

@@ -3,6 +3,22 @@ import { db } from "./db";
 import { employees, gustoEmployeeMappings, gustoIntegrations } from "@shared/schema";
 import { bootstrapGustoCredentials, gustoConfigured, gustoEnvironment, GustoConfigurationError, GustoProviderError, gustoRequest } from "./gusto-client";
 
+/**
+ * The app represents one business, so every administrator acts through the
+ * same Gusto connection. Returns the id of the admin whose row holds the
+ * connection for the current environment (or a pending demo creation); an
+ * admin with no connection yet acts as themselves, e.g. to connect one.
+ */
+export async function gustoActor(userId: string): Promise<string> {
+  const rows = await db.select({ userId: gustoIntegrations.userId, companyId: gustoIntegrations.companyId, environment: gustoIntegrations.environment, state: gustoIntegrations.state }).from(gustoIntegrations);
+  const environment = gustoEnvironment();
+  const connected = rows.filter(row => row.companyId && row.environment === environment);
+  if (connected.length === 1) return connected[0].userId;
+  if (connected.some(row => row.userId === userId)) return userId;
+  const pending = rows.find(row => ["demo_creating", "demo_creation_unknown"].includes(row.state));
+  return pending?.userId ?? userId;
+}
+
 export async function companyIntegration(userId: string) {
   const integration = await db.query.gustoIntegrations.findFirst({ where: eq(gustoIntegrations.userId, userId) });
   if (!integration?.companyId || !integration.encryptedAccessToken || integration.environment !== gustoEnvironment()) {

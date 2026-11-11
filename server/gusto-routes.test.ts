@@ -164,12 +164,18 @@ function sendWebhook(event: { raw: string; signature: string }) {
 }
 
 describe("Gusto-only payroll", () => {
-  it("requires authentication/admin and hides another administrator's runs", async () => {
+  it("requires authentication/admin and shares the business's connection with every admin", async () => {
     await request(app).get("/api/gusto/status").expect(401);
     await request(app).get("/api/gusto/status").set("x-test-user", "ordinary-user").expect(403);
     const run = await createRun();
-    await request(app).get(`/api/gusto/payroll-runs/${run.id}`).set("x-test-user", otherAdminId).expect(404);
-    await request(app).post(`/api/gusto/payroll-runs/${run.id}/submit`).set("x-test-user", otherAdminId).expect(404);
+    // A second admin sees the same company and the same runs: one business, one connection.
+    const status = await request(app).get("/api/gusto/status").set("x-test-user", otherAdminId).expect(200);
+    expect(status.body.companyId).toBe(companyId);
+    const theirs = await request(app).get(`/api/gusto/payroll-runs/${run.id}`).set("x-test-user", otherAdminId).expect(200);
+    expect(theirs.body.id).toBe(run.id);
+    const list = await request(app).get("/api/gusto/payroll-runs").set("x-test-user", otherAdminId).expect(200);
+    expect(list.body.runs.map((row: { id: string }) => row.id)).toContain(run.id);
+    await request(app).get(`/api/gusto/payroll-runs/${randomUUID()}`).set("x-test-user", otherAdminId).expect(404);
   });
   it("creates an atomic idempotent local run and rejects invalid dates and duplicate employees", async () => {
     const key = randomUUID();
@@ -199,7 +205,10 @@ describe("Gusto-only payroll", () => {
     const saved = await db.query.gustoIntegrations.findFirst({ where: eq(gustoIntegrations.userId, adminId) });
     expect(saved!.encryptedAccessToken).not.toContain("test-bootstrap-token");
     expect(JSON.parse(decrypt(saved!.encryptedAccessToken!)).accessToken).toBe("test-bootstrap-token");
-    await request(app).post("/api/gusto/connect").set("x-test-user", otherAdminId).expect(503);
+    // Another admin re-connecting refreshes the same business connection rather than creating a second one.
+    const again = await request(app).post("/api/gusto/connect").set("x-test-user", otherAdminId).expect(200);
+    expect(again.body.companyId).toBe(companyId);
+    expect(await db.query.gustoIntegrations.findFirst({ where: eq(gustoIntegrations.userId, otherAdminId) })).toBeUndefined();
   });
   it("discovers redacted Gusto company funding without calling Plaid", async () => {
     const { getBalance } = await import("./plaid");

@@ -835,8 +835,8 @@ export type InsertPlaidTransaction = z.infer<typeof insertPlaidTransactionSchema
 export type StoredPlaidTransaction = typeof plaidTransactions.$inferSelect;
 
 // Gusto Embedded Payroll integration. This is intentionally singleton-tenant
-// data (the application currently has one company), but userId provides an
-// ownership boundary for credentials and admin operations.
+// data (the application currently has one company). userId records which
+// admin connected it; every admin acts through that row via gustoActor().
 export const gustoIntegrations = pgTable("gusto_integrations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
