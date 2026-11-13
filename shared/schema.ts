@@ -744,6 +744,18 @@ export const notepads = pgTable("notepads", {
 });
 export type Notepad = typeof notepads.$inferSelect;
 
+// Earlier versions of a notepad, so notes overwritten by mistake can be
+// brought back. Saves by the same person a few minutes apart collapse into
+// one version, and versions older than the retention window are pruned.
+export const notepadVersions = pgTable("notepad_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  notepadId: varchar("notepad_id").notNull().references(() => notepads.id, { onDelete: "cascade" }),
+  content: text("content").notNull(),
+  savedAt: timestamp("saved_at").defaultNow().notNull(),
+  savedBy: varchar("saved_by").references(() => users.id, { onDelete: "set null" }),
+}, (table) => [index("notepad_versions_notepad_saved_idx").on(table.notepadId, table.savedAt)]);
+export type NotepadVersion = typeof notepadVersions.$inferSelect;
+
 // Every client email about an invoice (the invoice itself, change orders,
 // reminders) and what Resend reported back, so people can see whether it
 // arrived and, if not, why.

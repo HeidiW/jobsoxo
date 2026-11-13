@@ -40,6 +40,7 @@ These protect real payroll, real funds and audit history. Don't relax them witho
 ## Domain rules
 
 - **Employee pay is a day rate** (`employees.day_rate`). Convert to hours only through `shared/pay-rates.ts` (8-hour day), which matches the Gusto import (× 8) and invite (÷ 8). Local gross figures are estimates; Gusto's calculation is the number that pays.
+- **"Get on it" notepad** (`notepads` row `get-on-it`, shared by the whole team, shown on Dashboard and Scheduling): it autosaves (debounced, on blur, on page hide/unmount via keepalive) and keeps the unsaved text in `localStorage` until the server confirms, restoring it on the next load if the server copy hasn't moved. Saves carry `baseUpdatedAt`; a 409 pauses autosave until the person picks Keep mine / Load theirs. Each content change stores the previous text in `notepad_versions` (same person within 10 minutes folds into one version; pruned after 90 days), listed under History with Restore.
 - **One Gusto connection per business.** `gustoActor()` in `server/gusto-company.ts` maps every admin's payroll request to the admin row that holds the connection, so any admin can run payroll. Demo-only actions live in the Payroll page's "Demo tools" panel and never render in production.
 
 - **Change orders**: once an invoice is saved, any addition, removal or change to its scope/line items is a *change order* (table `change_orders`, status pending/approved/rejected), not an edit. UI copy says "Change Order". Header fixes (dates, client, tax rate, notes) can stay plain edits.
