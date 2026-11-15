@@ -369,7 +369,17 @@ function InvoiceDocument({
       {/* ── Totals ── */}
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "22px" }}>
         <div style={{ width: "300px", display: "flex", flexDirection: "column", gap: "8px" }}>
-          {coApprovedTotal > 0 ? (
+          {coApprovedTotal > 0 && isStaged(invoice.stage) ? (
+            <>
+              <div style={{ fontSize: "11.5px", color: "#b45309", lineHeight: 1.5 }} data-testid="staged-change-orders-note">
+                Approved changes of {fmt(coApprovedTotal)} are added to the contract and billed on the next progress or final invoice.
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#475569" }}>
+                <span>Subtotal</span>
+                <span style={{ ...mono, color: "#0f172a" }}>{fmt(invoice.subtotal)}</span>
+              </div>
+            </>
+          ) : coApprovedTotal > 0 ? (
             <>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#475569" }}>
                 <span>Work subtotal</span>

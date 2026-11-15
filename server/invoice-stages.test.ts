@@ -156,6 +156,37 @@ describe("staged invoices", () => {
     expect(notEnough.body.error).toContain("already covered");
   });
 
+  it("adds approved change orders to the contract so the final invoice bills them, without inflating the deposit", async () => {
+    const client = await storage.createClient({ name: "Change Order Client", email: "co@example.test" } as never);
+    const job = await storage.createJob({ clientId: client.id, title: "Change order job", status: "in_progress", estimatedTotal: "11200.00" } as never);
+    const payload = { ...base(), clientId: client.id, jobId: job.id };
+    const deposit = (await request(app).post("/api/invoices").send({ ...payload, stage: "deposit", stageBasis: { type: "amount", value: 5500 } }).expect(201)).body;
+    await storage.updateInvoice(deposit.id, { status: "sent" });
+
+    const order = (await request(app).post(`/api/invoices/${deposit.id}/change-orders`).send({ description: "Paint the hallway closet", amount: "800", reason: "Client request" }).expect(201)).body;
+    // Pending change orders don't move the contract.
+    expect((await request(app).get(`/api/jobs/${job.id}/billing`)).body).toMatchObject({ contractTotal: 11200, changeOrdersTotal: 0 });
+    await request(app).patch(`/api/change-orders/${order.id}`).send({ status: "approved" }).expect(200);
+
+    // The deposit still asks for $5,500; the change order raised the contract instead.
+    expect((await storage.getInvoice(deposit.id))!).toMatchObject({ total: "5500.00", balance: "5500.00" });
+    const billing = (await request(app).get(`/api/jobs/${job.id}/billing`).expect(200)).body;
+    expect(billing).toMatchObject({ baseTotal: 11200, changeOrdersTotal: 800, contractTotal: 12000, invoicedToDate: 5500, remaining: 6500 });
+    expect(billing.scope.at(-1)).toEqual({ section: "Approved change orders", description: "Paint the hallway closet", amount: 800 });
+
+    const final = (await request(app).post("/api/invoices").send({ ...payload, stage: "final" }).expect(201)).body;
+    expect(final).toMatchObject({ total: "6500.00", contractTotal: "12000.00", previouslyInvoiced: "5500.00" });
+    expect(final.contractScope.map((line: { description: string }) => line.description)).toContain("Paint the hallway closet");
+  });
+
+  it("still bills a change order on a standard invoice itself", async () => {
+    const client = await storage.createClient({ name: "Standard CO Client", email: "sco@example.test" } as never);
+    const invoice = (await request(app).post("/api/invoices").send({ ...base(), clientId: client.id, jobId: null, lineItems: [{ category: "labor", description: "Touch-ups", quantity: 1, unit: "lump", rate: 300 }] }).expect(201)).body;
+    const order = (await request(app).post(`/api/invoices/${invoice.id}/change-orders`).send({ description: "Extra coat", amount: "150" }).expect(201)).body;
+    await request(app).patch(`/api/change-orders/${order.id}`).send({ status: "approved" }).expect(200);
+    expect((await storage.getInvoice(invoice.id))!.total).toBe("450.00");
+  });
+
   it("needs a job with a priced scope, and leaves standard invoices exactly as before", async () => {
     const noJob = await request(app).post("/api/invoices").send({ ...base(), jobId: null, stage: "deposit", stageBasis: { type: "amount", value: 100 } }).expect(400);
     expect(noJob.body.error).toContain("Choose the job");

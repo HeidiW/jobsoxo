@@ -129,7 +129,10 @@ async function recalcInvoiceTotals(invoiceId: string): Promise<void> {
   const lineItemsSubtotal = allLineItems.reduce((s, i) => s + Number(i.amount), 0);
   const approvedCOs = await db.select().from(changeOrders)
     .where(eq(changeOrders.invoiceId, invoiceId));
-  const coSubtotal = approvedCOs
+  // On a deposit, progress or final invoice, approved change orders raise the
+  // job's contract and are billed by the next stage (server/invoice-billing.ts),
+  // so they don't change this invoice's own amount.
+  const coSubtotal = isStaged(invoice.stage) ? 0 : approvedCOs
     .filter((co) => co.status === "approved")
     .reduce((s, co) => s + Number(co.amount), 0);
   const newSubtotal = lineItemsSubtotal + coSubtotal;

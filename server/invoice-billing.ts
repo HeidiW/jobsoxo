@@ -1,9 +1,9 @@
 // Staged billing on the server: what a job's contract is worth, what has
 // already been invoiced and paid against it, and the snapshot a deposit,
 // progress or final invoice carries. See shared/invoice-stages.ts.
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db } from "./db";
-import { invoices, jobs, lineItems } from "@shared/schema";
+import { changeOrders, invoices, jobs, lineItems } from "@shared/schema";
 import {
   contractFromLineItems, stageDueAmount, stageLineDescription, stageProblem, type ContractScopeLine, type InvoiceStage, type StageBasis,
 } from "@shared/invoice-stages";
@@ -16,6 +16,10 @@ export interface JobBilling {
   contractSource: "job_total" | "lines" | "none";
   /** Sum of the job's priced lines, shown alongside when it differs from the agreed total. */
   linesTotal: number;
+  /** Job total or priced lines, before change orders. */
+  baseTotal: number;
+  /** Approved change orders on this job's stage invoices; already included in contractTotal and scope. */
+  changeOrdersTotal: number;
   scope: ContractScopeLine[];
   /** Totals of this job's other invoices that have gone out (drafts don't count). */
   invoicedToDate: number;
@@ -39,7 +43,17 @@ export async function jobBilling(jobId: string, excludeInvoiceId?: string): Prom
     db.select({ estimatedTotal: jobs.estimatedTotal }).from(jobs).where(eq(jobs.id, jobId)),
   ]);
   const jobTotal = round2(Number(job?.estimatedTotal) || 0);
-  const total = jobTotal > 0 ? jobTotal : linesTotal;
+  const baseTotal = jobTotal > 0 ? jobTotal : linesTotal;
+  // Approved change orders on the job's stage invoices extend the contract.
+  // (Change orders on a standard invoice are billed on that invoice, as before.)
+  const stagedIds = rows.filter((row) => row.stage !== "standalone").map((row) => row.id);
+  const approved = stagedIds.length
+    ? (await db.select().from(changeOrders).where(and(inArray(changeOrders.invoiceId, stagedIds), eq(changeOrders.status, "approved"))))
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+    : [];
+  const changeOrderLines: ContractScopeLine[] = approved.map((order) => ({ section: "Approved change orders", description: order.description, amount: round2(Number(order.amount) || 0) }));
+  const changeOrdersTotal = round2(changeOrderLines.reduce((sum, line) => sum + line.amount, 0));
+  const total = round2(baseTotal + changeOrdersTotal);
   const sent = rows.filter((row) => row.status !== "draft");
   const invoicedToDate = round2(sent.reduce((sum, row) => sum + Number(row.total), 0));
   const paidToDate = round2(sent.reduce((sum, row) => sum + Number(row.amountPaid), 0));
@@ -47,7 +61,9 @@ export async function jobBilling(jobId: string, excludeInvoiceId?: string): Prom
     contractTotal: total,
     contractSource: jobTotal > 0 ? "job_total" : linesTotal > 0 ? "lines" : "none",
     linesTotal,
-    scope,
+    baseTotal,
+    changeOrdersTotal,
+    scope: [...scope, ...changeOrderLines],
     invoicedToDate,
     paidToDate,
     remaining: round2(Math.max(0, total - invoicedToDate)),

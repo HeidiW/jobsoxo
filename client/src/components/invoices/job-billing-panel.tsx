@@ -12,6 +12,8 @@ export interface JobBillingData {
   contractTotal: number;
   contractSource?: "job_total" | "lines" | "none";
   linesTotal?: number;
+  baseTotal?: number;
+  changeOrdersTotal?: number;
   scope: ContractScopeLine[];
   invoicedToDate: number;
   paidToDate: number;
@@ -51,6 +53,11 @@ export function JobBillingPanel({ jobId }: { jobId: string }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-4 px-5 pb-5">
+        {(data.changeOrdersTotal ?? 0) > 0 && (
+          <p className="-mt-2 text-xs text-jx-ink-2" data-testid="billing-change-orders">
+            Includes <span className="font-mono">{money(data.changeOrdersTotal)}</span> of approved change orders on top of the original <span className="font-mono">{money(data.baseTotal)}</span>. They're billed on the next progress or final invoice.
+          </p>
+        )}
         {hasContract && (
           <>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">

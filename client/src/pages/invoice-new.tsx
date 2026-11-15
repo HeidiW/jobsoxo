@@ -11,6 +11,10 @@ interface JobBillingSummary {
   contractTotal: number;
   contractSource: "job_total" | "lines" | "none";
   linesTotal: number;
+  /** Before change orders; this is what the Job total field edits. */
+  baseTotal?: number;
+  /** Approved change orders on the job's stage invoices, included in contractTotal. */
+  changeOrdersTotal?: number;
   scope: ContractScopeLine[];
   invoicedToDate: number;
   paidToDate: number;
@@ -572,7 +576,7 @@ export default function InvoiceNew() {
     if (jobTotalDraft === null || !selectedJobId) return;
     const value = parseFloat(jobTotalDraft);
     setJobTotalDraft(null);
-    if (!Number.isFinite(value) || value < 0 || value === billing?.contractTotal) return;
+    if (!Number.isFinite(value) || value < 0 || value === (billing?.baseTotal ?? billing?.contractTotal)) return;
     try {
       await apiRequest("PATCH", `/api/jobs/${selectedJobId}`, { estimatedTotal: value > 0 ? value.toFixed(2) : null });
       await Promise.all([
@@ -1294,15 +1298,15 @@ export default function InvoiceNew() {
                                 : <>
                                   <div style={{ display: "grid", gap: "4px", fontSize: "13px", color: "#475569" }}>
                                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
-                                      <label htmlFor="job-total" style={{ margin: 0 }}>Job total{billing.contractSource === "lines" ? ` (sum of ${billing.scope.length} priced ${billing.scope.length === 1 ? "line" : "lines"})` : billing.contractSource === "job_total" && billing.linesTotal > 0 && billing.linesTotal !== billing.contractTotal ? ` (lines add up to ${formatCurrency(billing.linesTotal)})` : ""}</label>
+                                      <label htmlFor="job-total" style={{ margin: 0 }}>Job total{billing.contractSource === "lines" ? ` (sum of ${billing.scope.length} priced ${billing.scope.length === 1 ? "line" : "lines"})` : billing.contractSource === "job_total" && billing.linesTotal > 0 && billing.linesTotal !== (billing.baseTotal ?? billing.contractTotal) ? ` (lines add up to ${formatCurrency(billing.linesTotal)})` : ""}</label>
                                       <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
                                         <span style={{ color: "#64748b" }}>$</span>
-                                        <input id="job-total" type="number" min="0" step="0.01" value={jobTotalDraft ?? (billing.contractTotal || "")} placeholder="0.00"
+                                        <input id="job-total" type="number" min="0" step="0.01" value={jobTotalDraft ?? ((billing.baseTotal ?? billing.contractTotal) || "")} placeholder="0.00"
                                           onChange={(e) => setJobTotalDraft(e.target.value)} onBlur={() => void saveJobTotal()} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
                                           style={{ ...inputStyle, width: "130px", padding: "6px 8px", textAlign: "right", fontFamily: "var(--font-mono)", fontWeight: 700 }} aria-label="Job total" data-testid="input-job-total" />
                                       </span>
                                     </div>
-                                    <span style={{ fontSize: "11px", color: "#94a3b8" }} data-testid="stage-contract-total">Contract {formatCurrency(billing.contractTotal)} · saved on the job, so every stage bills against the same figure</span>
+                                    <span style={{ fontSize: "11px", color: "#94a3b8" }} data-testid="stage-contract-total">{(billing.changeOrdersTotal ?? 0) > 0 ? `Plus ${formatCurrency(billing.changeOrdersTotal ?? 0)} approved change orders · ` : ""}Contract {formatCurrency(billing.contractTotal)} · saved on the job, so every stage bills against the same figure</span>
                                     {billing.invoicedToDate > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Invoiced before this</span><span style={{ fontFamily: "var(--font-mono)" }}>{formatCurrency(billing.invoicedToDate)}</span></div>}
                                     {billing.paidToDate > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Paid to date</span><span style={{ fontFamily: "var(--font-mono)" }}>{formatCurrency(billing.paidToDate)}</span></div>}
                                     <div style={{ display: "flex", justifyContent: "space-between" }}><span>Left to bill</span><span style={{ fontFamily: "var(--font-mono)" }}>{formatCurrency(billing.remaining)}</span></div>

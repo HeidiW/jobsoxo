@@ -45,6 +45,13 @@ describe("JobBillingPanel", () => {
     expect(screen.getByTestId("button-bill-final")).toHaveAttribute("href", "/invoices/new?jobId=job-1&stage=final");
   });
 
+  it("says when approved change orders have raised the contract", async () => {
+    billing = { ...billing, contractTotal: 12000, baseTotal: 11200, changeOrdersTotal: 800, remaining: 6500 };
+    mount();
+    expect(await screen.findByTestId("billing-change-orders")).toHaveTextContent("Includes $800.00 of approved change orders on top of the original $11,200.00");
+    expect(screen.getByTestId("stat-remaining")).toHaveTextContent("$6,500.00");
+  });
+
   it("offers a deposit first on an unbilled contract and says when it's fully invoiced", async () => {
     billing = { ...billing, invoicedToDate: 0, paidToDate: 0, remaining: 11200, invoices: [] };
     mount();
