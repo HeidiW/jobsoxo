@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { INVOICE_STAGE_LABELS, isStaged } from "@shared/invoice-stages";
 import { postToResend, recordDelivery } from "./email-delivery";
 import { invoiceRecipients } from "@shared/client-emails";
 import { db } from "./db";
@@ -104,6 +105,17 @@ export interface EmailConfig {
   fromEmail?: string;
   fromName?: string;
   provider?: "resend" | "sendgrid" | "mailgun";
+}
+
+/** For a deposit, progress or final invoice: the contract this amount is part of. */
+export function stagedContextHtml(invoice: { stage?: string | null; contractTotal?: string | null; previouslyInvoiced?: string | null; previouslyPaid?: string | null }): string {
+  if (!isStaged(invoice.stage)) return "";
+  const formatCurrency = (value: string | number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value) || 0);
+  const label = INVOICE_STAGE_LABELS[invoice.stage];
+  const parts = [`<p><strong>${label}</strong> on a ${formatCurrency(invoice.contractTotal ?? 0)} contract</p>`];
+  if (Number(invoice.previouslyInvoiced) > 0) parts.push(`<p><strong>Invoiced before this:</strong> ${formatCurrency(invoice.previouslyInvoiced ?? 0)}</p>`);
+  if (Number(invoice.previouslyPaid) > 0) parts.push(`<p><strong>Paid to date:</strong> ${formatCurrency(invoice.previouslyPaid ?? 0)}</p>`);
+  return parts.join("\n      ");
 }
 
 export async function sendInvoiceEmail(
@@ -381,6 +393,7 @@ function generateInvoiceEmailBody(
     
     <div class="invoice-details">
       <p><strong>Invoice #:</strong> ${invoice.invoiceNumber}</p>
+      ${stagedContextHtml(invoice)}
       <p><strong>Amount Due:</strong> <span class="amount">${formatCurrency(invoice.balance)}</span></p>
       <p class="due-date"><strong>Due Date:</strong> ${new Date(invoice.dueDate).toLocaleDateString()}</p>
       ${referenceCodesHtml}

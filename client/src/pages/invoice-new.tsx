@@ -2,6 +2,17 @@ import { useState, useEffect, useRef } from "react";
 import { clientEmailOptions } from "@shared/client-emails";
 import { parseScheduleDate } from "./scheduling-logic";
 import { LINE_ITEM_STATUSES, LINE_ITEM_STATUS_LABELS, type LineItemStatus } from "@shared/line-item-status";
+import { INVOICE_STAGE_LABELS, isStaged, stageDueAmount, stageLineDescription, stageProblem, type ContractScopeLine, type InvoiceStage, type StageBasis } from "@shared/invoice-stages";
+import { BillingBlock, PricingCovers, stageTitle, type StagedBillingFigures } from "@/components/invoices/staged-billing";
+
+/** What /api/jobs/:id/billing returns: the contract and what's been billed against it. */
+interface JobBillingSummary {
+  contractTotal: number;
+  scope: ContractScopeLine[];
+  invoicedToDate: number;
+  paidToDate: number;
+  remaining: number;
+}
 import { InvoiceRecipients } from "@/components/invoices/invoice-recipients";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
@@ -146,9 +157,11 @@ const formatCurrency = (n: number) =>
 // ── Live Invoice Preview ─────────────────────────────────────────────────────
 
 function InvoicePreview({
-  settings, client, job, lineItems, issueDate, dueDate, notes, termsAndConditions, taxRate,
+  settings, client, job, lineItems, issueDate, dueDate, notes, termsAndConditions, taxRate, billing = null,
 }: {
   settings?: Settings;
+  /** Set for a deposit, progress or final invoice: the contract this one bills part of. */
+  billing?: StagedBillingFigures | null;
   client?: Client;
   job?: (Job & { client: Client }) | null;
   lineItems: NewLineItem[];
@@ -199,7 +212,7 @@ function InvoicePreview({
           )}
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div className="invoice-paper-title">INVOICE</div>
+          <div className="invoice-paper-title">{billing && isStaged(billing.stage) ? stageTitle(billing.stage).toUpperCase() : "INVOICE"}</div>
           <div style={{ fontSize: "13px", ...mono, color: "#94a3b8", marginTop: "6px" }}>Draft</div>
           {issueDate && (
             <div className="invoice-paper-issued" style={{ fontSize: "11.5px", color: "#64748b", marginTop: "8px" }}>
@@ -270,6 +283,10 @@ function InvoicePreview({
         </div>
       )}
 
+      {billing && isStaged(billing.stage) && (
+        <PricingCovers scope={billing.contractScope ?? []} contractTotal={billing.contractTotal ?? 0} />
+      )}
+
       {/* ── Line items ── */}
       <div style={{ marginTop: "24px" }}>
         {/* Column header */}
@@ -320,6 +337,7 @@ function InvoicePreview({
       {/* ── Totals ── */}
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "22px" }}>
         <div style={{ width: "300px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          {billing && isStaged(billing.stage) && <BillingBlock figures={billing} dueNow={total} />}
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#475569" }}>
             <span>Subtotal</span>
             <span style={{ ...mono, color: "#0f172a" }}>{formatCurrency(subtotal)}</span>
@@ -384,9 +402,12 @@ export default function InvoiceNew() {
 
   const { toast } = useToast();
   const [lineItems, setLineItems] = useState<NewLineItem[]>([]);
+  // Staged billing: which part of the job's contract this invoice asks for.
+  const [stage, setStage] = useState<InvoiceStage>("standalone");
+  const [basis, setBasis] = useState<StageBasis>({ type: "amount", value: 0 });
   const [sectionsOpen, setSectionsOpen] = useState<Record<string, boolean>>({});
 
-  const draftQuery = useQuery<{ id: string; status: string; invoiceNumber: string; clientId: string; jobId: string | null; issueDate: string; dueDate: string; notes: string | null; termsAndConditions: string | null; taxRate: string | null; recipientEmails: string[] | null; lineItems: Array<{ category: string; description: string; quantity: string; unit: string; rate: string; amount: string; section: string | null; refs: string | null; status?: string }> }>({
+  const draftQuery = useQuery<{ id: string; status: string; invoiceNumber: string; clientId: string; jobId: string | null; issueDate: string; dueDate: string; notes: string | null; termsAndConditions: string | null; taxRate: string | null; recipientEmails: string[] | null; stage?: string; stageBasis?: { type: "amount" | "percent"; value: number } | null; lineItems: Array<{ category: string; description: string; quantity: string; unit: string; rate: string; amount: string; section: string | null; refs: string | null; status?: string }> }>({
     queryKey: ["/api/invoices", reopenedDraftId.current],
     enabled: !!reopenedDraftId.current && !draftLoaded.current,
     retry: false,
@@ -468,6 +489,7 @@ export default function InvoiceNew() {
       return;
     }
     setDraftNumber(draft.invoiceNumber);
+    if (isStaged(draft.stage)) { setStage(draft.stage); if (draft.stageBasis) setBasis(draft.stageBasis); }
     const day = (value: string) => parseScheduleDate(value) ? format(parseScheduleDate(value)!, "yyyy-MM-dd") : "";
     form.reset({
       clientId: draft.clientId, jobId: draft.jobId ?? "", issueDate: day(draft.issueDate), dueDate: day(draft.dueDate),
@@ -525,7 +547,20 @@ export default function InvoiceNew() {
   }, [selectedClientId, selectedClientLoaded]);
   const selectedJob = selectedJobId ? jobs?.find((j) => j.id === selectedJobId) : null;
 
-  const subtotal = lineItems.reduce((s, i) => s + i.amount, 0);
+  const billingQuery = useQuery<JobBillingSummary>({ queryKey: [`/api/jobs/${selectedJobId}/billing`], enabled: !!selectedJobId && isStaged(stage) });
+  const billing = billingQuery.data;
+  useEffect(() => { if (!selectedJobId && stage !== "standalone") setStage("standalone"); }, [selectedJobId, stage]);
+  const stageIssue = isStaged(stage) ? (billing ? stageProblem(stage, basis, billing.contractTotal, billing.invoicedToDate) : null) : null;
+  const stagedDue = isStaged(stage) && billing ? stageDueAmount(stage, basis, billing.contractTotal, billing.invoicedToDate) : 0;
+  // A staged invoice has one billable line, computed from the contract; the server recomputes it on save.
+  const billedItems: NewLineItem[] = isStaged(stage)
+    ? (billing ? [{ id: "stage", category: "other", description: stageLineDescription(stage, basis, billing.contractTotal), quantity: 1, unit: "lump", rate: stagedDue, amount: stagedDue, hasQty: false, status: "pending" }] : [])
+    : lineItems;
+  const billingFigures: StagedBillingFigures | null = isStaged(stage) && billing
+    ? { stage, basis, contractScope: billing.scope, contractTotal: billing.contractTotal, previouslyInvoiced: billing.invoicedToDate, previouslyPaid: billing.paidToDate }
+    : null;
+
+  const subtotal = billedItems.reduce((s, i) => s + i.amount, 0);
   const taxAmount = subtotal * (taxRate / 100);
   const total = subtotal + taxAmount;
 
@@ -533,7 +568,9 @@ export default function InvoiceNew() {
     ...formData,
     taxRate: parseFloat(formData.taxRate || "0"),
     subtotal, taxAmount, total, balance: total,
-    lineItems: lineItems.map(({ id: _id, hasQty, ...item }) => ({
+    stage,
+    stageBasis: stage === "deposit" || stage === "progress" ? basis : null,
+    lineItems: (isStaged(stage) ? [] : lineItems).map(({ id: _id, hasQty, ...item }) => ({
       ...item,
       quantity: hasQty === false ? 1 : item.quantity,
       unit:     hasQty === false ? "lump" : item.unit,
@@ -571,7 +608,7 @@ export default function InvoiceNew() {
     if (proposal.dueDate !== null) form.setValue("dueDate", proposal.dueDate, { shouldDirty: true });
     if (proposal.taxRate !== null) form.setValue("taxRate", String(proposal.taxRate), { shouldDirty: true });
   };
-  const draftSignature = JSON.stringify({ f: watchedForm, items: lineItems });
+  const draftSignature = JSON.stringify({ f: watchedForm, items: lineItems, stage, basis });
   const hasClient = !!watchedForm.clientId;
   const hasRealItem = lineItems.some((item) => item.description.trim().length > 0);
 
@@ -841,8 +878,10 @@ export default function InvoiceNew() {
   };
 
   const onSubmit = async (data: InvoiceFormValues, send = false) => {
-    if (lineItems.length === 0) {
-      toast({ title: "No line items", description: "Add at least one line item to the invoice.", variant: "destructive" });
+    if (billedItems.length === 0) {
+      toast(isStaged(stage)
+        ? { title: "Nothing to bill yet", description: stageIssue ?? "The job’s contract hasn’t loaded.", variant: "destructive" }
+        : { title: "No line items", description: "Add at least one line item to the invoice.", variant: "destructive" });
       return;
     }
     if (clientEmailOptions(selectedClient).length > 0 && data.recipientEmails.length === 0) {
@@ -944,7 +983,7 @@ export default function InvoiceNew() {
           </span>
           <button
             onClick={form.handleSubmit((d) => onSubmit(d, false))}
-            disabled={createInvoiceMutation.isPending || proofreading}
+            disabled={createInvoiceMutation.isPending || proofreading || !!stageIssue || (isStaged(stage) && !billing)}
             type="button"
             className="invoice-secondary-action"
             data-testid="button-save-draft"
@@ -954,7 +993,7 @@ export default function InvoiceNew() {
           </button>
           <button
             onClick={form.handleSubmit((d) => onSubmit(d, true))}
-            disabled={createInvoiceMutation.isPending || proofreading}
+            disabled={createInvoiceMutation.isPending || proofreading || !!stageIssue || (isStaged(stage) && !billing)}
             type="button"
             className="invoice-primary-action"
             data-testid="button-send-invoice"
@@ -1193,6 +1232,51 @@ export default function InvoiceNew() {
                           <div style={{ ...inputStyle, background: "#f8fafc", fontSize: "13px", color: "#475569" }}>{selectedJob.address}</div>
                         </div>
                       )}
+                      {selectedJobId && (
+                        <div data-testid="invoice-stage" style={{ gridColumn: "1 / -1" }}>
+                          <label style={labelStyle}>Billing stage</label>
+                          <div role="radiogroup" aria-label="Billing stage" style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                            {(["standalone", "deposit", "final"] as InvoiceStage[]).map((value) => (
+                              <button key={value} type="button" role="radio" aria-checked={stage === value} onClick={() => setStage(value)} data-testid={`stage-${value}`}
+                                style={{ ...inputStyle, width: "auto", padding: "8px 14px", fontWeight: 700, cursor: "pointer", background: stage === value ? "#2563eb" : "#fff", color: stage === value ? "#fff" : "#0f172a", borderColor: stage === value ? "#2563eb" : undefined }}>
+                                {INVOICE_STAGE_LABELS[value]}
+                              </button>
+                            ))}
+                          </div>
+                          <p style={{ margin: "6px 0 0", fontSize: "12px", color: "#64748b" }}>
+                            {stage === "standalone" ? "Bills exactly the line items below." : stage === "deposit" ? "Asks for part of the job's contract up front. The whole scope prints for context." : "Bills whatever the earlier stages left on the contract."}
+                          </p>
+                          {isStaged(stage) && (
+                            <div style={{ marginTop: "10px", padding: "12px 14px", borderRadius: "12px", background: "#f8fafc", border: "1px solid #e2e8f0" }} data-testid="stage-summary">
+                              {billingQuery.isLoading ? <p style={{ margin: 0, fontSize: "13px", color: "#64748b" }}>Loading the job’s contract…</p>
+                                : billingQuery.isError || !billing ? <p role="alert" style={{ margin: 0, fontSize: "13px", color: "#b45309" }}>Couldn’t load the job’s contract. Try again, or send a standard invoice.</p>
+                                : <>
+                                  <div style={{ display: "grid", gap: "4px", fontSize: "13px", color: "#475569" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between" }}><span>Contract total ({billing.scope.length} priced {billing.scope.length === 1 ? "line" : "lines"} on the job)</span><strong style={{ fontFamily: "var(--font-mono)" }} data-testid="stage-contract-total">{formatCurrency(billing.contractTotal)}</strong></div>
+                                    {billing.invoicedToDate > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Invoiced before this</span><span style={{ fontFamily: "var(--font-mono)" }}>{formatCurrency(billing.invoicedToDate)}</span></div>}
+                                    {billing.paidToDate > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Paid to date</span><span style={{ fontFamily: "var(--font-mono)" }}>{formatCurrency(billing.paidToDate)}</span></div>}
+                                    <div style={{ display: "flex", justifyContent: "space-between" }}><span>Left to bill</span><span style={{ fontFamily: "var(--font-mono)" }}>{formatCurrency(billing.remaining)}</span></div>
+                                  </div>
+                                  {stage === "deposit" && (
+                                    <div style={{ display: "flex", gap: "8px", alignItems: "center", marginTop: "10px", flexWrap: "wrap" }}>
+                                      <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor="deposit-value">Deposit</label>
+                                      <select value={basis.type} onChange={(e) => setBasis({ ...basis, type: e.target.value as StageBasis["type"] })} style={{ ...inputStyle, width: "auto" }} aria-label="Deposit as" data-testid="select-deposit-type">
+                                        <option value="amount">Amount ($)</option>
+                                        <option value="percent">Percent of contract</option>
+                                      </select>
+                                      <input id="deposit-value" type="number" min="0" step={basis.type === "percent" ? "1" : "0.01"} value={basis.value || ""} onChange={(e) => setBasis({ ...basis, value: parseFloat(e.target.value) || 0 })}
+                                        placeholder={basis.type === "percent" ? "50" : "0.00"} style={{ ...inputStyle, width: "140px" }} aria-label={basis.type === "percent" ? "Deposit percent" : "Deposit amount"} data-testid="input-deposit-value" />
+                                    </div>
+                                  )}
+                                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: "10px", paddingTop: "10px", borderTop: "1px solid #e2e8f0", fontSize: "14px", fontWeight: 800 }}>
+                                    <span>This invoice (before tax)</span><span style={{ fontFamily: "var(--font-mono)" }} data-testid="stage-due">{formatCurrency(stagedDue)}</span>
+                                  </div>
+                                  {stageIssue && <p role="alert" style={{ margin: "8px 0 0", fontSize: "12.5px", color: "#b45309" }} data-testid="stage-issue">{stageIssue}</p>}
+                                </>}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1252,7 +1336,7 @@ export default function InvoiceNew() {
               )}
 
               {/* ── Line items ── */}
-              {showItems && (
+              {showItems && !isStaged(stage) && (
                 <div className="invoice-section-card" style={sectionCardStyle}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
                     <span style={{ width: "6px", height: "16px", borderRadius: "3px", background: "#2563eb", flexShrink: 0 }} />
@@ -1379,7 +1463,7 @@ export default function InvoiceNew() {
                                             </div>
                                             <div>
                                               <label style={fLabel}>Rate ($)</label>
-                                              <input type="number" min="0" step="any" value={item.rate}
+                                              <input type="number" min="0" step="any" value={item.rate || ""}
                                                 onChange={e => { const r = parseFloat(e.target.value) || 0; updateItem(item.id, { rate: r, amount: +(item.quantity * r).toFixed(2) }); }}
                                                 style={{ ...fInput, fontFamily: "var(--font-mono)" }}
                                                 data-testid={`input-item-rate-${item.id}`} />
@@ -1402,7 +1486,7 @@ export default function InvoiceNew() {
                                                 + Add qty
                                               </button>
                                             </label>
-                                            <input type="number" min="0" step="any" value={item.amount}
+                                            <input type="number" min="0" step="any" value={item.amount || ""}
                                               onChange={e => { const a = parseFloat(e.target.value) || 0; updateItem(item.id, { amount: a, rate: a }); }}
                                               style={{ ...fInput, fontFamily: "var(--font-mono)" }}
                                               data-testid={`input-item-amount-${item.id}`} />
@@ -1473,14 +1557,14 @@ export default function InvoiceNew() {
           {/* ── Bottom save bar ── */}
           <div className="invoice-bottom-bar">
             <span>
-              {lineItems.length > 0
-                ? `${lineItems.length} item${lineItems.length !== 1 ? "s" : ""} · Total ${formatCurrency(total)}`
+              {billedItems.length > 0
+                ? `${billedItems.length} item${billedItems.length !== 1 ? "s" : ""} · Total ${formatCurrency(total)}`
                 : "Add line items to calculate total"}
             </span>
             <button
               type="button"
               onClick={form.handleSubmit((d) => onSubmit(d, false))}
-              disabled={createInvoiceMutation.isPending}
+              disabled={createInvoiceMutation.isPending || !!stageIssue || (isStaged(stage) && !billing)}
               className="invoice-secondary-action"
               data-testid="button-save-invoice-bottom"
             >
@@ -1490,7 +1574,7 @@ export default function InvoiceNew() {
             <button
               type="button"
               onClick={form.handleSubmit((d) => onSubmit(d, true))}
-              disabled={createInvoiceMutation.isPending}
+              disabled={createInvoiceMutation.isPending || !!stageIssue || (isStaged(stage) && !billing)}
               className="invoice-primary-action"
               data-testid="button-send-invoice-bottom"
             >
@@ -1508,7 +1592,8 @@ export default function InvoiceNew() {
               settings={settings}
               client={selectedClient}
               job={selectedJob}
-              lineItems={lineItems}
+              lineItems={billedItems}
+              billing={billingFigures}
               issueDate={issueDate}
               dueDate={dueDate}
               notes={notes}
@@ -1682,7 +1767,7 @@ export default function InvoiceNew() {
                                 type="number"
                                 min="0"
                                 step="0.01"
-                                value={item.amount}
+                                value={item.amount || ""}
                                 onChange={(event) => {
                                   const amount = Math.max(0, Number(event.target.value) || 0);
                                   updateParsedItem(idx, {

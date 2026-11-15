@@ -99,6 +99,13 @@
       "when": 1794594569463,
       "tag": "0013_setup_checklist_dismissed",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794709182924,
+      "tag": "0014_invoice_stages",
+      "breakpoints": true
     }
   ]
 }

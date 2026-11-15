@@ -15,6 +15,8 @@ import { RECEIPT_MAX_BYTES } from "@shared/receipt-scan";
 import { applyResendEvent, latestDeliveries, listDeliveries, refreshDeliveries, verifyResendSignature } from "./email-delivery";
 import { registerNotepadRoutes } from "./notepads";
 import { registerSetupRoutes } from "./setup";
+import { jobBilling, stageSnapshot, StageError, type StageSnapshot } from "./invoice-billing";
+import { INVOICE_STAGES, isStaged, stageBasisSchema, type InvoiceStage, type StageBasis } from "@shared/invoice-stages";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
 import { inviteEmployeeToGusto, removeEmployeeEverywhere, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } from "./gusto-employee-invite";
 import { GustoConfigurationError, GustoProviderError } from "./gusto-client";
@@ -519,6 +521,10 @@ export async function registerRoutes(
         total: invoices.total,
         amountPaid: invoices.amountPaid,
         dueDate: invoices.dueDate,
+        stage: invoices.stage,
+        contractTotal: invoices.contractTotal,
+        previouslyInvoiced: invoices.previouslyInvoiced,
+        previouslyPaid: invoices.previouslyPaid,
         payToken: invoices.payToken,
         payTokenExpiresAt: invoices.payTokenExpiresAt,
       })
@@ -551,6 +557,10 @@ export async function registerRoutes(
         amountPaid: invoice.amountPaid,
         dueDate: invoice.dueDate,
         status: invoice.status,
+        stage: invoice.stage,
+        contractTotal: invoice.contractTotal,
+        previouslyInvoiced: invoice.previouslyInvoiced,
+        previouslyPaid: invoice.previouslyPaid,
         clientName: client?.name ?? null,
         companyName: settingsRow?.company_name ?? null,
         companyEmail: settingsRow?.company_email ?? null,
@@ -1129,6 +1139,17 @@ export async function registerRoutes(
     }
   });
 
+  // Staged billing: the job's contract, what's been invoiced and paid, and what's left.
+  app.get("/api/jobs/:id/billing", async (req, res) => {
+    try {
+      if (!(await storage.getJob(req.params.id))) return res.status(404).json({ error: "Job not found" });
+      res.json(await jobBilling(req.params.id));
+    } catch (error) {
+      console.error("Job billing error:", error);
+      res.status(500).json({ error: "Failed to load job billing" });
+    }
+  });
+
   // Job Materials
   app.get("/api/materials", async (req, res) => {
     try {
@@ -1538,9 +1559,27 @@ export async function registerRoutes(
     }
   });
 
+  // Staged invoices (deposit / progress / final) bill part of a job's contract.
+  // The snapshot comes from the job as it stands now and is stored on the invoice.
+  async function resolveStage(stage: InvoiceStage, basis: StageBasis | null, jobId: string | null, excludeInvoiceId?: string): Promise<{ snapshot: StageSnapshot | null } | { error: string }> {
+    if (!isStaged(stage)) return { snapshot: null };
+    if (!jobId) return { error: "Choose the job this invoice bills a stage of." };
+    try {
+      return { snapshot: await stageSnapshot(jobId, stage, basis, excludeInvoiceId) };
+    } catch (error) {
+      if (error instanceof StageError) return { error: error.message };
+      throw error;
+    }
+  }
+  const stageColumns = (stage: InvoiceStage, basis: StageBasis | null, snapshot: StageSnapshot | null) => snapshot
+    ? { stage, stageBasis: stage === "final" ? null : basis, contractScope: snapshot.contractScope, contractTotal: snapshot.contractTotal, previouslyInvoiced: snapshot.previouslyInvoiced, previouslyPaid: snapshot.previouslyPaid }
+    : { stage: "standalone" as const, stageBasis: null, contractScope: null, contractTotal: null, previouslyInvoiced: null, previouslyPaid: null };
+
   const createInvoiceInputSchema = insertInvoiceSchema
     .pick({ clientId: true, jobId: true, taxRate: true, dueDate: true, notes: true, termsAndConditions: true, recipientEmails: true })
     .extend({
+      stage: z.enum(INVOICE_STAGES).optional(),
+      stageBasis: stageBasisSchema.nullable().optional(),
       lineItems: z.array(z.object({
         category: z.string(),
         description: z.string(),
@@ -1650,8 +1689,12 @@ export async function registerRoutes(
     try {
       const inputParsed = createInvoiceInputSchema.safeParse(req.body);
       if (!inputParsed.success) return badRequest(res, inputParsed.error);
-      const { lineItems: items, send, ...invoiceData } = inputParsed.data;
-      
+      const { lineItems: rawItems, send, stage = "standalone", stageBasis = null, ...invoiceData } = inputParsed.data;
+      const staged = await resolveStage(stage, stageBasis, invoiceData.jobId ?? null);
+      if ("error" in staged) return res.status(400).json({ error: staged.error });
+      // A staged invoice carries exactly one billable line, computed from the job's contract.
+      const items = staged.snapshot ? [staged.snapshot.lineItem] : rawItems;
+
       let subtotal = 0;
       if (items && items.length > 0) {
         for (const item of items) {
@@ -1684,6 +1727,7 @@ export async function registerRoutes(
         recipientEmails: invoiceData.recipientEmails?.length ? invoiceData.recipientEmails : null,
         amountPaid: "0",
         reminderCount: 0,
+        ...stageColumns(stage, stageBasis, staged.snapshot),
       });
 
       if (items && items.length > 0) {
@@ -1748,12 +1792,16 @@ export async function registerRoutes(
       }
       const parsed = createInvoiceInputSchema.safeParse(req.body);
       if (!parsed.success) return badRequest(res, parsed.error);
-      const { lineItems: items, send: _send, ...invoiceData } = parsed.data;
+      const { lineItems: rawItems, send: _send, stage = "standalone", stageBasis = null, ...invoiceData } = parsed.data;
+      const staged = await resolveStage(stage, stageBasis, invoiceData.jobId ?? null, existing.id);
+      if ("error" in staged) return res.status(400).json({ error: staged.error });
+      const items = staged.snapshot ? [staged.snapshot.lineItem] : rawItems;
 
       await db.transaction(async (tx) => {
         await tx.update(invoices).set({
           clientId: invoiceData.clientId,
           jobId: invoiceData.jobId || null,
+          ...stageColumns(stage, stageBasis, staged.snapshot),
           taxRate: String(parseNumeric(invoiceData.taxRate)),
           dueDate: invoiceData.dueDate,
           notes: invoiceData.notes || null,

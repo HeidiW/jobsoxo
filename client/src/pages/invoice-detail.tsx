@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { isStaged } from "@shared/invoice-stages";
+import { BillingBlock, PricingCovers, stageTitle } from "@/components/invoices/staged-billing";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation, Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -192,7 +194,7 @@ function InvoiceDocument({
           )}
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: "26px", fontWeight: 800, letterSpacing: ".06em", color: "#2563eb" }}>INVOICE</div>
+          <div style={{ fontSize: "26px", fontWeight: 800, letterSpacing: ".06em", color: "#2563eb" }}>{isStaged(invoice.stage) ? stageTitle(invoice.stage).toUpperCase() : "INVOICE"}</div>
           <div style={{ fontSize: "13px", ...mono, color: "#0f172a", marginTop: "6px" }}>{invoice.invoiceNumber}</div>
           <div style={{ fontSize: "11.5px", color: "#64748b", marginTop: "8px" }}>
             Issued&nbsp;&nbsp;<span style={{ color: "#0f172a", fontWeight: 600 }}>{format(parseScheduleDate(invoice.issueDate)!, "MMMM d, yyyy")}</span>
@@ -291,6 +293,10 @@ function InvoiceDocument({
         </div>
       )}
 
+      {isStaged(invoice.stage) && invoice.contractScope && (
+        <PricingCovers scope={invoice.contractScope} contractTotal={invoice.contractTotal ?? 0} />
+      )}
+
       {/* ── Line items ── */}
       <div style={{ marginTop: "24px" }}>
         <div style={{ display: "flex", fontSize: "10px", fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", paddingBottom: "8px", borderBottom: "2px solid #0f172a" }}>
@@ -386,6 +392,7 @@ function InvoiceDocument({
             <span>Tax ({Number(invoice.taxRate)}%)</span>
             <span style={{ ...mono, color: "#0f172a" }}>{fmt(invoice.taxAmount)}</span>
           </div>
+          {isStaged(invoice.stage) && <BillingBlock figures={invoice} dueNow={invoice.total} />}
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "15px", fontWeight: 800, color: "#0f172a", paddingTop: "9px", borderTop: "2px solid #0f172a" }}>
             <span>Total</span>
             <span style={mono}>{fmt(invoice.total)}</span>

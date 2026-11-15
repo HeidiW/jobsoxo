@@ -34,6 +34,7 @@ const parsed = {
   ],
 };
 let fetchMock: ReturnType<typeof vi.fn>;
+let billing: Record<string, unknown>;
 let failures: Set<string>;
 let googleConnected: boolean;
 let rejectSave: boolean;
@@ -64,6 +65,10 @@ describe("New invoice redesign", () => {
     queryClient.clear(); state.navigate.mockReset(); state.toast.mockReset();
     state.search = "jobId=job-1"; failures = new Set(); googleConnected = false; rejectSave = false;
     clientRecord = { ...client }; clientPatches = []; draftPuts = []; sends = 0;
+    billing = {
+      contractTotal: 11200, invoicedToDate: 0, paidToDate: 0, remaining: 11200,
+      scope: [{ section: "Walls and Stairway", description: "Protect, prep, prime and paint", amount: 5200 }, { section: "Skim and Paint", description: "Levelling skim and Super Flat finish", amount: 6000 }],
+    };
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (failures.has(path)) return Response.json({ error: "Unavailable" }, { status: 503 });
@@ -75,6 +80,7 @@ describe("New invoice redesign", () => {
         return Response.json(clientRecord);
       }
       if (path === "/api/jobs") return Response.json([job]);
+      if (path === "/api/jobs/job-1/billing") return Response.json(billing);
       if (path === "/api/settings") return Response.json({ companyName: "Test Builder", companyAddress: "1 Business Street", invoiceTerms: "Net 30" });
       if (path === "/api/google-docs/status") return Response.json({ connected: googleConnected, email: null });
       if (path === "/api/google-docs/documents") return Response.json([{ id: "doc-1", name: "Hotel estimate", modifiedTime: null, webViewLink: null }]);
@@ -387,5 +393,56 @@ describe("New invoice redesign", () => {
     await userEvent.click(screen.getByTestId("button-save-draft"));
     await waitFor(() => expect(creates()).toHaveLength(1));
     expect(proofreadCalls[1].ignore).toEqual(["Wiliams"]);
+  });
+
+  it("bills a deposit against the job's contract, prints the scope, and sends the stage instead of line items", async () => {
+    mount(); await ready();
+    expect(screen.getByTestId("stage-standalone")).toHaveAttribute("aria-checked", "true");
+    await userEvent.click(screen.getByTestId("stage-deposit"));
+    await waitFor(() => expect(screen.getByTestId("stage-contract-total")).toHaveTextContent("$11,200.00"));
+    // No line items to type: the deposit is computed from the contract.
+    expect(screen.queryByTestId("button-add-line-item")).not.toBeInTheDocument();
+    expect(screen.getByTestId("stage-issue")).toHaveTextContent("Enter the deposit amount or percentage.");
+    expect(screen.getByTestId("button-save-draft")).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("input-deposit-value"), { target: { value: "5500" } });
+    expect(screen.getByTestId("stage-due")).toHaveTextContent("$5,500.00");
+    expect(screen.queryByTestId("stage-issue")).not.toBeInTheDocument();
+    expect(screen.getByTestId("pricing-covers")).toHaveTextContent("Levelling skim and Super Flat finish");
+    expect(screen.getByTestId("text-contract-total")).toHaveTextContent("$11,200.00");
+    expect(screen.getByTestId("billing-block")).toHaveTextContent("Deposit due now");
+    expect(screen.getByTestId("text-due-now")).toHaveTextContent("$5,500.00");
+    expect(screen.getAllByText("DEPOSIT").length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByTestId("select-deposit-type"), { target: { value: "percent" } });
+    fireEvent.change(screen.getByTestId("input-deposit-value"), { target: { value: "50" } });
+    expect(screen.getByTestId("stage-due")).toHaveTextContent("$5,600.00");
+    fireEvent.change(screen.getByTestId("input-deposit-value"), { target: { value: "120" } });
+    expect(screen.getByTestId("stage-issue")).toHaveTextContent("more than the $11,200.00 left");
+    fireEvent.change(screen.getByTestId("input-deposit-value"), { target: { value: "50" } });
+
+    await userEvent.click(screen.getByTestId("button-save-draft"));
+    await waitFor(() => expect(creates()).toHaveLength(1));
+    const body = JSON.parse(String(creates()[0][1]?.body));
+    expect(body).toMatchObject({ stage: "deposit", stageBasis: { type: "percent", value: 50 }, lineItems: [], jobId: "job-1" });
+  });
+
+  it("offers a final invoice for whatever the earlier stages left", async () => {
+    billing = { ...billing, invoicedToDate: 5500, paidToDate: 5500, remaining: 5700 };
+    mount(); await ready();
+    await userEvent.click(screen.getByTestId("stage-final"));
+    await waitFor(() => expect(screen.getByTestId("stage-due")).toHaveTextContent("$5,700.00"));
+    expect(screen.getByTestId("stage-summary")).toHaveTextContent("Invoiced before this");
+    expect(screen.getByTestId("billing-block")).toHaveTextContent("Final balance due");
+    expect(screen.getByTestId("button-save-draft")).not.toBeDisabled();
+    await userEvent.click(screen.getByTestId("button-save-draft"));
+    await waitFor(() => expect(creates()).toHaveLength(1));
+    expect(JSON.parse(String(creates()[0][1]?.body))).toMatchObject({ stage: "final", stageBasis: null, lineItems: [] });
+  });
+
+  it("starts the rate box empty so typing doesn't produce a leading zero", async () => {
+    mount(); await ready();
+    await userEvent.click(screen.getByTestId("button-add-line-item"));
+    expect(screen.getAllByTestId(/^input-item-rate-/)[0]).toHaveValue(null);
   });
 });

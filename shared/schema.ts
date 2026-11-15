@@ -4,6 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { emailListSchema } from "./client-emails";
 import { LINE_ITEM_STATUSES } from "./line-item-status";
+import { INVOICE_STAGES, contractScopeLineSchema, stageBasisSchema } from "./invoice-stages";
 
 // Decimal columns travel as strings, but forms often post a parsed number
 // (e.g. hours worked); accept either and validate the string form.
@@ -255,6 +256,16 @@ export const invoices = pgTable("invoices", {
   // Addresses this invoice, its reminders and change orders are sent to.
   // Null for older invoices, which fall back to the client's primary email.
   recipientEmails: jsonb("recipient_emails").$type<string[]>(),
+  // Staged billing (shared/invoice-stages.ts). A deposit, progress or final
+  // invoice bills part of the job's contract; the figures below are snapshots
+  // taken when the invoice was created or last saved as a draft, so a later
+  // change to the job doesn't rewrite what the client was sent.
+  stage: text("stage").notNull().default("standalone"), // standalone | deposit | progress | final
+  stageBasis: jsonb("stage_basis").$type<{ type: "amount" | "percent"; value: number }>(),
+  contractScope: jsonb("contract_scope").$type<{ section: string | null; description: string; amount: number }[]>(),
+  contractTotal: decimal("contract_total", { precision: 10, scale: 2 }),
+  previouslyInvoiced: decimal("previously_invoiced", { precision: 10, scale: 2 }),
+  previouslyPaid: decimal("previously_paid", { precision: 10, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -283,6 +294,12 @@ export const insertInvoiceSchema = createInsertSchema(invoices)
     taxAmount: z.coerce.string().optional(),
     total: nonNegativeNumericString("Total"),
     amountPaid: z.coerce.string().optional(),
+    stage: z.enum(INVOICE_STAGES).optional(),
+    stageBasis: stageBasisSchema.nullable().optional(),
+    contractScope: z.array(contractScopeLineSchema).nullable().optional(),
+    contractTotal: z.string().nullable().optional(),
+    previouslyInvoiced: z.string().nullable().optional(),
+    previouslyPaid: z.string().nullable().optional(),
     balance: nonNegativeNumericString("Balance"),
     remindersPaused: z.boolean().optional(),
     recipientEmails: emailListSchema.optional().nullable(),
