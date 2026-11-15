@@ -32,7 +32,11 @@ async function payrollPages(path: string, userId: string, method = "GET") {
   const compensations: any[] = [];
   for (let page = 1; page <= 100; page++) {
     const next = await gustoRequest<any>(`${path}${path.includes("?") ? "&" : "?"}page=${page}&per=100`, { userId, method });
-    if (!next || !Array.isArray(next.employee_compensations)) throw new GustoProviderError("Gusto returned an incomplete payroll.", 502, "invalid_response");
+    if (!next || typeof next !== "object" || !next.payroll_uuid) throw new GustoProviderError("Gusto returned an incomplete payroll.", 502, "invalid_response");
+    // A payroll that hasn't been prepared (or was reset, e.g. by opening it in
+    // Gusto's hosted Run Payroll screen) has no compensation list yet. That is
+    // a real state, not a broken response: report it with no employees.
+    if (!Array.isArray(next.employee_compensations)) return { ...next, employee_compensations: [] };
     if (!result) result = next;
     compensations.push(...next.employee_compensations);
     if (next.employee_compensations.length < 100) return { ...result, employee_compensations: compensations };

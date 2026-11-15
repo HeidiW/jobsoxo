@@ -298,6 +298,18 @@ describe("Gusto-only payroll", () => {
     expect(reopened.error).toContain("Reopened from Demo tools");
     await post(`/api/gusto/payroll-runs/${run.id}/reopen`).expect(409);
   });
+  it("reads an unprepared payroll (no compensation list) as a state, not a broken response", async () => {
+    const run = await readyRun();
+    timeoutSubmit = true;
+    await post(`/api/gusto/payroll-runs/${run.id}/submit`).send({ reviewedUpdatedAt: run.updatedAt }).expect(504);
+    timeoutSubmit = false;
+    // Gusto's hosted screen reset the payroll: no compensations, nothing processed.
+    delete provider.employee_compensations; provider.processing_request = null; provider.totals = undefined;
+    const status = (await post(`/api/gusto/payroll-runs/${run.id}/status`).expect(200)).body;
+    expect(status.status).toBe("submission_pending");
+    const reopened = (await post(`/api/gusto/payroll-runs/${run.id}/reopen`).expect(200)).body;
+    expect(reopened).toMatchObject({ status: "failed", canRecalculate: true });
+  });
   it("allows only one claimant when two admins requests submit simultaneously", async () => {
     const run = await readyRun();
     const attempts = await Promise.all([post(`/api/gusto/payroll-runs/${run.id}/submit`).send({ reviewedUpdatedAt: run.updatedAt }),
