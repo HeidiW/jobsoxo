@@ -131,6 +131,34 @@ describe("client and invoice email routes", () => {
     expect(bodies[2]).not.toHaveProperty("reply_to");
   });
 
+  it("puts the pay link and How to pay in the first invoice email and in reminders", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "https://api.resend.com/emails") bodies.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ id: "email_1" }), { status: 200 });
+    }));
+    process.env.RESEND_API_KEY = "re_test";
+    const client = await storage.createClient({ name: "Pay Co", email: "ap@pay.example" });
+    const invoice = await makeInvoice(client.id, null);
+    await storage.updateSettings({ companyName: "Conor Foy Painting", paymentInstructions: null });
+
+    await sendInvoiceEmail(invoice.id, ["ap@pay.example"], { apiKey: "re_test", provider: "resend" });
+    const html = String(bodies[0].html);
+    expect(html).toContain("How to pay");
+    expect(html).toContain("Bank transfer (ACH) is preferred");
+    expect(html).toContain("Checks payable to Conor Foy Painting.");
+    expect(html).toMatch(/href="[^"]*\/pay\/[A-Za-z0-9_-]+"/);
+    expect(html).toContain(">Pay online<");
+
+    await storage.updateSettings({ paymentInstructions: "Zelle to 555-0100 works too." });
+    await sendPaymentReminder(invoice.id, 1, { apiKey: "re_test", provider: "resend" });
+    const reminder = String(bodies[1].html);
+    expect(reminder).toContain("How to pay");
+    expect(reminder).toContain("Zelle to 555-0100 works too.");
+    expect(reminder).toContain(">Pay Now<");
+    await storage.updateSettings({ paymentInstructions: null });
+  });
+
   it("only uses a well-formed company email as the reply address", () => {
     expect(replyToFor({ companyEmail: "office@conorfoy.example" })).toBe("office@conorfoy.example");
     expect(replyToFor({ companyEmail: "  " })).toBeUndefined();

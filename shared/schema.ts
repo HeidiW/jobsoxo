@@ -319,6 +319,11 @@ export const payments = pgTable("payments", {
   paymentDate: timestamp("payment_date").defaultNow().notNull(),
   referenceNumber: text("reference_number"),
   notes: text("notes"),
+  // Online payments: "processing" while an ACH debit clears (not yet counted
+  // toward the invoice), "succeeded" once settled, "failed" if it bounced.
+  status: text("status").notNull().default("succeeded"),
+  // Stripe payment intent id, so a webhook replay can't record a payment twice.
+  providerRef: text("provider_ref").unique(),
 });
 
 export const paymentsRelations = relations(payments, ({ one }) => ({
@@ -734,6 +739,9 @@ export const settings = pgTable("settings", {
   // The dashboard's "Set up your business" checklist stays until every step is
   // done or an admin dismisses it for the whole team.
   setupChecklistDismissed: boolean("setup_checklist_dismissed").default(false).notNull(),
+  // "How to pay" printed on invoices, emails and the pay page. Null means the
+  // default copy in shared/payment-instructions.ts (ACH preferred).
+  paymentInstructions: text("payment_instructions"),
 });
 
 // Atomic invoice-number counters, one row per (scope, series, year). Scope is

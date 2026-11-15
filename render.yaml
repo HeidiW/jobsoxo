@@ -98,6 +98,8 @@ services:
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
+      - key: STRIPE_WEBHOOK_SECRET # Stripe → Developers → Webhooks → endpoint <APP_URL>/api/webhooks/stripe
+        sync: false
 
       # Claude (invoice assistant, proofreader, receipt scanner) via Render's
       # managed OIDC (Pro workspace): https://render.com/docs/oidc. Set these

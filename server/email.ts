@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { isStaged, stageDisplayName } from "@shared/invoice-stages";
+import { paymentInstructionsFor } from "@shared/payment-instructions";
 import { postToResend, recordDelivery } from "./email-delivery";
 import { invoiceRecipients } from "@shared/client-emails";
 import { db } from "./db";
@@ -8,7 +9,7 @@ import { eq, and, sql, lte } from "drizzle-orm";
 import { sendSmsReminder, type SmsConfig } from "./sms";
 import { randomUUID } from "crypto";
 
-function getAppBaseUrl(): string {
+export function getAppBaseUrl(): string {
   const url = process.env.APP_URL?.replace(/\/$/, "");
   if (!url) {
     console.warn("[Email] APP_URL is not set — payment links in reminder emails will be relative paths and may not work. Set APP_URL to the public base URL of the app.");
@@ -16,7 +17,7 @@ function getAppBaseUrl(): string {
   return url ?? "";
 }
 
-async function ensurePayToken(invoiceId: string): Promise<string> {
+export async function ensurePayToken(invoiceId: string): Promise<string> {
   const [existing] = await db
     .select({ payToken: invoices.payToken, payTokenExpiresAt: invoices.payTokenExpiresAt })
     .from(invoices)
@@ -146,7 +147,10 @@ export async function sendInvoiceEmail(
     }
 
     const subject = `Invoice ${invoice.invoiceNumber} from ${settings?.companyName || "Your Painting Company"}`;
-    const body = generateInvoiceEmailBody(invoice, client, settings, jobReferenceCodes);
+    // The first email a client gets must carry the pay link, not just the reminders.
+    const payBase = getAppBaseUrl();
+    const paymentLink = `${payBase || ""}/pay/${await ensurePayToken(invoiceId)}`;
+    const body = generateInvoiceEmailBody(invoice, client, settings, jobReferenceCodes, paymentLink);
 
     if (config.provider === "resend" && config.apiKey) {
       const result = await postToResend(config.apiKey, {
@@ -348,11 +352,24 @@ export async function processOverdueReminders(): Promise<{
   return result;
 }
 
+export function howToPayHtml(settings: { paymentInstructions?: string | null; companyName?: string | null } | null | undefined, paymentLink?: string): string {
+  const lines = paymentInstructionsFor(settings).split("\n").filter(Boolean).map((line) => `<li style="margin:2px 0;">${line}</li>`).join("");
+  const button = paymentLink
+    ? `<p style="margin:16px 0 10px;"><a href="${paymentLink}" style="display:inline-block;padding:12px 28px;background:#1f7a3f;color:#fff;text-decoration:none;border-radius:6px;font-size:15px;font-weight:600;">Pay online</a></p>
+      <p style="margin:0 0 10px;font-size:12px;color:#64748b;">Or open: <a href="${paymentLink}" style="color:#1f7a3f;">${paymentLink}</a></p>`
+    : "";
+  return `<div class="how-to-pay" style="margin:20px 0;padding:14px 18px;background:#f0f7f2;border-radius:8px;">
+      <p style="margin:0 0 6px;font-weight:700;">How to pay</p>
+      <ul style="margin:0;padding-left:18px;font-size:14px;">${lines}</ul>${button}
+    </div>`;
+}
+
 function generateInvoiceEmailBody(
   invoice: any,
   client: any,
   settings: any,
-  referenceCodes: { label: string; code: string }[] = []
+  referenceCodes: { label: string; code: string }[] = [],
+  paymentLink?: string
 ): string {
   const companyName = settings?.companyName || "Your Painting Company";
   const formatCurrency = (amount: string | number) => {
@@ -398,6 +415,8 @@ function generateInvoiceEmailBody(
       <p class="due-date"><strong>Due Date:</strong> ${new Date(invoice.dueDate).toLocaleDateString()}</p>
       ${referenceCodesHtml}
     </div>
+
+    ${howToPayHtml(settings, paymentLink)}
     
     ${invoice.notes ? `<p><strong>Scope of work:</strong> ${invoice.notes}</p>` : ""}
     
@@ -445,7 +464,7 @@ function generateReminderEmailBody(
   };
 
   const payButtonHtml = paymentLink
-    ? `<p style="margin:20px 0;"><a href="${paymentLink}" style="display:inline-block;padding:12px 28px;background:#dc3545;color:#fff;text-decoration:none;border-radius:6px;font-size:15px;font-weight:600;">Pay Now</a></p>`
+    ? `<p style="margin:20px 0;"><a href="${paymentLink}" style="display:inline-block;padding:12px 28px;background:#dc3545;color:#fff;text-decoration:none;border-radius:6px;font-size:15px;font-weight:600;">Pay Now</a></p>${howToPayHtml(settings)}`
     : "";
 
   // If a custom body template is provided, use it with merge field substitution

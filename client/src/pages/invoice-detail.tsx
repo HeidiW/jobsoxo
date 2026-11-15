@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { isStaged } from "@shared/invoice-stages";
+import { paymentInstructionsFor } from "@shared/payment-instructions";
 import { BillingBlock, PricingCovers, stageTitle } from "@/components/invoices/staged-billing";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation, Link } from "wouter";
@@ -62,6 +63,8 @@ interface PaymentWithPlaid extends Payment {
 }
 
 interface InvoiceDetail extends Invoice {
+  payUrl?: string | null;
+  processingAmount?: string;
   client: Client;
   job: Job | null;
   lineItems: LineItem[];
@@ -415,6 +418,14 @@ function InvoiceDocument({
       </div>
 
       <div style={{ height: "1px", background: "#e2e8f0", margin: "24px 0 18px" }} />
+
+      <div style={{ marginBottom: "16px", padding: "12px 14px", background: "#f0f7f2", borderRadius: "10px" }} data-testid="how-to-pay">
+        <div style={lbl}>How to pay</div>
+        {paymentInstructionsFor(settings).split("\n").filter(Boolean).map((line, index) => (
+          <p key={index} style={{ fontSize: "11.5px", color: "#1f2937", lineHeight: 1.6, margin: 0 }}>{line}</p>
+        ))}
+        {invoice.payUrl && <p style={{ fontSize: "11px", color: "#1f7a3f", margin: "6px 0 0", ...mono }} data-testid="text-pay-url">Pay online: {invoice.payUrl}</p>}
+      </div>
 
       {invoice.termsAndConditions && (
         <div>

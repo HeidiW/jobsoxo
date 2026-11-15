@@ -4,6 +4,7 @@ import { parseScheduleDate } from "./scheduling-logic";
 import { LINE_ITEM_STATUSES, LINE_ITEM_STATUS_LABELS, type LineItemStatus } from "@shared/line-item-status";
 import { INVOICE_STAGE_LABELS, completedToDate, isInvoiceStage, isStaged, overallPercent, stageDueAmount, stageLineDescription, stageProblem, suggestedPercents, type ContractScopeLine, type InvoiceStage, type StageBasis } from "@shared/invoice-stages";
 import { BillingBlock, PricingCovers, stageTitle, type StagedBillingFigures } from "@/components/invoices/staged-billing";
+import { paymentInstructionsFor } from "@shared/payment-instructions";
 
 /** What /api/jobs/:id/billing returns: the contract and what's been billed against it. */
 interface JobBillingSummary {
@@ -365,6 +366,14 @@ function InvoicePreview({
           <p>Preview only — payment isn’t active until this invoice is created.</p>
         </div>
         <span aria-hidden="true">NOT ACTIVE</span>
+      </div>
+
+      <div style={{ marginBottom: "16px", padding: "12px 14px", background: "#f0f7f2", borderRadius: "10px" }} data-testid="how-to-pay">
+        <div style={lbl}>How to pay</div>
+        {paymentInstructionsFor(settings).split("\n").filter(Boolean).map((line, index) => (
+          <p key={index} style={{ fontSize: "11.5px", color: "#1f2937", lineHeight: 1.6, margin: 0 }}>{line}</p>
+        ))}
+        <p style={{ fontSize: "11px", color: "#1f7a3f", margin: "6px 0 0", ...mono }}>Pay online: the link is added when the invoice is sent</p>
       </div>
 
       {/* Terms */}

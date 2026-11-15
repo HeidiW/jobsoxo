@@ -16,6 +16,10 @@ import { applyResendEvent, latestDeliveries, listDeliveries, refreshDeliveries, 
 import { registerNotepadRoutes } from "./notepads";
 import { registerSetupRoutes } from "./setup";
 import { jobBilling, stageSnapshot, StageError, type StageSnapshot } from "./invoice-billing";
+import { applyStripeEvent, createCheckoutSession, parseStripeEvent, processingAmount, stripeEnabled, StripeWebhookError } from "./stripe-payments";
+import { statusForBalance } from "@shared/invoice-status";
+import { paymentInstructionsFor } from "@shared/payment-instructions";
+import { ensurePayToken, getAppBaseUrl } from "./email";
 import { INVOICE_STAGES, isStaged, stageBasisSchema, type InvoiceStage, type StageBasis } from "@shared/invoice-stages";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
 import { inviteEmployeeToGusto, removeEmployeeEverywhere, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } from "./gusto-employee-invite";
@@ -116,10 +120,7 @@ function validWorksheetPeriod(periodStart: Date, periodEnd: Date): boolean {
 // An invoice is paid only when money has actually come in and covers the
 // total. A $0 balance with nothing paid (an empty or $0 draft) is not paid;
 // an invoice wrongly left "paid" with no payments goes back to draft.
-export function statusForBalance(current: string, balance: number, amountPaid: number): string {
-  if (amountPaid > 0) return balance <= 0 ? "paid" : current === "paid" ? "partial" : current;
-  return current === "paid" || current === "partial" ? "draft" : current;
-}
+export { statusForBalance };
 
 async function recalcInvoiceTotals(invoiceId: string): Promise<void> {
   const invoice = await storage.getInvoice(invoiceId);
@@ -547,7 +548,7 @@ export async function registerRoutes(
 
       const client = await storage.getClient(invoice.clientId);
       const settingsResult = await db.execute(
-        sql`SELECT company_name, company_email, company_phone FROM settings LIMIT 1`
+        sql`SELECT company_name, company_email, company_phone, payment_instructions FROM settings LIMIT 1`
       );
       const settingsRow = (settingsResult as any).rows?.[0] ?? null;
 
@@ -567,7 +568,9 @@ export async function registerRoutes(
         companyName: settingsRow?.company_name ?? null,
         companyEmail: settingsRow?.company_email ?? null,
         companyPhone: settingsRow?.company_phone ?? null,
-        stripeEnabled: !!process.env.STRIPE_SECRET_KEY,
+        stripeEnabled: stripeEnabled(),
+        processingAmount: (await processingAmount(invoice.id)).toFixed(2),
+        paymentInstructions: paymentInstructionsFor({ paymentInstructions: settingsRow?.payment_instructions ?? null, companyName: settingsRow?.company_name ?? null }),
       });
     } catch (error) {
       console.error("Pay token lookup error:", error);
@@ -606,31 +609,8 @@ export async function registerRoutes(
       const successUrl = `${baseUrl}/pay/${req.params.token}?payment=success`;
       const cancelUrl = `${baseUrl}/pay/${req.params.token}`;
 
-      const Stripe = (await import("stripe")).default;
-      const stripe = new Stripe(stripeKey, { apiVersion: "2025-04-30.basil" as any });
-
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ["card"],
-        mode: "payment",
-        line_items: [
-          {
-            quantity: 1,
-            price_data: {
-              currency: "usd",
-              unit_amount: balanceCents,
-              product_data: {
-                name: `Invoice #${invoice.invoiceNumber}`,
-                description: `Payment to ${companyName}`,
-              },
-            },
-          },
-        ],
-        metadata: { invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber },
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-      });
-
-      res.json({ url: session.url });
+      const url = await createCheckoutSession(invoice, req.params.token, companyName, baseUrl);
+      res.json({ url });
     } catch (error) {
       console.error("Stripe checkout error:", error);
       res.status(500).json({ error: "Failed to create checkout session" });
@@ -734,6 +714,21 @@ export async function registerRoutes(
 
   // Resend reports what happened to each email (delivered, bounced, ...).
   // Signed with RESEND_WEBHOOK_SECRET; no JobsOxo session.
+  // Stripe tells us when an online payment completes or, for ACH, settles or
+  // fails days later. Signed with STRIPE_WEBHOOK_SECRET over the raw body.
+  app.post("/api/webhooks/stripe", async (req, res) => {
+    try {
+      const event = await parseStripeEvent(req.rawBody as Buffer | undefined, req.get("stripe-signature"));
+      const result = await applyStripeEvent(event);
+      if (result.outcome) console.log(`[Stripe] ${event.type}: ${result.outcome}${result.invoiceId ? ` (invoice ${result.invoiceId})` : ""}`);
+      res.json({ received: true });
+    } catch (error) {
+      if (error instanceof StripeWebhookError) return res.status(400).json({ error: error.message });
+      console.error("Stripe webhook error:", error);
+      res.status(500).json({ error: "Webhook failed" });
+    }
+  });
+
   app.post("/api/webhooks/resend", async (req, res) => {
     const secret = process.env.RESEND_WEBHOOK_SECRET;
     if (!secret) return res.status(503).json({ error: "Resend webhook secret is not configured" });
@@ -753,7 +748,7 @@ export async function registerRoutes(
   // All routes below require authentication
   app.use("/api", (req, res, next) => {
     // Signed provider webhooks arrive without a JobsOxo session.
-    if (req.path === "/gusto/webhook" || req.path === "/webhooks/resend") return next();
+    if (req.path === "/gusto/webhook" || req.path === "/webhooks/resend" || req.path === "/webhooks/stripe") return next();
     return requireAuth(req, res, next);
   });
 
@@ -1547,6 +1542,8 @@ export async function registerRoutes(
       );
       const invoiceChangeOrders = await storage.getChangeOrdersByInvoice(invoice.id);
       
+      const baseUrl = getAppBaseUrl();
+      const payUrl = invoice.status === "draft" ? null : `${baseUrl || ""}/pay/${await ensurePayToken(invoice.id)}`;
       res.json({
         ...invoice,
         client,
@@ -1554,6 +1551,8 @@ export async function registerRoutes(
         lineItems: invoiceLineItems,
         payments: invoicePayments,
         changeOrders: invoiceChangeOrders,
+        payUrl,
+        processingAmount: (await processingAmount(invoice.id)).toFixed(2),
       });
     } catch (error) {
       console.error("Get invoice error:", error);

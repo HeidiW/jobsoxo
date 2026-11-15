@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { stageDisplayName } from "@shared/invoice-stages";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, CheckCircle, AlertCircle, CreditCard, Building2, Phone, Mail, ExternalLink } from "lucide-react";
+import { Loader2, CheckCircle, AlertCircle, CreditCard, Building2, Phone, Mail, ExternalLink, Clock, Landmark } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,8 @@ interface PayInvoiceData {
   companyEmail: string | null;
   companyPhone: string | null;
   stripeEnabled: boolean;
+  processingAmount?: string;
+  paymentInstructions?: string;
 }
 
 function formatCurrency(value: string | number) {
@@ -89,7 +91,10 @@ export default function InvoicePay() {
     );
   }
 
-  const isPaid = paymentSuccess || data.status === "paid" || Number(data.balance) <= 0;
+  const isPaid = data.status === "paid" || Number(data.balance) <= 0;
+  // An ACH debit clears days after Checkout; until Stripe confirms it, the invoice is "processing", not paid.
+  const processing = !isPaid && (Number(data.processingAmount) > 0 || paymentSuccess);
+  const instructions = (data.paymentInstructions ?? "").split("\n").filter(Boolean);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 py-12">
@@ -111,10 +116,10 @@ export default function InvoicePay() {
               </CardTitle>
               <Badge
                 data-testid="status-invoice"
-                variant={isPaid ? "secondary" : "destructive"}
+                variant={isPaid || processing ? "secondary" : "destructive"}
                 className="text-xs"
               >
-                {isPaid ? "Paid" : "Overdue"}
+                {isPaid ? "Paid" : processing ? "Processing" : "Due"}
               </Badge>
             </div>
           </CardHeader>
@@ -123,10 +128,15 @@ export default function InvoicePay() {
               <div className="flex flex-col items-center py-6 gap-3" data-testid="status-paid">
                 <CheckCircle className="h-14 w-14 text-jx-green-ink" />
                 <p className="text-lg font-semibold text-gray-800">All paid — thank you!</p>
+                <p className="text-sm text-gray-500">This invoice has been fully settled.</p>
+              </div>
+            ) : processing ? (
+              <div className="flex flex-col items-center py-6 gap-3 text-center" data-testid="status-processing">
+                <Clock className="h-14 w-14 text-jx-gold-ink" />
+                <p className="text-lg font-semibold text-gray-800">Payment on its way — thank you!</p>
                 <p className="text-sm text-gray-500">
-                  {paymentSuccess
-                    ? "Your payment has been submitted. We'll send a confirmation shortly."
-                    : "This invoice has been fully settled."}
+                  {Number(data.processingAmount) > 0 ? `${formatCurrency(data.processingAmount ?? 0)} is processing. ` : "Your payment has been submitted. "}
+                  Bank transfers usually clear in about four business days; the invoice is marked paid as soon as it does. Cards clear right away.
                 </p>
               </div>
             ) : (
@@ -194,7 +204,11 @@ export default function InvoicePay() {
                         {checkoutError}
                       </p>
                     )}
-                    <p className="text-xs text-center text-gray-400">Powered by Stripe — card payments are secure</p>
+                    <div className="flex items-start gap-2 rounded-lg bg-jx-green-tint px-3 py-2 text-xs text-jx-green-ink" data-testid="text-ach-preferred">
+                      <Landmark className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span><strong>Bank transfer (ACH) preferred, no fee to you.</strong> Choose your bank on the next screen; cards are accepted there too.</span>
+                    </div>
+                    <p className="text-xs text-center text-gray-400">Secure checkout by Stripe</p>
                   </div>
                 ) : (
                   <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 space-y-2">
@@ -207,6 +221,11 @@ export default function InvoicePay() {
                       <strong>#{data.invoiceNumber}</strong>.
                     </p>
                   </div>
+                )}
+                {instructions.length > 0 && (
+                  <ul className="list-disc space-y-1 pl-5 text-xs text-gray-600" data-testid="text-payment-instructions">
+                    {instructions.map((line, index) => <li key={index}>{line}</li>)}
+                  </ul>
                 )}
               </>
             )}

@@ -79,6 +79,7 @@ const settingsFormSchema = z.object({
   invoicePrefix: required("Invoice prefix"),
   invoiceNextNumber: z.string().optional().refine((v) => !v?.trim() || (/^\d+$/.test(v.trim()) && Number(v) >= 1), "Enter a whole number of 1 or more"),
   invoiceTerms: required("Invoice terms"),
+  paymentInstructions: z.string().optional(),
   inboxSyncHour: z.coerce.number().int().min(0).max(23).optional(),
 });
 
@@ -1037,6 +1038,7 @@ export default function SettingsPage() {
       invoicePrefix: settings?.invoicePrefix || "INV",
       invoiceNextNumber: settings?.invoiceNextNumber == null ? "" : String(settings.invoiceNextNumber),
       invoiceTerms: settings?.invoiceTerms || "",
+      paymentInstructions: settings?.paymentInstructions || "",
       inboxSyncHour: settings?.inboxSyncHour ?? 8,
     },
   });
@@ -1327,6 +1329,28 @@ export default function SettingsPage() {
                   )}
                 />
               </div>
+              <FormField
+                control={form.control}
+                name="paymentInstructions"
+                render={({ field }) => (
+                  <FormItem className="settings-field">
+                    <FormLabel>How to pay</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder={"Bank transfer (ACH) is preferred and carries no fee: use the Pay online link and choose your bank.\nCards are accepted through the same link.\nChecks payable to your company."}
+                        className="min-h-24"
+                        {...field}
+                        form="settings-company-form"
+                        data-testid="input-payment-instructions"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Printed on every invoice, in the email and on the pay page. Leave blank for the default, which asks for bank transfer first.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
               <FormField
                 control={form.control}
                 name="invoiceTerms"
