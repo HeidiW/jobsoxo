@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { format } from "date-fns";
 import {
   AlertDialog,
@@ -267,7 +267,10 @@ function ClientCardSkeleton({ index }: { index: number }) {
 }
 
 export default function Clients() {
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const search = useSearch();
+  const [, setLocation] = useLocation();
+  // Arriving with ?new=1 (from the setup checklist or an empty state) opens the form straight away.
+  const [dialogOpen, setDialogOpen] = useState(() => new URLSearchParams(search).get("new") === "1");
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [deletingClient, setDeletingClient] = useState<Client | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -341,6 +344,7 @@ export default function Clients() {
   const closeForm = () => {
     setDialogOpen(false);
     setEditingClient(null);
+    if (new URLSearchParams(search).get("new") === "1") setLocation("/clients", { replace: true });
   };
 
   return (

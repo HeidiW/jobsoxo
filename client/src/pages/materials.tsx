@@ -11,6 +11,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MaterialFormDialog } from "@/components/materials/material-form-dialog";
 import { ReceiptScanDialog } from "@/components/materials/receipt-scan-dialog";
+import { NeedClientFirst } from "@/components/clients/need-client-first";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { trackEvent } from "@/lib/analytics";
@@ -150,12 +151,12 @@ export default function Materials() {
         </div>
         {isLoading ? <div className="space-y-3 p-5" aria-label="Loading purchases" data-testid="materials-loading">{[0, 1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-xl bg-jx-surface" />)}</div>
           : materialsError ? <div className="flex min-h-48 flex-col items-center justify-center px-5 text-center text-jx-ink-2"><AlertTriangle className="mb-3 h-6 w-6 text-jx-orange-ink" aria-hidden="true" /><p className="font-semibold text-jx-ink">Purchase history is unavailable</p><p className="mt-1 text-sm">The list couldn’t be loaded. Use Retry above to check again.</p></div>
-          : filteredMaterials.length === 0 ? <div className="flex min-h-56 flex-col items-center justify-center px-6 py-12 text-center" data-testid={safeMaterials.length ? "materials-no-matches" : "materials-empty"}>
+          : filteredMaterials.length === 0 ? <NeedClientFirst context="materials"><div className="flex min-h-56 flex-col items-center justify-center px-6 py-12 text-center" data-testid={safeMaterials.length ? "materials-no-matches" : "materials-empty"}>
             <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-jx-green-tint text-jx-green-ink">{safeMaterials.length ? <Search className="h-6 w-6" aria-hidden="true" /> : <Package className="h-6 w-6" aria-hidden="true" />}</div>
             <h2 className="font-display text-2xl !font-bold text-jx-ink">{safeMaterials.length ? "No matching purchases" : "No purchases yet"}</h2>
             <p className="mt-2 max-w-sm text-sm text-jx-ink-2">{safeMaterials.length ? "Try a different search or job filter. Older purchases remain available in this table." : "Log a material purchase to start tracking what each job costs."}</p>
             {safeMaterials.length ? <Button type="button" variant="outline" className="mt-4 min-h-11 rounded-full border-2 border-jx-ink px-5" onClick={() => { setJobFilter("all"); setSearch(""); }}>Clear filters</Button> : <Button type="button" className="mt-4 min-h-11 rounded-full bg-jx-green px-5 font-bold text-white" onClick={openNew}><Plus className="mr-2 h-4 w-4" /> Log purchase</Button>}
-          </div> : <div className="relative w-full overflow-x-auto" data-testid="materials-table-scroll">
+          </div></NeedClientFirst> : <div className="relative w-full overflow-x-auto" data-testid="materials-table-scroll">
             <table className="w-full min-w-[920px] text-sm">
               <thead className="border-b border-jx-line bg-card text-left text-[11px] font-bold uppercase tracking-[.1em] text-jx-ink-3"><tr>
                 <th className="px-5 py-4">Material</th><th className="px-4 py-4">Job</th><th className="px-4 py-4">Vendor</th><th className="whitespace-nowrap px-4 py-4">Date</th><th className="whitespace-nowrap px-4 py-4 text-right">Qty</th><th className="whitespace-nowrap px-4 py-4 text-right">Price</th><th className="whitespace-nowrap px-4 py-4 text-right">Total</th><th className="w-28 px-4 py-4"><span className="sr-only">Actions</span></th>

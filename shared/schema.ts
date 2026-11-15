@@ -711,6 +711,9 @@ export const settings = pgTable("settings", {
   reminderTones: jsonb("reminder_tones").$type<{ stage: number; label: string; subject: string; body: string }[]>(),
   // Lowest sequence number the next invoice may use (e.g. continue from old software). Null = no floor.
   invoiceNextNumber: integer("invoice_next_number"),
+  // The dashboard's "Set up your business" checklist stays until every step is
+  // done or an admin dismisses it for the whole team.
+  setupChecklistDismissed: boolean("setup_checklist_dismissed").default(false).notNull(),
 });
 
 // Atomic invoice-number counters, one row per (scope, series, year). Scope is

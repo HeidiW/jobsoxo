@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ADD COLUMN "setup_checklist_dismissed" boolean DEFAULT false NOT NULL;

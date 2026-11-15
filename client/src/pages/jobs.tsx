@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useLocation, useSearch, Link } from "wouter";
+import { NeedClientFirst } from "@/components/clients/need-client-first";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -132,10 +133,13 @@ function RowActions({
 }
 
 export default function Jobs() {
-  const clientId = new URLSearchParams(useSearch()).get("clientId");
+  const search = useSearch();
+  const clientId = new URLSearchParams(search).get("clientId");
+  // Arriving with ?new=1 (from the setup checklist) opens the job form straight away.
+  const openOnArrival = new URLSearchParams(search).get("new") === "1";
   const [activeFilter, setActiveFilter] = useState<JobFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isDialogOpen, setIsDialogOpen] = useState(openOnArrival);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [deletingJob, setDeletingJob] = useState<JobWithClient | null>(null);
   const [, setLocation] = useLocation();
@@ -384,6 +388,7 @@ export default function Jobs() {
                 )}
 
                 {!isLoading && !isError && visibleJobs.length === 0 && (
+                  <NeedClientFirst context="jobs">
                   <div className="my-2 flex min-h-[300px] flex-col items-center justify-center rounded-2xl bg-card px-6 py-10 text-center">
                     <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-jx-green-tint text-jx-green-ink">
                       {filtersAreActive ? <Search className="h-6 w-6" /> : <BriefcaseBusiness className="h-6 w-6" />}
@@ -417,6 +422,7 @@ export default function Jobs() {
                       </Button>
                     ) : null}
                   </div>
+                  </NeedClientFirst>
                 )}
 
                 {!isLoading && !isError && visibleJobs.map((job) => {

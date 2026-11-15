@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ClientForm } from "@/components/clients/client-form";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -25,7 +28,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient, ApiError } from "@/lib/queryClient";
 import { trackEvent } from "@/lib/analytics";
-import { Users, Plus, Trash2, Tag } from "lucide-react";
+import { Users, Plus, Trash2, Tag, UserPlus } from "lucide-react";
 import { format } from "date-fns";
 import { parseScheduleDate } from "@/pages/scheduling-logic";
 import type { Job, Client, Employee, EmployeeAssignment } from "@shared/schema";
@@ -61,6 +64,13 @@ export default function JobForm({
   const { data: clients } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
   });
+  // "Add a client" from the client picker opens the client form in place and
+  // selects the new client when it's saved, so an empty list is never a wall.
+  const [addingClient, setAddingClient] = useState(false);
+  // Clients saved from the picker show up at once, before the list refetches.
+  const [addedClients, setAddedClients] = useState<Client[]>([]);
+  const clientOptions = [...(clients ?? []), ...addedClients.filter((added) => !clients?.some((client) => client.id === added.id))];
+  const ADD_CLIENT = "__add_client__";
 
   const { data: employees } = useQuery<Employee[]>({
     queryKey: ["/api/employees"],
@@ -157,19 +167,35 @@ export default function JobForm({
           render={({ field }) => (
             <FormItem>
               <FormLabel>Client *</FormLabel>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
+              {/* Client is required and never cleared from the picker; Radix emits "" when the option list changes under it. */}
+              <Select onValueChange={(value) => { if (value === ADD_CLIENT) setAddingClient(true); else if (value !== "") field.onChange(value); }} value={field.value}>
                 <FormControl>
                   <SelectTrigger data-testid="select-job-client">
-                    <SelectValue placeholder="Select a client" />
+                    <SelectValue placeholder={clients && clientOptions.length === 0 ? "No clients yet. Add one to continue" : "Select a client"} />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {clients?.map((client) => (
+                  <SelectItem value={ADD_CLIENT} data-testid="option-add-client">
+                    <span className="inline-flex items-center gap-2 font-semibold text-jx-green-ink"><UserPlus className="h-4 w-4" aria-hidden="true" />Add a client…</span>
+                  </SelectItem>
+                  {clientOptions.map((client) => (
                     <SelectItem key={client.id} value={client.id}>{client.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {clients && clientOptions.length === 0 && <p className="text-xs text-jx-ink-2" data-testid="hint-no-clients">Jobs belong to a client. Add one here and it will be selected for this job.</p>}
               <FormMessage />
+              <Dialog open={addingClient} onOpenChange={setAddingClient}>
+                <DialogContent className="flex max-h-[90dvh] flex-col overflow-hidden rounded-[28px] border-jx-line bg-card p-0 text-jx-ink sm:max-w-[640px]" data-testid="dialog-add-client">
+                  <DialogHeader className="shrink-0 border-b border-jx-line px-6 py-5 sm:px-8">
+                    <DialogTitle className="font-display text-2xl !font-bold tracking-[-.04em] text-jx-ink">Add a client</DialogTitle>
+                    <p className="text-sm text-jx-ink-2">They'll be selected for this job as soon as they're saved.</p>
+                  </DialogHeader>
+                  <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 sm:px-8">
+                    <ClientForm onClose={() => setAddingClient(false)} onSaved={(client) => { setAddedClients((current) => [...current, client]); field.onChange(client.id); }} />
+                  </div>
+                </DialogContent>
+              </Dialog>
             </FormItem>
           )}
         />

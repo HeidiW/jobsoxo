@@ -38,9 +38,12 @@ type ClientFormValues = z.infer<typeof clientFormSchema>;
 export function ClientForm({
   client,
   onClose,
+  onSaved,
 }: {
   client?: Client;
   onClose: () => void;
+  /** Called with the saved client, e.g. so a job form can select the one just added. */
+  onSaved?: (client: Client) => void;
 }) {
   const { toast } = useToast();
   const isEdit = Boolean(client);
@@ -69,12 +72,13 @@ export function ClientForm({
       );
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (saved: Client) => {
       void queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       toast({
         title: isEdit ? "Client updated" : "Client added",
         description: `${form.getValues("name")} has been ${isEdit ? "updated" : "added"}.`,
       });
+      onSaved?.(saved);
       onClose();
     },
     onError: (error: Error) => {

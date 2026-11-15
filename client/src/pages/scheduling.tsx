@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { ScheduleJobDialog } from "@/components/scheduling/schedule-job-dialog";
 import { GetOnItNotepad } from "@/components/notepad/get-on-it-notepad";
+import { NeedClientFirst } from "@/components/clients/need-client-first";
 import { Button } from "@/components/ui/button";
 import {
   filterScheduleJobs, formatScheduleDate, getBarPosition, getFortnightDays, getMonthDays,
@@ -144,11 +145,11 @@ export default function Scheduling() {
               </div> : isError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-4 px-6 py-12">
                 <div className="flex items-start gap-3"><AlertCircle className="mt-1 h-5 w-5 text-jx-orange-ink" /><div><h3 className="font-display text-xl !font-bold">Schedule unavailable</h3><p className="mt-1 text-sm text-jx-ink-2">Job dates and crews didn’t load. Try again.</p></div></div>
                 <Button type="button" variant="outline" onClick={() => void refetch()} disabled={isFetching} className="min-h-11 rounded-full border-2 border-jx-line px-5" data-testid="button-retry-schedule"><RotateCw className="mr-2 h-4 w-4" />{isFetching ? "Retrying…" : "Retry"}</Button>
-              </div> : sortedActive.length === 0 ? <div className="flex min-h-[250px] flex-col items-center justify-center px-5 text-center" data-testid="scheduling-empty">
+              </div> : sortedActive.length === 0 ? <NeedClientFirst context="schedule"><div className="flex min-h-[250px] flex-col items-center justify-center px-5 text-center" data-testid="scheduling-empty">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-jx-green-tint text-jx-green-ink"><CalendarDays className="h-5 w-5" /></div>
                 <h3 className="mt-4 font-display text-xl !font-bold">No active jobs in this window</h3>
                 <p className="mt-1 max-w-sm text-sm text-jx-ink-2">Give a job dates and a scheduled status to place the crew on the calendar.</p>
-              </div> : <div>
+              </div></NeedClientFirst> : <div>
                 {sortedActive.filter((job) => !weekendOnlyJobs.some((weekend) => weekend.id === job.id)).map((job) => {
                   const column = barColumns(job);
                   const color = COLORS[stableIndex(job)];

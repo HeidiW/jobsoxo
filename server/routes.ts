@@ -14,6 +14,7 @@ import { isReceiptMediaType, receiptScanErrorMessage, scanReceipt } from "./rece
 import { RECEIPT_MAX_BYTES } from "@shared/receipt-scan";
 import { applyResendEvent, latestDeliveries, listDeliveries, refreshDeliveries, verifyResendSignature } from "./email-delivery";
 import { registerNotepadRoutes } from "./notepads";
+import { registerSetupRoutes } from "./setup";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
 import { inviteEmployeeToGusto, removeEmployeeEverywhere, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } from "./gusto-employee-invite";
 import { GustoConfigurationError, GustoProviderError } from "./gusto-client";
@@ -745,6 +746,7 @@ export async function registerRoutes(
   });
 
   registerNotepadRoutes(app);
+  registerSetupRoutes(app, requireAdmin);
 
   app.get("/api/address-suggestions", async (req, res) => {
     const query = typeof req.query.q === "string" ? req.query.q.trim() : "";

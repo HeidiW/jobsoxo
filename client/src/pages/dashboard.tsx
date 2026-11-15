@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { GetOnItNotepad } from "@/components/notepad/get-on-it-notepad";
+import { SetupChecklist } from "@/components/setup/setup-checklist";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { format } from "date-fns";
@@ -192,6 +193,8 @@ export default function Dashboard() {
             </Button>
           </div>
         </header>
+
+        <SetupChecklist />
 
         <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.14fr)_minmax(0,.86fr)]" aria-label="Today's work and invoices">
           <div className="min-w-0 rounded-[24px] p-5 sm:p-6" style={{ background: "var(--jx-surface)" }}>
