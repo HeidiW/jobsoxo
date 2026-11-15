@@ -5,7 +5,7 @@ import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "./db";
 import { invoices, lineItems } from "@shared/schema";
 import {
-  contractFromLineItems, stageDueAmount, stageLineDescription, type ContractScopeLine, type InvoiceStage, type StageBasis,
+  contractFromLineItems, stageDueAmount, stageLineDescription, stageProblem, type ContractScopeLine, type InvoiceStage, type StageBasis,
 } from "@shared/invoice-stages";
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
@@ -64,10 +64,10 @@ export class StageError extends Error {}
 /** Everything a staged invoice stores, computed from the job as it stands right now. */
 export async function stageSnapshot(jobId: string, stage: Exclude<InvoiceStage, "standalone">, basis: StageBasis | null | undefined, excludeInvoiceId?: string): Promise<StageSnapshot> {
   const billing = await jobBilling(jobId, excludeInvoiceId);
-  if (billing.contractTotal <= 0) throw new StageError("This job has no priced line items yet. Add the scope to the job first, or send a standard invoice.");
-  if (billing.remaining <= 0) throw new StageError("The full contract has already been invoiced for this job.");
-  if ((stage === "deposit" || stage === "progress") && (!basis || basis.value <= 0)) throw new StageError("Enter the amount or percentage to bill for this stage.");
-  const due = stageDueAmount(stage, basis, billing.contractTotal, billing.invoicedToDate);
+  // Same plain-language checks the builder shows, so the server never says less than the form did.
+  const problem = stageProblem(stage, basis, billing.contractTotal, billing.invoicedToDate, billing.scope);
+  if (problem) throw new StageError(problem);
+  const due = stageDueAmount(stage, basis, billing.contractTotal, billing.invoicedToDate, billing.scope);
   if (due <= 0) throw new StageError("Nothing is left to bill for this stage.");
   return {
     contractScope: billing.scope,
@@ -76,7 +76,7 @@ export async function stageSnapshot(jobId: string, stage: Exclude<InvoiceStage, 
     previouslyPaid: billing.paidToDate.toFixed(2),
     due,
     lineItem: {
-      category: "other", description: stageLineDescription(stage, basis, billing.contractTotal),
+      category: "other", description: stageLineDescription(stage, basis, billing.contractTotal, billing.scope),
       quantity: "1", unit: "lump", rate: due.toFixed(2), amount: due.toFixed(2), section: null, refs: null, status: "pending", isChangeOrder: false, changeOrderReason: null,
     },
   };

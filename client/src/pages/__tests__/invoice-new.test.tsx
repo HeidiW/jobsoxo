@@ -445,4 +445,34 @@ describe("New invoice redesign", () => {
     await userEvent.click(screen.getByTestId("button-add-line-item"));
     expect(screen.getAllByTestId(/^input-item-rate-/)[0]).toHaveValue(null);
   });
+
+  it("bills progress per line from each line's work status and credits earlier invoices", async () => {
+    billing = {
+      ...billing, invoicedToDate: 5500, paidToDate: 5500, remaining: 5700,
+      scope: [{ section: "Walls and Stairway", description: "Protect, prep, prime and paint", amount: 5200, status: "completed" }, { section: "Skim and Paint", description: "Levelling skim and Super Flat finish", amount: 6000, status: "in_progress" }],
+    };
+    state.search = "jobId=job-1&stage=progress";
+    mount(); await ready();
+    expect(screen.getByTestId("stage-progress")).toHaveAttribute("aria-checked", "true");
+    await waitFor(() => expect(screen.getByTestId("progress-completed")).toHaveTextContent("$8,200.00"));
+    expect(screen.getByTestId("input-progress-percent-0")).toHaveValue(100);
+    expect(screen.getByTestId("input-progress-percent-1")).toHaveValue(50);
+    // $8,200 done − $5,500 deposit = $2,700 due now.
+    expect(screen.getByTestId("stage-due")).toHaveTextContent("$2,700.00");
+    fireEvent.change(screen.getByTestId("input-progress-percent-1"), { target: { value: "100" } });
+    expect(screen.getByTestId("stage-due")).toHaveTextContent("$5,700.00");
+    expect(screen.getByTestId("billing-block")).toHaveTextContent("Due now");
+    await userEvent.click(screen.getByTestId("button-save-draft"));
+    await waitFor(() => expect(creates()).toHaveLength(1));
+    expect(JSON.parse(String(creates()[0][1]?.body))).toMatchObject({ stage: "progress", stageBasis: { type: "lines", percents: [100, 100] }, lineItems: [] });
+  });
+
+  it("can bill progress as a plain percent or amount instead", async () => {
+    state.search = "jobId=job-1&stage=progress";
+    mount(); await ready();
+    await waitFor(() => expect(screen.getByTestId("progress-basis")).toBeInTheDocument());
+    fireEvent.change(screen.getByTestId("select-progress-type"), { target: { value: "percent" } });
+    fireEvent.change(screen.getByTestId("input-progress-value"), { target: { value: "30" } });
+    expect(screen.getByTestId("stage-due")).toHaveTextContent("$3,360.00");
+  });
 });

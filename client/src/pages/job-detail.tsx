@@ -19,6 +19,7 @@ import {
 import type { Client, Employee, Invoice, Job, JobDocument, JobMaterial, LineItem } from "@shared/schema";
 import JobForm from "@/components/job-form";
 import { ReceiptScanDialog } from "@/components/materials/receipt-scan-dialog";
+import { JobBillingPanel } from "@/components/invoices/job-billing-panel";
 import { InvoiceStatusBadge, JobStatusBadge } from "@/components/status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -355,6 +356,8 @@ export default function JobDetail() {
                 <Button variant="outline" onClick={() => setEditOpen(true)} className="mt-3 min-h-10 rounded-full border-2 border-jx-ink px-4 font-semibold">Manage crew</Button>
               </CardContent>
             </Card>
+
+            <JobBillingPanel jobId={job.id} />
 
             <Card className="rounded-3xl border-jx-line bg-jx-blue-tint shadow-none">
               <CardHeader className="flex flex-row items-center justify-between gap-2 px-5 pb-2 pt-5">

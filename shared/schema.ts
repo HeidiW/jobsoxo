@@ -4,7 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { emailListSchema } from "./client-emails";
 import { LINE_ITEM_STATUSES } from "./line-item-status";
-import { INVOICE_STAGES, contractScopeLineSchema, stageBasisSchema } from "./invoice-stages";
+import { INVOICE_STAGES, contractScopeLineSchema, stageBasisSchema, type ContractScopeLine, type StageBasis } from "./invoice-stages";
 
 // Decimal columns travel as strings, but forms often post a parsed number
 // (e.g. hours worked); accept either and validate the string form.
@@ -261,8 +261,8 @@ export const invoices = pgTable("invoices", {
   // taken when the invoice was created or last saved as a draft, so a later
   // change to the job doesn't rewrite what the client was sent.
   stage: text("stage").notNull().default("standalone"), // standalone | deposit | progress | final
-  stageBasis: jsonb("stage_basis").$type<{ type: "amount" | "percent"; value: number }>(),
-  contractScope: jsonb("contract_scope").$type<{ section: string | null; description: string; amount: number }[]>(),
+  stageBasis: jsonb("stage_basis").$type<StageBasis>(),
+  contractScope: jsonb("contract_scope").$type<ContractScopeLine[]>(),
   contractTotal: decimal("contract_total", { precision: 10, scale: 2 }),
   previouslyInvoiced: decimal("previously_invoiced", { precision: 10, scale: 2 }),
   previouslyPaid: decimal("previously_paid", { precision: 10, scale: 2 }),

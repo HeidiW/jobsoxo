@@ -64,6 +64,7 @@ describe("Job detail redesign", () => {
       if (init?.method === "POST") return Response.json(document);
       if (path.endsWith("/documents")) return Response.json(documents);
       if (path.endsWith("/line-items")) return Response.json(pricing);
+      if (path.endsWith("/billing")) return Response.json({ contractTotal: 0, scope: [], invoicedToDate: 0, paidToDate: 0, remaining: 0, invoices: [] });
       if (path.startsWith("/api/materials?")) return Response.json([material]);
       return Response.json(currentJob);
     });

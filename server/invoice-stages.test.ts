@@ -3,7 +3,7 @@ import request from "supertest";
 import type { Express } from "express";
 import { buildTestApp } from "./test-helpers";
 import { storage } from "./storage";
-import { contractFromLineItems, stageDueAmount, stageLineDescription, stageProblem } from "@shared/invoice-stages";
+import { completedToDate, contractFromLineItems, overallPercent, stageDueAmount, stageLineDescription, stageProblem, suggestedPercents } from "@shared/invoice-stages";
 import { stagedContextHtml } from "./email";
 
 describe("stage helpers", () => {
@@ -24,6 +24,22 @@ describe("stage helpers", () => {
     expect(stageDueAmount("final", null, 11200, 5500)).toBe(5700);
     expect(stageDueAmount("final", null, 11200, 11200)).toBe(0);
     expect(stageDueAmount("standalone", null, 11200, 0)).toBe(0);
+  });
+
+  it("bills progress by percent complete per line, crediting what was invoiced before", () => {
+    const lines = contractFromLineItems([
+      { description: "Walls", amount: "5200", status: "completed" },
+      { description: "Ceilings", amount: "6000", status: "in_progress" },
+      { description: "Trim", amount: "800", status: "pending" },
+    ]);
+    expect(suggestedPercents(lines.scope)).toEqual([100, 50, 0]);
+    expect(completedToDate(lines.scope, [100, 50, 0])).toBe(8200);
+    expect(overallPercent(lines.scope, [100, 50, 0], lines.total)).toBe(68.3);
+    // $8,200 of work done, $5,500 deposit already invoiced → $2,700 due now.
+    expect(stageDueAmount("progress", { type: "lines", percents: [100, 50, 0] }, lines.total, 5500, lines.scope)).toBe(2700);
+    expect(stageProblem("progress", { type: "lines", percents: [100, 0, 0] }, lines.total, 5500, lines.scope)).toContain("already covered by the $5,500.00 invoiced before");
+    expect(stageProblem("progress", { type: "lines", percents: [0, 0, 0] }, lines.total, 0, lines.scope)).toContain("Mark how far along");
+    expect(stageLineDescription("progress", { type: "lines", percents: [100, 50, 0] }, lines.total, lines.scope)).toBe("Progress payment (work 68.3% complete on $12,000.00 contract)");
   });
 
   it("words the billable line the way it prints", () => {
@@ -89,10 +105,12 @@ describe("staged invoices", () => {
     const billing = (await request(app).get(`/api/jobs/${jobId}/billing`)).body;
     expect(billing).toMatchObject({ invoicedToDate: 5500, paidToDate: 5500, remaining: 5700 });
 
-    const tooMuch = await request(app).post("/api/invoices").send({ ...base(), stage: "deposit", stageBasis: { type: "amount", value: 6000 } }).expect(201);
     // A stage never bills past what's left on the contract.
-    expect(tooMuch.body.total).toBe("5700.00");
-    await storage.updateInvoice(tooMuch.body.id, { status: "sent" });
+    const tooMuch = await request(app).post("/api/invoices").send({ ...base(), stage: "deposit", stageBasis: { type: "amount", value: 6000 } }).expect(400);
+    expect(tooMuch.body.error).toContain("more than the $5,700.00 left");
+    const rest = await request(app).post("/api/invoices").send({ ...base(), stage: "progress", stageBasis: { type: "amount", value: 5700 } }).expect(201);
+    expect(rest.body.total).toBe("5700.00");
+    await storage.updateInvoice(rest.body.id, { status: "sent" });
 
     const nothingLeft = await request(app).post("/api/invoices").send({ ...base(), stage: "final" }).expect(400);
     expect(nothingLeft.body.error).toContain("already been invoiced");
@@ -108,6 +126,26 @@ describe("staged invoices", () => {
     await storage.updateInvoice(deposit.id, { status: "partial", amountPaid: "600.00", balance: "400.00" });
     const final = (await request(app).post("/api/invoices").send({ ...payload, stage: "final" }).expect(201)).body;
     expect(final).toMatchObject({ stage: "final", stageBasis: null, contractTotal: "4000.00", previouslyInvoiced: "1000.00", previouslyPaid: "600.00", total: "3000.00" });
+  });
+
+  it("creates a per-line progress invoice from the job's work status", async () => {
+    const client = await storage.createClient({ name: "Progress Client", email: "progress@example.test" } as never);
+    const job = await storage.createJob({ clientId: client.id, title: "Progress job", status: "in_progress" } as never);
+    await storage.createLineItem({ jobId: job.id, category: "labor", description: "Walls", quantity: "1", unit: "lump", rate: "5200", amount: "5200", status: "completed" } as never);
+    await storage.createLineItem({ jobId: job.id, category: "labor", description: "Ceilings", quantity: "1", unit: "lump", rate: "6000", amount: "6000", status: "in_progress" } as never);
+    const billing = (await request(app).get(`/api/jobs/${job.id}/billing`).expect(200)).body;
+    expect(billing.scope.map((line: { status?: string }) => line.status)).toEqual(["completed", "in_progress"]);
+    const payload = { ...base(), clientId: client.id, jobId: job.id };
+    const deposit = (await request(app).post("/api/invoices").send({ ...payload, stage: "deposit", stageBasis: { type: "amount", value: 2000 } }).expect(201)).body;
+    await storage.updateInvoice(deposit.id, { status: "sent" });
+    const progress = (await request(app).post("/api/invoices").send({ ...payload, stage: "progress", stageBasis: { type: "lines", percents: [100, 50] } }).expect(201)).body;
+    // $5,200 + $3,000 done, $2,000 deposit credited.
+    expect(progress).toMatchObject({ stage: "progress", total: "6200.00", previouslyInvoiced: "2000.00" });
+    expect(progress.stageBasis).toEqual({ type: "lines", percents: [100, 50] });
+    const detail = (await request(app).get(`/api/invoices/${progress.id}`).expect(200)).body;
+    expect(detail.lineItems[0].description).toBe("Progress payment (work 73.2% complete on $11,200.00 contract)");
+    const notEnough = await request(app).post("/api/invoices").send({ ...payload, stage: "progress", stageBasis: { type: "lines", percents: [30, 0] } }).expect(400);
+    expect(notEnough.body.error).toContain("already covered");
   });
 
   it("needs a job with a priced scope, and leaves standard invoices exactly as before", async () => {

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { clientEmailOptions } from "@shared/client-emails";
 import { parseScheduleDate } from "./scheduling-logic";
 import { LINE_ITEM_STATUSES, LINE_ITEM_STATUS_LABELS, type LineItemStatus } from "@shared/line-item-status";
-import { INVOICE_STAGE_LABELS, isStaged, stageDueAmount, stageLineDescription, stageProblem, type ContractScopeLine, type InvoiceStage, type StageBasis } from "@shared/invoice-stages";
+import { INVOICE_STAGE_LABELS, completedToDate, isInvoiceStage, isStaged, overallPercent, stageDueAmount, stageLineDescription, stageProblem, suggestedPercents, type ContractScopeLine, type InvoiceStage, type StageBasis } from "@shared/invoice-stages";
 import { BillingBlock, PricingCovers, stageTitle, type StagedBillingFigures } from "@/components/invoices/staged-billing";
 
 /** What /api/jobs/:id/billing returns: the contract and what's been billed against it. */
@@ -403,8 +403,9 @@ export default function InvoiceNew() {
   const { toast } = useToast();
   const [lineItems, setLineItems] = useState<NewLineItem[]>([]);
   // Staged billing: which part of the job's contract this invoice asks for.
-  const [stage, setStage] = useState<InvoiceStage>("standalone");
-  const [basis, setBasis] = useState<StageBasis>({ type: "amount", value: 0 });
+  const requestedStage = searchParams.get("stage");
+  const [stage, setStage] = useState<InvoiceStage>(isInvoiceStage(requestedStage) ? requestedStage : "standalone");
+  const [basis, setBasis] = useState<StageBasis>(requestedStage === "progress" ? { type: "lines", percents: [] } : { type: "amount", value: 0 });
   const [sectionsOpen, setSectionsOpen] = useState<Record<string, boolean>>({});
 
   const draftQuery = useQuery<{ id: string; status: string; invoiceNumber: string; clientId: string; jobId: string | null; issueDate: string; dueDate: string; notes: string | null; termsAndConditions: string | null; taxRate: string | null; recipientEmails: string[] | null; stage?: string; stageBasis?: { type: "amount" | "percent"; value: number } | null; lineItems: Array<{ category: string; description: string; quantity: string; unit: string; rate: string; amount: string; section: string | null; refs: string | null; status?: string }> }>({
@@ -550,11 +551,17 @@ export default function InvoiceNew() {
   const billingQuery = useQuery<JobBillingSummary>({ queryKey: [`/api/jobs/${selectedJobId}/billing`], enabled: !!selectedJobId && isStaged(stage) });
   const billing = billingQuery.data;
   useEffect(() => { if (!selectedJobId && stage !== "standalone") setStage("standalone"); }, [selectedJobId, stage]);
-  const stageIssue = isStaged(stage) ? (billing ? stageProblem(stage, basis, billing.contractTotal, billing.invoicedToDate) : null) : null;
-  const stagedDue = isStaged(stage) && billing ? stageDueAmount(stage, basis, billing.contractTotal, billing.invoicedToDate) : 0;
+  const stageIssue = isStaged(stage) ? (billing ? stageProblem(stage, basis, billing.contractTotal, billing.invoicedToDate, billing.scope) : null) : null;
+  const stagedDue = isStaged(stage) && billing ? stageDueAmount(stage, basis, billing.contractTotal, billing.invoicedToDate, billing.scope) : 0;
+  // Per-line progress: start from each line's work status the first time the scope is known.
+  useEffect(() => {
+    if (stage === "progress" && basis.type === "lines" && billing && basis.percents.length !== billing.scope.length) {
+      setBasis({ type: "lines", percents: suggestedPercents(billing.scope) });
+    }
+  }, [stage, basis, billing]);
   // A staged invoice has one billable line, computed from the contract; the server recomputes it on save.
   const billedItems: NewLineItem[] = isStaged(stage)
-    ? (billing ? [{ id: "stage", category: "other", description: stageLineDescription(stage, basis, billing.contractTotal), quantity: 1, unit: "lump", rate: stagedDue, amount: stagedDue, hasQty: false, status: "pending" }] : [])
+    ? (billing ? [{ id: "stage", category: "other", description: stageLineDescription(stage, basis, billing.contractTotal, billing.scope), quantity: 1, unit: "lump", rate: stagedDue, amount: stagedDue, hasQty: false, status: "pending" }] : [])
     : lineItems;
   const billingFigures: StagedBillingFigures | null = isStaged(stage) && billing
     ? { stage, basis, contractScope: billing.scope, contractTotal: billing.contractTotal, previouslyInvoiced: billing.invoicedToDate, previouslyPaid: billing.paidToDate }
@@ -637,6 +644,7 @@ export default function InvoiceNew() {
         lastSavedSignature.current = signature;
         setSaveState("saved");
         queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+        if (selectedJobId) queryClient.invalidateQueries({ queryKey: [`/api/jobs/${selectedJobId}/billing`] });
         return id;
       } catch (error) {
         setSaveState("error");
@@ -699,6 +707,7 @@ export default function InvoiceNew() {
     onSuccess: (data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      if (selectedJobId) queryClient.invalidateQueries({ queryKey: [`/api/jobs/${selectedJobId}/billing`] });
       trackEvent("invoice_created", {
         delivery: vars.send ? "sent" : "draft",
         import_source: importSource,
@@ -1236,15 +1245,15 @@ export default function InvoiceNew() {
                         <div data-testid="invoice-stage" style={{ gridColumn: "1 / -1" }}>
                           <label style={labelStyle}>Billing stage</label>
                           <div role="radiogroup" aria-label="Billing stage" style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                            {(["standalone", "deposit", "final"] as InvoiceStage[]).map((value) => (
-                              <button key={value} type="button" role="radio" aria-checked={stage === value} onClick={() => setStage(value)} data-testid={`stage-${value}`}
+                            {(["standalone", "deposit", "progress", "final"] as InvoiceStage[]).map((value) => (
+                              <button key={value} type="button" role="radio" aria-checked={stage === value} onClick={() => { setStage(value); if (value === "deposit" && basis.type === "lines") setBasis({ type: "amount", value: 0 }); if (value === "progress" && basis.type !== "lines") setBasis({ type: "lines", percents: [] }); }} data-testid={`stage-${value}`}
                                 style={{ ...inputStyle, width: "auto", padding: "8px 14px", fontWeight: 700, cursor: "pointer", background: stage === value ? "#2563eb" : "#fff", color: stage === value ? "#fff" : "#0f172a", borderColor: stage === value ? "#2563eb" : undefined }}>
                                 {INVOICE_STAGE_LABELS[value]}
                               </button>
                             ))}
                           </div>
                           <p style={{ margin: "6px 0 0", fontSize: "12px", color: "#64748b" }}>
-                            {stage === "standalone" ? "Bills exactly the line items below." : stage === "deposit" ? "Asks for part of the job's contract up front. The whole scope prints for context." : "Bills whatever the earlier stages left on the contract."}
+                            {stage === "standalone" ? "Bills exactly the line items below." : stage === "deposit" ? "Asks for part of the job's contract up front. The whole scope prints for context." : stage === "progress" ? "Bills the work done so far. Earlier invoices, including a deposit, are credited automatically." : "Bills whatever the earlier stages left on the contract."}
                           </p>
                           {isStaged(stage) && (
                             <div style={{ marginTop: "10px", padding: "12px 14px", borderRadius: "12px", background: "#f8fafc", border: "1px solid #e2e8f0" }} data-testid="stage-summary">
@@ -1260,12 +1269,50 @@ export default function InvoiceNew() {
                                   {stage === "deposit" && (
                                     <div style={{ display: "flex", gap: "8px", alignItems: "center", marginTop: "10px", flexWrap: "wrap" }}>
                                       <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor="deposit-value">Deposit</label>
-                                      <select value={basis.type} onChange={(e) => setBasis({ ...basis, type: e.target.value as StageBasis["type"] })} style={{ ...inputStyle, width: "auto" }} aria-label="Deposit as" data-testid="select-deposit-type">
+                                      <select value={basis.type === "percent" ? "percent" : "amount"} onChange={(e) => setBasis({ type: e.target.value as "amount" | "percent", value: basis.type === "lines" ? 0 : basis.value })} style={{ ...inputStyle, width: "auto" }} aria-label="Deposit as" data-testid="select-deposit-type">
                                         <option value="amount">Amount ($)</option>
                                         <option value="percent">Percent of contract</option>
                                       </select>
-                                      <input id="deposit-value" type="number" min="0" step={basis.type === "percent" ? "1" : "0.01"} value={basis.value || ""} onChange={(e) => setBasis({ ...basis, value: parseFloat(e.target.value) || 0 })}
+                                      <input id="deposit-value" type="number" min="0" step={basis.type === "percent" ? "1" : "0.01"} value={basis.type === "lines" ? "" : basis.value || ""} onChange={(e) => setBasis({ type: basis.type === "percent" ? "percent" : "amount", value: parseFloat(e.target.value) || 0 })}
                                         placeholder={basis.type === "percent" ? "50" : "0.00"} style={{ ...inputStyle, width: "140px" }} aria-label={basis.type === "percent" ? "Deposit percent" : "Deposit amount"} data-testid="input-deposit-value" />
+                                    </div>
+                                  )}
+                                  {stage === "progress" && (
+                                    <div style={{ marginTop: "10px" }} data-testid="progress-basis">
+                                      <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                                        <label style={{ ...labelStyle, marginBottom: 0 }} htmlFor="progress-type">Bill by</label>
+                                        <select id="progress-type" value={basis.type} data-testid="select-progress-type" style={{ ...inputStyle, width: "auto" }}
+                                          onChange={(e) => {
+                                            const type = e.target.value as StageBasis["type"];
+                                            setBasis(type === "lines" ? { type: "lines", percents: suggestedPercents(billing.scope) } : { type, value: 0 });
+                                          }}>
+                                          <option value="lines">Percent complete per line</option>
+                                          <option value="percent">Percent of contract</option>
+                                          <option value="amount">Amount ($)</option>
+                                        </select>
+                                        {basis.type !== "lines" && (
+                                          <input type="number" min="0" step={basis.type === "percent" ? "1" : "0.01"} value={basis.value || ""} onChange={(e) => setBasis({ type: basis.type, value: parseFloat(e.target.value) || 0 })}
+                                            placeholder={basis.type === "percent" ? "30" : "0.00"} style={{ ...inputStyle, width: "140px" }} aria-label={basis.type === "percent" ? "Progress percent" : "Progress amount"} data-testid="input-progress-value" />
+                                        )}
+                                      </div>
+                                      {basis.type === "lines" && (
+                                        <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
+                                          {billing.scope.map((line, index) => (
+                                            <div key={index} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 72px 96px", gap: "8px", alignItems: "center", fontSize: "12.5px" }} data-testid={`progress-line-${index}`}>
+                                              <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={line.description}>{line.section ? `${line.section} · ` : ""}{line.description}</span>
+                                              <input type="number" min="0" max="100" step="5" value={basis.percents[index] ?? 0} aria-label={`Percent complete: ${line.description}`} data-testid={`input-progress-percent-${index}`}
+                                                onChange={(e) => { const next = [...basis.percents]; next[index] = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)); setBasis({ type: "lines", percents: next }); }}
+                                                style={{ ...inputStyle, padding: "6px 8px", textAlign: "right" }} />
+                                              <span style={{ fontFamily: "var(--font-mono)", textAlign: "right", color: "#475569" }}>{formatCurrency(line.amount * ((basis.percents[index] ?? 0) / 100))}</span>
+                                            </div>
+                                          ))}
+                                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#475569", paddingTop: "4px", borderTop: "1px dashed #e2e8f0" }}>
+                                            <span>Work completed to date ({overallPercent(billing.scope, basis.percents, billing.contractTotal)}%)</span>
+                                            <span style={{ fontFamily: "var(--font-mono)" }} data-testid="progress-completed">{formatCurrency(completedToDate(billing.scope, basis.percents))}</span>
+                                          </div>
+                                          {billing.invoicedToDate > 0 && <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#475569" }}><span>Less invoiced before</span><span style={{ fontFamily: "var(--font-mono)" }}>−{formatCurrency(billing.invoicedToDate)}</span></div>}
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                   <div style={{ display: "flex", justifyContent: "space-between", marginTop: "10px", paddingTop: "10px", borderTop: "1px solid #e2e8f0", fontSize: "14px", fontWeight: 800 }}>
