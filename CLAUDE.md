@@ -35,6 +35,7 @@ These protect real payroll, real funds and audit history. Don't relax them witho
 - Persist a creation reservation before a remote company-creation request so an ambiguous response can't trigger a duplicate.
 - **Company removal is JobsOxo-only**: never delete, disassociate or revoke the company in Gusto; keep local employees and source records.
 - Don't invent provider capabilities (e.g. a bank feed) or bypass provider verification — confirm against Gusto docs.
+- **Submit outcomes** (`server/gusto-payroll.ts`): a 4xx from Gusto's submit is a definitive refusal (nothing was paid), so the run goes to `failed` with Gusto's status, category and error key in `lastError` and must be recalculated before resubmitting. A timeout or 5xx is ambiguous and stays `submission_pending`, never retried automatically. `persistProvider` keeps a `failed` run failed until recalculation and preserves `lastError` while a run is failed or pending. Gusto's payload text is never echoed (`gusto-client.ts`), only its validated tokens. Demo companies only: `POST /api/gusto/payroll-runs/:id/reopen` hands a pending run back once Gusto shows the payroll unsubmitted. Upcoming payrolls carry Gusto's `payroll_deadline` and the UI shows "submit by".
 - Don't touch production data, Gusto settings, or shared company/payment-reminder settings from tests or browser checks.
 
 ## Domain rules

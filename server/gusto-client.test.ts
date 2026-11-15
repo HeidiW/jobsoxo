@@ -42,7 +42,7 @@ describe("Gusto server client", () => {
     await expect(gustoRequest("/v1/payrolls")).rejects.toMatchObject({
       status: 422,
       code: "invalid_request",
-      message: "Gusto request was not accepted (422). Check company setup and payroll readiness.",
+      message: "Gusto request was not accepted (422: invalid_request). Check company setup and payroll readiness.",
     });
     try {
       await gustoRequest("/v1/payrolls");

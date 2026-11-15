@@ -23,7 +23,7 @@ vi.mock("./plaid-sync", () => ({ syncPlaidTransactionsForUser: vi.fn() }));
 const companyId = `company-${randomUUID()}`;
 let adminId = "", otherAdminId = "", employeeId = "", providerId = "";
 const userIds: string[] = [], employeeIds: string[] = [], runIds: string[] = [], eventIds: string[] = [];
-let provider: any, fetchMock: ReturnType<typeof vi.fn>, timeoutSubmit = false;
+let provider: any, fetchMock: ReturnType<typeof vi.fn>, timeoutSubmit = false, rejectSubmit = false;
 let tokenInfo: any;
 const app = express();
 app.use(express.json({ verify: (req, _res, raw) => { (req as any).rawBody = Buffer.from(raw); } }));
@@ -51,7 +51,7 @@ beforeEach(async () => {
   vi.stubEnv("GUSTO_WEBHOOK_SECRET", "test-signature-secret");
   vi.stubEnv("GUSTO_ACCESS_TOKEN", undefined);
   vi.stubEnv("GUSTO_COMPANY_ID", undefined);
-  timeoutSubmit = false;
+  timeoutSubmit = false; rejectSubmit = false;
   const [employee] = await db.insert(employees).values({ name: "Payroll Test Worker", email: `gusto-${randomUUID()}@example.test`, dayRate: "200", employmentType: "w2", payType: "hourly", status: "active" }).returning();
   employeeId = employee.id; employeeIds.push(employeeId);
   providerId = `payroll-${randomUUID()}`;
@@ -99,6 +99,7 @@ beforeEach(async () => {
     }
     if (path.endsWith(`/${providerId}/submit`) && method === "PUT") {
       if (timeoutSubmit) throw new DOMException("timeout", "AbortError");
+      if (rejectSubmit) return response({ errors: [{ error_key: "payroll", category: "invalid_attribute_value", message: "Payroll calculation is out of date. Please recalculate." }] }, 422);
       provider.processing_request = { status: "submitting" };
       return response(null, 202);
     }
@@ -259,6 +260,43 @@ describe("Gusto-only payroll", () => {
     expect(sends[0][1]?.method).toBe("PUT");
     expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/calculate"))).toHaveLength(1);
     const { getBalance } = await import("./plaid"); expect(getBalance).not.toHaveBeenCalled();
+  });
+  it("hands a submission Gusto rejected back for recalculation, with Gusto's reason", async () => {
+    const run = await readyRun();
+    rejectSubmit = true;
+    const rejected = await post(`/api/gusto/payroll-runs/${run.id}/submit`).send({ reviewedUpdatedAt: run.updatedAt }).expect(422);
+    expect(rejected.body.error).toContain("422: invalid_attribute_value payroll");
+    expect(rejected.body.error).not.toContain("out of date");
+    const after = (await get(`/api/gusto/payroll-runs/${run.id}`).expect(200)).body;
+    expect(after).toMatchObject({ status: "failed", canRecalculate: true, canSubmit: false });
+    expect(after.error).toContain("Gusto rejected the submission");
+    expect(after.error).toContain("422: invalid_attribute_value payroll");
+    // Reconciling keeps the reason rather than wiping it.
+    expect((await post(`/api/gusto/payroll-runs/${run.id}/status`).expect(200)).body.error).toContain("Gusto rejected the submission");
+    // Recalculate and submit again: this time Gusto accepts.
+    rejectSubmit = false;
+    await post(`/api/gusto/payroll-runs/${run.id}/calculate`).expect(200);
+    provider.processing_request = { status: "calculate_success" };
+    const ready = (await post(`/api/gusto/payroll-runs/${run.id}/status`).expect(200)).body;
+    expect(ready.status).toBe("ready_for_review");
+    expect((await post(`/api/gusto/payroll-runs/${run.id}/submit`).send({ reviewedUpdatedAt: ready.updatedAt }).expect(200)).body.status).toBe("submitting");
+    expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/submit"))).toHaveLength(2);
+  });
+  it("lets a demo run stuck after an ambiguous submit be reopened only when Gusto shows nothing was submitted", async () => {
+    const run = await readyRun();
+    timeoutSubmit = true;
+    await post(`/api/gusto/payroll-runs/${run.id}/submit`).send({ reviewedUpdatedAt: run.updatedAt }).expect(504);
+    expect((await get(`/api/gusto/payroll-runs/${run.id}`)).body.status).toBe("submission_pending");
+    timeoutSubmit = false;
+    // Gusto says it is processing: reopening is refused.
+    provider.processing_request = { status: "submitting" };
+    await post(`/api/gusto/payroll-runs/${run.id}/reopen`).expect(409);
+    // Gusto shows the payroll untouched: reopen hands it back for recalculation.
+    provider.processing_request = { status: "calculate_success" }; provider.processed = false;
+    const reopened = (await post(`/api/gusto/payroll-runs/${run.id}/reopen`).expect(200)).body;
+    expect(reopened).toMatchObject({ status: "failed", canRecalculate: true });
+    expect(reopened.error).toContain("Reopened from Demo tools");
+    await post(`/api/gusto/payroll-runs/${run.id}/reopen`).expect(409);
   });
   it("allows only one claimant when two admins requests submit simultaneously", async () => {
     const run = await readyRun();

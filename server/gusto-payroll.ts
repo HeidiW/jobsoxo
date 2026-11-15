@@ -99,10 +99,14 @@ async function persistProvider(tx: Transaction, run: Run, provider: any) {
     if (!["paid", "processed", "reversed", "partially_reversed"].includes(run.status)) status = "submitted";
   } else if (run.status === "cancelling" && provider.processed === false && !requestStatus) status = "cancelled";
   else if (!afterSubmission && requestStatus === "calculating") status = "calculating";
-  else if (!afterSubmission && (requestStatus === "calculate_success" || provider.calculated_at)) status = "ready_for_review";
+  // A run that failed (or whose submission Gusto rejected) stays failed until
+  // someone recalculates; a stale calculation must not slide back to "ready".
+  else if (!afterSubmission && run.status !== "failed" && (requestStatus === "calculate_success" || provider.calculated_at)) status = "ready_for_review";
   else if (!afterSubmission && run.status === "unknown" && provider.processed === false && !requestStatus) status = "draft";
   // An ambiguous submission is never changed to a retryable ready state just
   // because the provider's read replica still returns an unprocessed payroll.
+  // While it stays unresolved (or failed), keep the reason we recorded.
+  if (lastError === null && (status === "submission_pending" || status === "failed") && status === run.status) lastError = run.lastError;
   const projection = provider.totals ? reviewProjection(provider) : null;
   if (status === "ready_for_review" && !projection) throw new GustoProviderError("Gusto calculation has no totals.", 502, "invalid_response");
   if (projection) {
@@ -284,6 +288,17 @@ export async function submitPayroll(id: string, userId: string, reviewedUpdatedA
     // acknowledgement; subsequent GETs/webhooks establish the actual outcome.
     await gustoRequest(`${path}/submit`, { userId, method: "PUT" });
   } catch (error) {
+    if (error instanceof GustoProviderError && error.status >= 400 && error.status < 500) {
+      // Gusto refused the request outright, so no payment can have started.
+      // Hand the run back for recalculation with Gusto's reason attached.
+      await db.update(gustoPayrollRuns).set({
+        status: "failed", providerRequestState: "calculate_success", submittedAt: null, submissionActorUserId: null,
+        lastError: `Gusto rejected the submission. ${error.message} Calculate with Gusto again and review before resubmitting.`,
+        updatedAt: new Date(),
+      }).where(eq(gustoPayrollRuns.id, id));
+      throw error;
+    }
+    // A timeout or a 5xx is ambiguous: Gusto may have taken the submission.
     await db.update(gustoPayrollRuns).set({
       status: "submission_pending", providerRequestState: "unknown",
       lastError: "Submission outcome is not confirmed. Refresh provider status; this payroll will not be submitted again automatically.",
@@ -291,6 +306,32 @@ export async function submitPayroll(id: string, userId: string, reviewedUpdatedA
     }).where(eq(gustoPayrollRuns.id, id));
     throw error;
   }
+}
+
+/**
+ * Demo companies only: hands a run stuck in submission_pending back for
+ * recalculation once Gusto confirms the payroll was never submitted. Live
+ * companies never get this shortcut; an ambiguous live submission is resolved
+ * against Gusto's records, not by a button.
+ */
+export async function reopenDemoRun(id: string, userId: string) {
+  const integration = await companyIntegration(userId);
+  if (integration.environment !== "demo") throw new PayrollConflict("Reopening a pending submission is only available for the Gusto demo company.");
+  await db.transaction(async tx => {
+    const [run] = await tx.select().from(gustoPayrollRuns).where(and(eq(gustoPayrollRuns.id, id), eq(gustoPayrollRuns.userId, userId))).for("update");
+    if (!run) throw new PayrollConflict("Payroll run not found.");
+    if (run.status !== "submission_pending" || !run.gustoPayrollId) throw new PayrollConflict("Only a run waiting on an unconfirmed submission can be reopened.");
+    const provider = await currentPayroll(run);
+    const requestStatus = provider.processing_request?.status;
+    if (provider.processed === true || requestStatus === "submitting" || requestStatus === "submit_success") {
+      throw new PayrollConflict("Gusto reports this payroll as submitted or processing. Reconcile its status instead of reopening it.");
+    }
+    await tx.update(gustoPayrollRuns).set({
+      status: "failed", providerRequestState: requestStatus ?? "unknown", submittedAt: null, submissionActorUserId: null,
+      lastError: "Reopened from Demo tools after Gusto confirmed nothing was submitted. Calculate with Gusto again and review before resubmitting.",
+      updatedAt: new Date(),
+    }).where(eq(gustoPayrollRuns.id, id));
+  });
 }
 
 export async function cancelPayroll(id: string, userId: string) {

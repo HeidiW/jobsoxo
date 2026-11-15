@@ -7,7 +7,7 @@ import { GustoConfigurationError, GustoProviderError, gustoConfigured, gustoEnvi
 import { approveDemoCompany, companyIntegration, connectCompany, createFlow, employeeReadiness, gustoActor, syncCompany, syncEmployees, upcomingPayrolls, verifyDemoFunding } from "./gusto-company";
 import { fillDemoCompany, setUpSampleEmployees } from "./gusto-demo-sample";
 import { importGustoEmployees, syncCompanyAndImport } from "./gusto-employee-import";
-import { calculatePayroll, cancelPayroll, PayrollConflict, pendingPayrollStates, reconcilePayroll, runForUser, submitPayroll } from "./gusto-payroll";
+import { calculatePayroll, cancelPayroll, PayrollConflict, pendingPayrollStates, reconcilePayroll, reopenDemoRun, runForUser, submitPayroll } from "./gusto-payroll";
 import { derivePayrollInputs, payrollDate } from "./gusto-inputs";
 import { registerPayrollBankView } from "./payroll-bank-view";
 import { demoCompanySetup, registerGustoDemoRoutes } from "./gusto-demo-company";
@@ -169,6 +169,15 @@ export function registerGustoRoutes(app: Express, requireAdmin: (req: Request, r
         catch { return res.json({ ...await publicRun(run.id, await gustoActor(req.session.userId!)), error: "Gusto status could not be refreshed. The last confirmed state is shown; no payroll was retried." }); }
       }
       res.json(await publicRun(run.id, await gustoActor(req.session.userId!)));
+    } catch (error) { fail(res, error); }
+  });
+  app.post("/api/gusto/payroll-runs/:id/reopen", requireAdmin, async (req, res) => {
+    try {
+      const actor = await gustoActor(req.session.userId!);
+      const run = await runForUser(req.params.id, actor);
+      if (!run) return res.status(404).json({ error: "Payroll run not found" });
+      await reopenDemoRun(run.id, actor);
+      res.json(await publicRun(run.id, actor));
     } catch (error) { fail(res, error); }
   });
   for (const action of ["calculate", "submit", "status", "cancel"] as const) {

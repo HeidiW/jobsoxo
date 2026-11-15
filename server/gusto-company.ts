@@ -241,7 +241,8 @@ export async function approveDemoCompany(userId: string) {
   return syncCompany(userId);
 }
 
-export type UpcomingPayroll = { payrollId: string; periodStart: string; periodEnd: string; payDate: string };
+/** `deadline` is Gusto's submit-by time for the pay date (ISO 8601) when it reports one. */
+export type UpcomingPayroll = { payrollId: string; periodStart: string; periodEnd: string; payDate: string; deadline: string | null };
 
 /** Gusto's upcoming regular payrolls: the periods and check dates a pay run must match. */
 export async function upcomingPayrolls(userId: string): Promise<UpcomingPayroll[]> {
@@ -250,7 +251,7 @@ export async function upcomingPayrolls(userId: string): Promise<UpcomingPayroll[
   if (!Array.isArray(rows)) throw new GustoProviderError("Gusto returned an invalid payroll list.", 502, "invalid_response");
   return rows
     .filter((row) => !row.off_cycle && !row.processed && row.pay_period?.start_date && row.pay_period?.end_date && row.check_date)
-    .map((row) => ({ payrollId: String(row.payroll_uuid), periodStart: row.pay_period.start_date, periodEnd: row.pay_period.end_date, payDate: row.check_date }))
+    .map((row) => ({ payrollId: String(row.payroll_uuid), periodStart: row.pay_period.start_date, periodEnd: row.pay_period.end_date, payDate: row.check_date, deadline: typeof row.payroll_deadline === "string" ? row.payroll_deadline : null }))
     .sort((a, b) => a.payDate.localeCompare(b.payDate))
     .slice(0, 6);
 }

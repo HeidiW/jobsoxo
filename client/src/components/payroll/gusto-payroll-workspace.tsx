@@ -24,7 +24,7 @@ type GustoStatus = GustoDemoSetupStatus & {
   fundingAccount?: { id: string; status: string; accountMask?: string; name?: string } | null;
   onboardingComplete?: boolean; blockers?: string[]; error?: string; environment?: string; companyStatus?: string | null;
 };
-type UpcomingPayroll = { payrollId: string; periodStart: string; periodEnd: string; payDate: string };
+type UpcomingPayroll = { payrollId: string; periodStart: string; periodEnd: string; payDate: string; deadline?: string | null };
 type ReadinessEmployee = { id: string; name?: string; ready: boolean; blockers?: string[]; gustoEmployeeId?: string | null; onboardingStatus?: string | null; paymentMethodStatus?: string | null };
 type GustoReadiness = { employees?: ReadinessEmployee[] };
 
@@ -558,7 +558,7 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                     ? <span style={{ color: "var(--jx-orange-ink)" }}>Gusto has no upcoming payrolls yet{approved ? ". Check the pay schedule in Gusto setup." : " — the company must be approved first."}</span>
                     : <>
                       <span>Gusto's upcoming pay periods: </span>
-                      {upcoming.map(p => <span key={p.payrollId} style={{ display: "inline-block", marginRight: "8px", fontWeight: period && p.periodStart === period.start && p.periodEnd === period.end ? 700 : 400, color: period && p.periodStart === period.start && p.periodEnd === period.end ? "var(--jx-green-ink)" : undefined }}>{p.periodStart} – {p.periodEnd} · pay {p.payDate}</span>)}
+                      {upcoming.map(p => <span key={p.payrollId} style={{ display: "inline-block", marginRight: "8px", fontWeight: period && p.periodStart === period.start && p.periodEnd === period.end ? 700 : 400, color: period && p.periodStart === period.start && p.periodEnd === period.end ? "var(--jx-green-ink)" : undefined }}>{p.periodStart} – {p.periodEnd} · pay {p.payDate}{p.deadline ? ` · submit by ${new Date(p.deadline).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : ""}</span>)}
                       {period && !matchingUpcoming && <span role="alert" style={{ display: "block", color: "var(--jx-orange-ink)", marginTop: "4px" }}>This pay run ({period.start} – {period.end}) doesn't match a Gusto period. Prepare a pay run using one of the periods above.</span>}
                     </>}
                 </div>}
@@ -592,6 +592,8 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
             {run.status === "paid" && hasPositiveRunAmount(run) && <p style={{ color: "var(--muted)", fontSize: "11px" }}>Gusto reports employee payments initiated. This does not confirm that funds have settled in employees’ bank accounts.</p>}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "7px", flexWrap: "wrap", marginTop: "12px" }}>
               <button type="button" style={buttonStyle} disabled={busy} onClick={() => void perform("POST", `/api/gusto/payroll-runs/${run.id}/status`)}>Reconcile Gusto status</button>
+              {run.status === "submission_pending" && status?.environment === "demo" && <button type="button" style={buttonStyle} disabled={busy} title="Demo only: hands the run back for recalculation once Gusto confirms nothing was submitted" data-testid="button-gusto-reopen-demo-run"
+                onClick={() => void perform("POST", `/api/gusto/payroll-runs/${run.id}/reopen`)}>Reopen for recalculation (demo)</button>}
               {run.canRecalculate === true && !pending && <button type="button" style={buttonStyle} disabled={busy} onClick={() => void perform("POST", `/api/gusto/payroll-runs/${run.id}/calculate`)}>Calculate with Gusto</button>}
               {run.status === "ready_for_review" && run.canSubmit !== false && <button type="button" style={{ ...buttonStyle, background: "var(--jox-primary)", color: "#fff", border: 0 }} disabled={busy || !run.updatedAt} onClick={() => setSubmitConfirm(true)}>Submit reviewed totals to Gusto</button>}
               {run.canCancel && <button type="button" style={buttonStyle} disabled={busy} onClick={() => setCancelConfirm(true)}>Cancel Gusto run</button>}

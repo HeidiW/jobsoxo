@@ -95,8 +95,8 @@ describe("upcomingPayrolls", () => {
     const result = await upcomingPayrolls(await connect());
 
     expect(result).toEqual([
-      { payrollId: "p1", periodStart: "2026-11-09", periodEnd: "2026-11-15", payDate: "2026-11-20" },
-      { payrollId: "p2", periodStart: "2026-11-16", periodEnd: "2026-11-22", payDate: "2026-11-27" },
+      { payrollId: "p1", periodStart: "2026-11-09", periodEnd: "2026-11-15", payDate: "2026-11-20", deadline: null },
+      { payrollId: "p2", periodStart: "2026-11-16", periodEnd: "2026-11-22", payDate: "2026-11-27", deadline: null },
     ]);
     const [path] = vi.mocked(gustoRequest).mock.calls.find(([p]: any[]) => p.includes("/payrolls"))!;
     expect(path).toContain("processing_statuses=unprocessed");

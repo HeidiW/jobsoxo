@@ -173,8 +173,11 @@ async function send<T>(path: string, token: string | undefined, options: Request
       const providerCode = typeof code === "string" && /^[a-z_]{1,60}$/.test(code) ? code : "provider_error";
       const errorKey = data?.errors?.[0]?.error_key;
       const field = typeof errorKey === "string" && /^[a-z0-9_.]{1,60}$/.test(errorKey) ? errorKey : undefined;
+      // Gusto's category and error key are validated tokens, safe to show; the
+      // payload text itself is never echoed (it can carry employee details).
+      const why = [providerCode !== "provider_error" ? providerCode : null, field].filter(Boolean).join(" ");
       throw new GustoProviderError(
-        `Gusto request was not accepted (${response.status}). Check company setup and payroll readiness.`,
+        `Gusto request was not accepted (${response.status}${why ? `: ${why}` : ""}). Check company setup and payroll readiness.`,
         response.status, providerCode, field,
       );
     }
