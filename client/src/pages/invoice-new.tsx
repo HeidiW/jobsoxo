@@ -8,10 +8,13 @@ import { BillingBlock, PricingCovers, stageTitle, type StagedBillingFigures } fr
 /** What /api/jobs/:id/billing returns: the contract and what's been billed against it. */
 interface JobBillingSummary {
   contractTotal: number;
+  contractSource: "job_total" | "lines" | "none";
+  linesTotal: number;
   scope: ContractScopeLine[];
   invoicedToDate: number;
   paidToDate: number;
   remaining: number;
+  nextProgressNumber: number;
 }
 import { InvoiceRecipients } from "@/components/invoices/invoice-recipients";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -212,7 +215,7 @@ function InvoicePreview({
           )}
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div className="invoice-paper-title">{billing && isStaged(billing.stage) ? stageTitle(billing.stage).toUpperCase() : "INVOICE"}</div>
+          <div className="invoice-paper-title">{billing && isStaged(billing.stage) ? stageTitle(billing.stage, billing.stageNumber).toUpperCase() : "INVOICE"}</div>
           <div style={{ fontSize: "13px", ...mono, color: "#94a3b8", marginTop: "6px" }}>Draft</div>
           {issueDate && (
             <div className="invoice-paper-issued" style={{ fontSize: "11.5px", color: "#64748b", marginTop: "8px" }}>
@@ -406,9 +409,10 @@ export default function InvoiceNew() {
   const requestedStage = searchParams.get("stage");
   const [stage, setStage] = useState<InvoiceStage>(isInvoiceStage(requestedStage) ? requestedStage : "standalone");
   const [basis, setBasis] = useState<StageBasis>(requestedStage === "progress" ? { type: "lines", percents: [] } : { type: "amount", value: 0 });
+  const [draftStageNumber, setDraftStageNumber] = useState<number | null>(null);
   const [sectionsOpen, setSectionsOpen] = useState<Record<string, boolean>>({});
 
-  const draftQuery = useQuery<{ id: string; status: string; invoiceNumber: string; clientId: string; jobId: string | null; issueDate: string; dueDate: string; notes: string | null; termsAndConditions: string | null; taxRate: string | null; recipientEmails: string[] | null; stage?: string; stageBasis?: { type: "amount" | "percent"; value: number } | null; lineItems: Array<{ category: string; description: string; quantity: string; unit: string; rate: string; amount: string; section: string | null; refs: string | null; status?: string }> }>({
+  const draftQuery = useQuery<{ id: string; status: string; invoiceNumber: string; clientId: string; jobId: string | null; issueDate: string; dueDate: string; notes: string | null; termsAndConditions: string | null; taxRate: string | null; recipientEmails: string[] | null; stage?: string; stageBasis?: StageBasis | null; stageNumber?: number | null; lineItems: Array<{ category: string; description: string; quantity: string; unit: string; rate: string; amount: string; section: string | null; refs: string | null; status?: string }> }>({
     queryKey: ["/api/invoices", reopenedDraftId.current],
     enabled: !!reopenedDraftId.current && !draftLoaded.current,
     retry: false,
@@ -490,7 +494,7 @@ export default function InvoiceNew() {
       return;
     }
     setDraftNumber(draft.invoiceNumber);
-    if (isStaged(draft.stage)) { setStage(draft.stage); if (draft.stageBasis) setBasis(draft.stageBasis); }
+    if (isStaged(draft.stage)) { setStage(draft.stage); if (draft.stageBasis) setBasis(draft.stageBasis); setDraftStageNumber(draft.stageNumber ?? null); }
     const day = (value: string) => parseScheduleDate(value) ? format(parseScheduleDate(value)!, "yyyy-MM-dd") : "";
     form.reset({
       clientId: draft.clientId, jobId: draft.jobId ?? "", issueDate: day(draft.issueDate), dueDate: day(draft.dueDate),
@@ -551,6 +555,25 @@ export default function InvoiceNew() {
   const billingQuery = useQuery<JobBillingSummary>({ queryKey: [`/api/jobs/${selectedJobId}/billing`], enabled: !!selectedJobId && isStaged(stage) });
   const billing = billingQuery.data;
   useEffect(() => { if (!selectedJobId && stage !== "standalone") setStage("standalone"); }, [selectedJobId, stage]);
+  // Progress payments are numbered per job; a reopened draft keeps the number it was given.
+  const stageNumber = stage === "progress" ? (draftStageNumber ?? billing?.nextProgressNumber ?? 1) : null;
+  // "Job total": the agreed contract figure, saved on the job so every stage and the Billing panel agree.
+  const [jobTotalDraft, setJobTotalDraft] = useState<string | null>(null);
+  const saveJobTotal = async () => {
+    if (jobTotalDraft === null || !selectedJobId) return;
+    const value = parseFloat(jobTotalDraft);
+    setJobTotalDraft(null);
+    if (!Number.isFinite(value) || value < 0 || value === billing?.contractTotal) return;
+    try {
+      await apiRequest("PATCH", `/api/jobs/${selectedJobId}`, { estimatedTotal: value > 0 ? value.toFixed(2) : null });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [`/api/jobs/${selectedJobId}/billing`] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/jobs"] }),
+      ]);
+    } catch (error) {
+      toast({ title: "Couldn't save the job total", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
+    }
+  };
   const stageIssue = isStaged(stage) ? (billing ? stageProblem(stage, basis, billing.contractTotal, billing.invoicedToDate, billing.scope) : null) : null;
   const stagedDue = isStaged(stage) && billing ? stageDueAmount(stage, basis, billing.contractTotal, billing.invoicedToDate, billing.scope) : 0;
   // Per-line progress: start from each line's work status the first time the scope is known.
@@ -561,10 +584,10 @@ export default function InvoiceNew() {
   }, [stage, basis, billing]);
   // A staged invoice has one billable line, computed from the contract; the server recomputes it on save.
   const billedItems: NewLineItem[] = isStaged(stage)
-    ? (billing ? [{ id: "stage", category: "other", description: stageLineDescription(stage, basis, billing.contractTotal, billing.scope), quantity: 1, unit: "lump", rate: stagedDue, amount: stagedDue, hasQty: false, status: "pending" }] : [])
+    ? (billing ? [{ id: "stage", category: "other", description: stageLineDescription(stage, basis, billing.contractTotal, billing.scope, stageNumber), quantity: 1, unit: "lump", rate: stagedDue, amount: stagedDue, hasQty: false, status: "pending" }] : [])
     : lineItems;
   const billingFigures: StagedBillingFigures | null = isStaged(stage) && billing
-    ? { stage, basis, contractScope: billing.scope, contractTotal: billing.contractTotal, previouslyInvoiced: billing.invoicedToDate, previouslyPaid: billing.paidToDate }
+    ? { stage, stageNumber, basis, contractScope: billing.scope, contractTotal: billing.contractTotal, previouslyInvoiced: billing.invoicedToDate, previouslyPaid: billing.paidToDate }
     : null;
 
   const subtotal = billedItems.reduce((s, i) => s + i.amount, 0);
@@ -1253,7 +1276,7 @@ export default function InvoiceNew() {
                             ))}
                           </div>
                           <p style={{ margin: "6px 0 0", fontSize: "12px", color: "#64748b" }}>
-                            {stage === "standalone" ? "Bills exactly the line items below." : stage === "deposit" ? "Asks for part of the job's contract up front. The whole scope prints for context." : stage === "progress" ? "Bills the work done so far. Earlier invoices, including a deposit, are credited automatically." : "Bills whatever the earlier stages left on the contract."}
+                            {stage === "standalone" ? "Bills exactly the line items below." : stage === "deposit" ? "Asks for part of the job's contract up front. The whole scope prints for context." : stage === "progress" ? `Progress payment ${stageNumber ?? 1} on this job. Bills the work done so far; earlier invoices, including a deposit, are credited automatically.` : "Bills whatever the earlier stages left on the contract."}
                           </p>
                           {isStaged(stage) && (
                             <div style={{ marginTop: "10px", padding: "12px 14px", borderRadius: "12px", background: "#f8fafc", border: "1px solid #e2e8f0" }} data-testid="stage-summary">
@@ -1261,7 +1284,16 @@ export default function InvoiceNew() {
                                 : billingQuery.isError || !billing ? <p role="alert" style={{ margin: 0, fontSize: "13px", color: "#b45309" }}>Couldn’t load the job’s contract. Try again, or send a standard invoice.</p>
                                 : <>
                                   <div style={{ display: "grid", gap: "4px", fontSize: "13px", color: "#475569" }}>
-                                    <div style={{ display: "flex", justifyContent: "space-between" }}><span>Contract total ({billing.scope.length} priced {billing.scope.length === 1 ? "line" : "lines"} on the job)</span><strong style={{ fontFamily: "var(--font-mono)" }} data-testid="stage-contract-total">{formatCurrency(billing.contractTotal)}</strong></div>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+                                      <label htmlFor="job-total" style={{ margin: 0 }}>Job total{billing.contractSource === "lines" ? ` (sum of ${billing.scope.length} priced ${billing.scope.length === 1 ? "line" : "lines"})` : billing.contractSource === "job_total" && billing.linesTotal > 0 && billing.linesTotal !== billing.contractTotal ? ` (lines add up to ${formatCurrency(billing.linesTotal)})` : ""}</label>
+                                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                                        <span style={{ color: "#64748b" }}>$</span>
+                                        <input id="job-total" type="number" min="0" step="0.01" value={jobTotalDraft ?? (billing.contractTotal || "")} placeholder="0.00"
+                                          onChange={(e) => setJobTotalDraft(e.target.value)} onBlur={() => void saveJobTotal()} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
+                                          style={{ ...inputStyle, width: "130px", padding: "6px 8px", textAlign: "right", fontFamily: "var(--font-mono)", fontWeight: 700 }} aria-label="Job total" data-testid="input-job-total" />
+                                      </span>
+                                    </div>
+                                    <span style={{ fontSize: "11px", color: "#94a3b8" }} data-testid="stage-contract-total">Contract {formatCurrency(billing.contractTotal)} · saved on the job, so every stage bills against the same figure</span>
                                     {billing.invoicedToDate > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Invoiced before this</span><span style={{ fontFamily: "var(--font-mono)" }}>{formatCurrency(billing.invoicedToDate)}</span></div>}
                                     {billing.paidToDate > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Paid to date</span><span style={{ fontFamily: "var(--font-mono)" }}>{formatCurrency(billing.paidToDate)}</span></div>}
                                     <div style={{ display: "flex", justifyContent: "space-between" }}><span>Left to bill</span><span style={{ fontFamily: "var(--font-mono)" }}>{formatCurrency(billing.remaining)}</span></div>

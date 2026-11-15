@@ -194,7 +194,7 @@ function InvoiceDocument({
           )}
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: "26px", fontWeight: 800, letterSpacing: ".06em", color: "#2563eb" }}>{isStaged(invoice.stage) ? stageTitle(invoice.stage).toUpperCase() : "INVOICE"}</div>
+          <div style={{ fontSize: "26px", fontWeight: 800, letterSpacing: ".06em", color: "#2563eb" }}>{isStaged(invoice.stage) ? stageTitle(invoice.stage, invoice.stageNumber).toUpperCase() : "INVOICE"}</div>
           <div style={{ fontSize: "13px", ...mono, color: "#0f172a", marginTop: "6px" }}>{invoice.invoiceNumber}</div>
           <div style={{ fontSize: "11.5px", color: "#64748b", marginTop: "8px" }}>
             Issued&nbsp;&nbsp;<span style={{ color: "#0f172a", fontWeight: 600 }}>{format(parseScheduleDate(invoice.issueDate)!, "MMMM d, yyyy")}</span>

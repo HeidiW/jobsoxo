@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { INVOICE_STAGE_LABELS, type InvoiceStage } from "@shared/invoice-stages";
+import { stageDisplayName } from "@shared/invoice-stages";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, CheckCircle, AlertCircle, CreditCard, Building2, Phone, Mail, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,7 @@ interface PayInvoiceData {
   dueDate: string;
   status: string;
   stage?: string;
+  stageNumber?: number | null;
   contractTotal?: string | null;
   previouslyInvoiced?: string | null;
   previouslyPaid?: string | null;
@@ -133,7 +134,7 @@ export default function InvoicePay() {
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-2">
                   {data.stage && data.stage !== "standalone" && data.contractTotal && (
                     <div className="flex justify-between text-sm" data-testid="text-stage-context">
-                      <span className="text-gray-600">{INVOICE_STAGE_LABELS[data.stage as InvoiceStage] ?? "Stage"} on a {formatCurrency(data.contractTotal)} contract</span>
+                      <span className="text-gray-600">{stageDisplayName(data.stage, data.stageNumber)} on a {formatCurrency(data.contractTotal)} contract</span>
                       {Number(data.previouslyPaid) > 0 && <span className="text-gray-500">{formatCurrency(data.previouslyPaid ?? 0)} paid before</span>}
                     </div>
                   )}

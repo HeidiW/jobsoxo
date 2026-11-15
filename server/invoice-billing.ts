@@ -3,7 +3,7 @@
 // progress or final invoice carries. See shared/invoice-stages.ts.
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "./db";
-import { invoices, lineItems } from "@shared/schema";
+import { invoices, jobs, lineItems } from "@shared/schema";
 import {
   contractFromLineItems, stageDueAmount, stageLineDescription, stageProblem, type ContractScopeLine, type InvoiceStage, type StageBasis,
 } from "@shared/invoice-stages";
@@ -12,12 +12,18 @@ const round2 = (value: number) => Math.round(value * 100) / 100;
 
 export interface JobBilling {
   contractTotal: number;
+  /** Where the contract total came from: the job's agreed total, or the sum of its priced lines. */
+  contractSource: "job_total" | "lines" | "none";
+  /** Sum of the job's priced lines, shown alongside when it differs from the agreed total. */
+  linesTotal: number;
   scope: ContractScopeLine[];
   /** Totals of this job's other invoices that have gone out (drafts don't count). */
   invoicedToDate: number;
   paidToDate: number;
   remaining: number;
-  invoices: Array<{ id: string; invoiceNumber: string; stage: string; status: string; total: number; amountPaid: number; balance: number; issueDate: Date; dueDate: Date }>;
+  invoices: Array<{ id: string; invoiceNumber: string; stage: string; stageNumber: number | null; status: string; total: number; amountPaid: number; balance: number; issueDate: Date; dueDate: Date }>;
+  /** What the next progress payment on this job would be called: 1, 2, 3… */
+  nextProgressNumber: number;
 }
 
 /** The job's own scope lines: items attached to the job but not to any invoice. */
@@ -27,29 +33,36 @@ export async function jobScope(jobId: string) {
 }
 
 export async function jobBilling(jobId: string, excludeInvoiceId?: string): Promise<JobBilling> {
-  const [{ scope, total }, rows] = await Promise.all([
+  const [{ scope, total: linesTotal }, rows, [job]] = await Promise.all([
     jobScope(jobId),
     db.select().from(invoices).where(excludeInvoiceId ? and(eq(invoices.jobId, jobId), ne(invoices.id, excludeInvoiceId)) : eq(invoices.jobId, jobId)),
+    db.select({ estimatedTotal: jobs.estimatedTotal }).from(jobs).where(eq(jobs.id, jobId)),
   ]);
+  const jobTotal = round2(Number(job?.estimatedTotal) || 0);
+  const total = jobTotal > 0 ? jobTotal : linesTotal;
   const sent = rows.filter((row) => row.status !== "draft");
   const invoicedToDate = round2(sent.reduce((sum, row) => sum + Number(row.total), 0));
   const paidToDate = round2(sent.reduce((sum, row) => sum + Number(row.amountPaid), 0));
   return {
     contractTotal: total,
+    contractSource: jobTotal > 0 ? "job_total" : linesTotal > 0 ? "lines" : "none",
+    linesTotal,
     scope,
     invoicedToDate,
     paidToDate,
     remaining: round2(Math.max(0, total - invoicedToDate)),
+    nextProgressNumber: rows.filter((row) => row.stage === "progress").length + 1,
     invoices: rows
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
       .map((row) => ({
-        id: row.id, invoiceNumber: row.invoiceNumber, stage: row.stage, status: row.status,
+        id: row.id, invoiceNumber: row.invoiceNumber, stage: row.stage, stageNumber: row.stageNumber, status: row.status,
         total: Number(row.total), amountPaid: Number(row.amountPaid), balance: Number(row.balance), issueDate: row.issueDate, dueDate: row.dueDate,
       })),
   };
 }
 
 export interface StageSnapshot {
+  stageNumber: number | null;
   contractScope: ContractScopeLine[];
   contractTotal: string;
   previouslyInvoiced: string;
@@ -69,14 +82,16 @@ export async function stageSnapshot(jobId: string, stage: Exclude<InvoiceStage, 
   if (problem) throw new StageError(problem);
   const due = stageDueAmount(stage, basis, billing.contractTotal, billing.invoicedToDate, billing.scope);
   if (due <= 0) throw new StageError("Nothing is left to bill for this stage.");
+  const stageNumber = stage === "progress" ? billing.nextProgressNumber : null;
   return {
+    stageNumber,
     contractScope: billing.scope,
     contractTotal: billing.contractTotal.toFixed(2),
     previouslyInvoiced: billing.invoicedToDate.toFixed(2),
     previouslyPaid: billing.paidToDate.toFixed(2),
     due,
     lineItem: {
-      category: "other", description: stageLineDescription(stage, basis, billing.contractTotal, billing.scope),
+      category: "other", description: stageLineDescription(stage, basis, billing.contractTotal, billing.scope, stageNumber),
       quantity: "1", unit: "lump", rate: due.toFixed(2), amount: due.toFixed(2), section: null, refs: null, status: "pending", isChangeOrder: false, changeOrderReason: null,
     },
   };

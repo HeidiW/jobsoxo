@@ -86,15 +86,22 @@ export function stageDueAmount(stage: InvoiceStage, basis: StageBasis | null | u
 const money = (value: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
 const trimPercent = (value: number) => (Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, ""));
 
+/** "Deposit", "Progress payment 2", "Final invoice": the stage as it prints. */
+export function stageDisplayName(stage: string | null | undefined, stageNumber?: number | null): string {
+  if (!isInvoiceStage(stage) || stage === "standalone") return "Invoice";
+  return stage === "progress" && stageNumber ? `Progress payment ${stageNumber}` : INVOICE_STAGE_LABELS[stage];
+}
+
 /** The one billable line a staged invoice carries, worded the way it prints. */
-export function stageLineDescription(stage: InvoiceStage, basis: StageBasis | null | undefined, contractTotal: number, scope: ContractScopeLine[] = []): string {
+export function stageLineDescription(stage: InvoiceStage, basis: StageBasis | null | undefined, contractTotal: number, scope: ContractScopeLine[] = [], stageNumber?: number | null): string {
   const contract = `${money(contractTotal)} contract`;
+  const progress = stageDisplayName("progress", stageNumber);
   if (stage === "deposit") {
     return basis?.type === "percent" ? `Deposit (${trimPercent(basis.value)}% of ${contract})` : `Deposit on ${contract}`;
   }
   if (stage === "progress") {
-    if (basis?.type === "lines") return `Progress payment (work ${trimPercent(overallPercent(scope, basis.percents, contractTotal))}% complete on ${contract})`;
-    return basis?.type === "percent" ? `Progress payment (${trimPercent(basis.value)}% of ${contract})` : `Progress payment on ${contract}`;
+    if (basis?.type === "lines") return `${progress} (work ${trimPercent(overallPercent(scope, basis.percents, contractTotal))}% complete on ${contract})`;
+    return basis?.type === "percent" ? `${progress} (${trimPercent(basis.value)}% of ${contract})` : `${progress} on ${contract}`;
   }
   if (stage === "final") return `Final balance on ${contract}`;
   return "";
@@ -103,7 +110,7 @@ export function stageLineDescription(stage: InvoiceStage, basis: StageBasis | nu
 /** Plain-language check the builder shows before a staged invoice is created. */
 export function stageProblem(stage: InvoiceStage, basis: StageBasis | null | undefined, contractTotal: number, previouslyInvoiced: number, scope: ContractScopeLine[] = []): string | null {
   if (stage === "standalone") return null;
-  if (contractTotal <= 0) return "This job has no priced line items yet. Add the scope to the job first, or send a standard invoice.";
+  if (contractTotal <= 0) return "This job has no total yet. Enter the job total, or add priced line items to the job, or send a standard invoice.";
   const remaining = round2(contractTotal - previouslyInvoiced);
   if (remaining <= 0) return `The full ${money(contractTotal)} contract has already been invoiced.`;
   if (stage === "final") return null;

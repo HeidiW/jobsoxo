@@ -35,6 +35,7 @@ const parsed = {
 };
 let fetchMock: ReturnType<typeof vi.fn>;
 let billing: Record<string, unknown>;
+let jobPatches: Array<Record<string, unknown>>;
 let failures: Set<string>;
 let googleConnected: boolean;
 let rejectSave: boolean;
@@ -64,9 +65,9 @@ describe("New invoice redesign", () => {
   beforeEach(() => {
     queryClient.clear(); state.navigate.mockReset(); state.toast.mockReset();
     state.search = "jobId=job-1"; failures = new Set(); googleConnected = false; rejectSave = false;
-    clientRecord = { ...client }; clientPatches = []; draftPuts = []; sends = 0;
+    clientRecord = { ...client }; clientPatches = []; draftPuts = []; sends = 0; jobPatches = [];
     billing = {
-      contractTotal: 11200, invoicedToDate: 0, paidToDate: 0, remaining: 11200,
+      contractTotal: 11200, contractSource: "lines", linesTotal: 11200, invoicedToDate: 0, paidToDate: 0, remaining: 11200, nextProgressNumber: 1,
       scope: [{ section: "Walls and Stairway", description: "Protect, prep, prime and paint", amount: 5200 }, { section: "Skim and Paint", description: "Levelling skim and Super Flat finish", amount: 6000 }],
     };
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -81,6 +82,12 @@ describe("New invoice redesign", () => {
       }
       if (path === "/api/jobs") return Response.json([job]);
       if (path === "/api/jobs/job-1/billing") return Response.json(billing);
+      if (path === "/api/jobs/job-1" && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body));
+        jobPatches.push(body);
+        billing = { ...billing, contractTotal: Number(body.estimatedTotal), contractSource: "job_total", remaining: Number(body.estimatedTotal) };
+        return Response.json({ ...job, estimatedTotal: body.estimatedTotal });
+      }
       if (path === "/api/settings") return Response.json({ companyName: "Test Builder", companyAddress: "1 Business Street", invoiceTerms: "Net 30" });
       if (path === "/api/google-docs/status") return Response.json({ connected: googleConnected, email: null });
       if (path === "/api/google-docs/documents") return Response.json([{ id: "doc-1", name: "Hotel estimate", modifiedTime: null, webViewLink: null }]);
@@ -461,7 +468,8 @@ describe("New invoice redesign", () => {
     expect(screen.getByTestId("stage-due")).toHaveTextContent("$2,700.00");
     fireEvent.change(screen.getByTestId("input-progress-percent-1"), { target: { value: "100" } });
     expect(screen.getByTestId("stage-due")).toHaveTextContent("$5,700.00");
-    expect(screen.getByTestId("billing-block")).toHaveTextContent("Due now");
+    expect(screen.getByTestId("billing-block")).toHaveTextContent("Progress payment 1 due now");
+    expect(screen.getAllByText("PROGRESS PAYMENT 1").length).toBeGreaterThan(0);
     await userEvent.click(screen.getByTestId("button-save-draft"));
     await waitFor(() => expect(creates()).toHaveLength(1));
     expect(JSON.parse(String(creates()[0][1]?.body))).toMatchObject({ stage: "progress", stageBasis: { type: "lines", percents: [100, 100] }, lineItems: [] });
@@ -474,5 +482,28 @@ describe("New invoice redesign", () => {
     fireEvent.change(screen.getByTestId("select-progress-type"), { target: { value: "percent" } });
     fireEvent.change(screen.getByTestId("input-progress-value"), { target: { value: "30" } });
     expect(screen.getByTestId("stage-due")).toHaveTextContent("$3,360.00");
+  });
+
+  it("lets the job total be typed on the invoice and saves it to the job so every stage agrees", async () => {
+    billing = { ...billing, contractTotal: 0, contractSource: "none", linesTotal: 0, remaining: 0, scope: [] };
+    state.search = "jobId=job-1&stage=deposit";
+    mount(); await ready();
+    await waitFor(() => expect(screen.getByTestId("input-job-total")).toBeInTheDocument());
+    expect(screen.getByTestId("stage-issue")).toHaveTextContent("no total yet");
+    fireEvent.change(screen.getByTestId("input-job-total"), { target: { value: "11200" } });
+    fireEvent.blur(screen.getByTestId("input-job-total"));
+    await waitFor(() => expect(jobPatches).toEqual([{ estimatedTotal: "11200.00" }]));
+    await waitFor(() => expect(screen.getByTestId("stage-contract-total")).toHaveTextContent("$11,200.00"));
+    fireEvent.change(screen.getByTestId("input-deposit-value"), { target: { value: "5500" } });
+    expect(screen.getByTestId("stage-due")).toHaveTextContent("$5,500.00");
+    expect(screen.queryByTestId("stage-issue")).not.toBeInTheDocument();
+  });
+
+  it("numbers a progress payment after the ones the job already has", async () => {
+    billing = { ...billing, invoicedToDate: 8200, paidToDate: 8200, remaining: 3000, nextProgressNumber: 3 };
+    state.search = "jobId=job-1&stage=progress";
+    mount(); await ready();
+    await waitFor(() => expect(screen.getByTestId("billing-block")).toHaveTextContent("Progress payment 3 due now"));
+    expect(screen.getByTestId("invoice-stage")).toHaveTextContent("Progress payment 3 on this job");
   });
 });

@@ -59,7 +59,7 @@ describe("JobBillingPanel", () => {
   it("explains when the job has no priced scope, and when billing can't load", async () => {
     billing = { ...billing, contractTotal: 0, scope: [], invoicedToDate: 0, paidToDate: 0, remaining: 0, invoices: [] };
     mount();
-    expect(await screen.findByTestId("job-billing")).toHaveTextContent("No priced line items yet");
+    expect(await screen.findByTestId("job-billing")).toHaveTextContent("No job total or priced line items yet");
     expect(screen.queryByTestId("button-bill-progress")).toBeNull();
     cleanup(); queryClient.clear();
     status = 500;

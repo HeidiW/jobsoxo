@@ -6,15 +6,17 @@ import { Link } from "wouter";
 import { Landmark, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { InvoiceStatusBadge } from "@/components/status-badge";
-import { INVOICE_STAGE_LABELS, type ContractScopeLine, type InvoiceStage } from "@shared/invoice-stages";
+import { stageDisplayName, type ContractScopeLine, type InvoiceStage } from "@shared/invoice-stages";
 
 export interface JobBillingData {
   contractTotal: number;
+  contractSource?: "job_total" | "lines" | "none";
+  linesTotal?: number;
   scope: ContractScopeLine[];
   invoicedToDate: number;
   paidToDate: number;
   remaining: number;
-  invoices: Array<{ id: string; invoiceNumber: string; stage: string; status: string; total: number; amountPaid: number; balance: number; issueDate: string; dueDate: string }>;
+  invoices: Array<{ id: string; invoiceNumber: string; stage: string; stageNumber?: number | null; status: string; total: number; amountPaid: number; balance: number; issueDate: string; dueDate: string }>;
 }
 
 const money = (value: number | string | null | undefined) =>
@@ -42,7 +44,9 @@ export function JobBillingPanel({ jobId }: { jobId: string }) {
         <div>
           <h2 className="flex items-center gap-2 font-display text-lg !font-bold text-jx-ink"><Landmark className="h-4 w-4" aria-hidden="true" />Billing</h2>
           <p className="mt-1 text-sm text-jx-ink-2">
-            {hasContract ? <>{money(data.contractTotal)} contract from {data.scope.length} priced {data.scope.length === 1 ? "line" : "lines"}</> : "No priced line items yet, so there's no contract to bill in stages."}
+            {hasContract
+              ? data.contractSource === "job_total" ? <>{money(data.contractTotal)} job total{data.scope.length > 0 ? ` · ${data.scope.length} priced ${data.scope.length === 1 ? "line" : "lines"}` : ""}</> : <>{money(data.contractTotal)} contract from {data.scope.length} priced {data.scope.length === 1 ? "line" : "lines"}</>
+              : "No job total or priced line items yet, so there's no contract to bill in stages. Set the job total when you start a deposit."}
           </p>
         </div>
       </CardHeader>
@@ -75,7 +79,7 @@ export function JobBillingPanel({ jobId }: { jobId: string }) {
             {staged.map((invoice) => (
               <li key={invoice.id} className="flex items-center gap-3 rounded-2xl bg-card px-3 py-2.5" data-testid={`billing-stage-${invoice.id}`}>
                 <Link href={invoice.status === "draft" ? `/invoices/new?draft=${invoice.id}` : `/invoices/${invoice.id}`} className="min-w-0 flex-1 text-jx-ink hover:text-jx-green-ink">
-                  <span className="block text-sm font-semibold">{INVOICE_STAGE_LABELS[invoice.stage as InvoiceStage] ?? invoice.stage} <span className="font-mono text-xs font-normal text-jx-ink-2">{invoice.invoiceNumber}</span></span>
+                  <span className="block text-sm font-semibold">{stageDisplayName(invoice.stage, invoice.stageNumber)} <span className="font-mono text-xs font-normal text-jx-ink-2">{invoice.invoiceNumber}</span></span>
                   <span className="block text-xs text-jx-ink-2"><span className="font-mono">{money(invoice.total)}</span>{invoice.amountPaid > 0 && <> · paid <span className="font-mono">{money(invoice.amountPaid)}</span></>}</span>
                 </Link>
                 <InvoiceStatusBadge status={invoice.status} />

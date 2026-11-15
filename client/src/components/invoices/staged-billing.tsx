@@ -2,7 +2,7 @@
 // ("Pricing covers") and the billing summary that ends in what is due now.
 // Shared by the builder's live preview and the invoice document.
 import type { CSSProperties } from "react";
-import { INVOICE_STAGE_LABELS, type ContractScopeLine, type InvoiceStage, type StageBasis } from "@shared/invoice-stages";
+import { stageDisplayName, type ContractScopeLine, type InvoiceStage, type StageBasis } from "@shared/invoice-stages";
 
 const money = (value: number | string | null | undefined) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value) || 0);
@@ -11,6 +11,7 @@ const label: CSSProperties = { fontSize: "10px", fontWeight: 800, color: "#94a3b
 
 export interface StagedBillingFigures {
   stage: InvoiceStage | string;
+  stageNumber?: number | null;
   basis?: StageBasis | null;
   contractScope?: ContractScopeLine[] | null;
   contractTotal?: number | string | null;
@@ -18,8 +19,8 @@ export interface StagedBillingFigures {
   previouslyPaid?: number | string | null;
 }
 
-export function stageTitle(stage: string): string {
-  return INVOICE_STAGE_LABELS[stage as InvoiceStage] ?? "Invoice";
+export function stageTitle(stage: string, stageNumber?: number | null): string {
+  return stageDisplayName(stage, stageNumber);
 }
 
 /** The whole scope with prices, so a deposit or final invoice still shows what the money is for. */
@@ -53,7 +54,7 @@ export function BillingBlock({ figures, dueNow }: { figures: StagedBillingFigure
   const previouslyPaid = Number(figures.previouslyPaid) || 0;
   const contractTotal = Number(figures.contractTotal) || 0;
   const row: CSSProperties = { display: "flex", justifyContent: "space-between", fontSize: "12.5px", color: "#475569" };
-  const dueLabel = figures.stage === "deposit" ? "Deposit due now" : figures.stage === "final" ? "Final balance due" : "Due now";
+  const dueLabel = figures.stage === "deposit" ? "Deposit due now" : figures.stage === "final" ? "Final balance due" : `${stageDisplayName(figures.stage, figures.stageNumber)} due now`;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "8px" }} data-testid="billing-block">
       <div style={row}><span>Contract total</span><span style={{ ...mono, color: "#0f172a" }}>{money(contractTotal)}</span></div>

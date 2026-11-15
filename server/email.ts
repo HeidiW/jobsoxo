@@ -1,5 +1,5 @@
 import { storage } from "./storage";
-import { INVOICE_STAGE_LABELS, isStaged } from "@shared/invoice-stages";
+import { isStaged, stageDisplayName } from "@shared/invoice-stages";
 import { postToResend, recordDelivery } from "./email-delivery";
 import { invoiceRecipients } from "@shared/client-emails";
 import { db } from "./db";
@@ -108,10 +108,10 @@ export interface EmailConfig {
 }
 
 /** For a deposit, progress or final invoice: the contract this amount is part of. */
-export function stagedContextHtml(invoice: { stage?: string | null; contractTotal?: string | null; previouslyInvoiced?: string | null; previouslyPaid?: string | null }): string {
+export function stagedContextHtml(invoice: { stage?: string | null; stageNumber?: number | null; contractTotal?: string | null; previouslyInvoiced?: string | null; previouslyPaid?: string | null }): string {
   if (!isStaged(invoice.stage)) return "";
   const formatCurrency = (value: string | number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value) || 0);
-  const label = INVOICE_STAGE_LABELS[invoice.stage];
+  const label = stageDisplayName(invoice.stage, invoice.stageNumber);
   const parts = [`<p><strong>${label}</strong> on a ${formatCurrency(invoice.contractTotal ?? 0)} contract</p>`];
   if (Number(invoice.previouslyInvoiced) > 0) parts.push(`<p><strong>Invoiced before this:</strong> ${formatCurrency(invoice.previouslyInvoiced ?? 0)}</p>`);
   if (Number(invoice.previouslyPaid) > 0) parts.push(`<p><strong>Paid to date:</strong> ${formatCurrency(invoice.previouslyPaid ?? 0)}</p>`);

@@ -40,6 +40,7 @@ describe("stage helpers", () => {
     expect(stageProblem("progress", { type: "lines", percents: [100, 0, 0] }, lines.total, 5500, lines.scope)).toContain("already covered by the $5,500.00 invoiced before");
     expect(stageProblem("progress", { type: "lines", percents: [0, 0, 0] }, lines.total, 0, lines.scope)).toContain("Mark how far along");
     expect(stageLineDescription("progress", { type: "lines", percents: [100, 50, 0] }, lines.total, lines.scope)).toBe("Progress payment (work 68.3% complete on $12,000.00 contract)");
+    expect(stageLineDescription("progress", { type: "lines", percents: [100, 50, 0] }, lines.total, lines.scope, 2)).toBe("Progress payment 2 (work 68.3% complete on $12,000.00 contract)");
   });
 
   it("words the billable line the way it prints", () => {
@@ -49,7 +50,7 @@ describe("stage helpers", () => {
   });
 
   it("explains what's wrong before a staged invoice is created", () => {
-    expect(stageProblem("deposit", { type: "amount", value: 5500 }, 0, 0)).toContain("no priced line items");
+    expect(stageProblem("deposit", { type: "amount", value: 5500 }, 0, 0)).toContain("no total yet");
     expect(stageProblem("deposit", { type: "amount", value: 0 }, 11200, 0)).toContain("Enter the deposit");
     expect(stageProblem("deposit", { type: "amount", value: 12000 }, 11200, 0)).toContain("more than the $11,200.00 left");
     expect(stageProblem("final", null, 11200, 11200)).toContain("already been invoiced");
@@ -83,7 +84,7 @@ describe("staged invoices", () => {
 
   it("reports the job's contract and what's been billed", async () => {
     const billing = (await request(app).get(`/api/jobs/${jobId}/billing`).expect(200)).body;
-    expect(billing).toMatchObject({ contractTotal: 11200, invoicedToDate: 0, paidToDate: 0, remaining: 11200 });
+    expect(billing).toMatchObject({ contractTotal: 11200, contractSource: "lines", linesTotal: 11200, invoicedToDate: 0, paidToDate: 0, remaining: 11200, nextProgressNumber: 1 });
     expect(billing.scope).toHaveLength(2);
     await request(app).get("/api/jobs/missing/billing").expect(404);
   });
@@ -143,7 +144,14 @@ describe("staged invoices", () => {
     expect(progress).toMatchObject({ stage: "progress", total: "6200.00", previouslyInvoiced: "2000.00" });
     expect(progress.stageBasis).toEqual({ type: "lines", percents: [100, 50] });
     const detail = (await request(app).get(`/api/invoices/${progress.id}`).expect(200)).body;
-    expect(detail.lineItems[0].description).toBe("Progress payment (work 73.2% complete on $11,200.00 contract)");
+    expect(progress.stageNumber).toBe(1);
+    expect(detail.lineItems[0].description).toBe("Progress payment 1 (work 73.2% complete on $11,200.00 contract)");
+    await storage.updateInvoice(progress.id, { status: "sent" });
+    // The next one on the same job is number 2, whatever happens to the first.
+    expect((await request(app).get(`/api/jobs/${job.id}/billing`)).body.nextProgressNumber).toBe(2);
+    const second = (await request(app).post("/api/invoices").send({ ...payload, stage: "progress", stageBasis: { type: "lines", percents: [100, 100] } }).expect(201)).body;
+    expect(second).toMatchObject({ stageNumber: 2, total: "3000.00" });
+    expect((await request(app).get(`/api/invoices/${second.id}`)).body.lineItems[0].description).toContain("Progress payment 2 (");
     const notEnough = await request(app).post("/api/invoices").send({ ...payload, stage: "progress", stageBasis: { type: "lines", percents: [30, 0] } }).expect(400);
     expect(notEnough.body.error).toContain("already covered");
   });
@@ -153,7 +161,15 @@ describe("staged invoices", () => {
     expect(noJob.body.error).toContain("Choose the job");
     const emptyJob = await storage.createJob({ clientId, title: "Unpriced job", status: "quoted" } as never);
     const unpriced = await request(app).post("/api/invoices").send({ ...base(), jobId: emptyJob.id, stage: "deposit", stageBasis: { type: "amount", value: 100 } }).expect(400);
-    expect(unpriced.body.error).toContain("no priced line items");
+    expect(unpriced.body.error).toContain("no total yet");
+
+    // Entering a job total makes it the contract, even before any lines are priced.
+    await storage.updateJob(emptyJob.id, { estimatedTotal: "11200.00" } as never);
+    const fromTotal = (await request(app).get(`/api/jobs/${emptyJob.id}/billing`).expect(200)).body;
+    expect(fromTotal).toMatchObject({ contractTotal: 11200, contractSource: "job_total", linesTotal: 0, scope: [] });
+    const lumpDeposit = (await request(app).post("/api/invoices").send({ ...base(), jobId: emptyJob.id, stage: "deposit", stageBasis: { type: "amount", value: 5500 } }).expect(201)).body;
+    expect(lumpDeposit).toMatchObject({ contractTotal: "11200.00", total: "5500.00", contractScope: [] });
+    await storage.updateJob(emptyJob.id, { estimatedTotal: null } as never);
 
     const plain = (await request(app).post("/api/invoices").send({ ...base(), jobId: emptyJob.id, lineItems: [{ category: "labor", description: "Touch-ups", quantity: 2, unit: "hours", rate: 50 }] }).expect(201)).body;
     expect(plain).toMatchObject({ stage: "standalone", stageBasis: null, contractScope: null, contractTotal: null, total: "100.00" });

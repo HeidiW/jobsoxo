@@ -1,0 +1,1 @@
+ALTER TABLE "invoices" ADD COLUMN "stage_number" integer;

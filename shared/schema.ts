@@ -262,6 +262,8 @@ export const invoices = pgTable("invoices", {
   // change to the job doesn't rewrite what the client was sent.
   stage: text("stage").notNull().default("standalone"), // standalone | deposit | progress | final
   stageBasis: jsonb("stage_basis").$type<StageBasis>(),
+  // 1, 2, 3… for progress payments on the same job, fixed when the invoice is created.
+  stageNumber: integer("stage_number"),
   contractScope: jsonb("contract_scope").$type<ContractScopeLine[]>(),
   contractTotal: decimal("contract_total", { precision: 10, scale: 2 }),
   previouslyInvoiced: decimal("previously_invoiced", { precision: 10, scale: 2 }),
@@ -296,6 +298,7 @@ export const insertInvoiceSchema = createInsertSchema(invoices)
     amountPaid: z.coerce.string().optional(),
     stage: z.enum(INVOICE_STAGES).optional(),
     stageBasis: stageBasisSchema.nullable().optional(),
+    stageNumber: z.number().int().positive().nullable().optional(),
     contractScope: z.array(contractScopeLineSchema).nullable().optional(),
     contractTotal: z.string().nullable().optional(),
     previouslyInvoiced: z.string().nullable().optional(),

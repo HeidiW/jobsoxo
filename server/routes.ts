@@ -522,6 +522,7 @@ export async function registerRoutes(
         amountPaid: invoices.amountPaid,
         dueDate: invoices.dueDate,
         stage: invoices.stage,
+        stageNumber: invoices.stageNumber,
         contractTotal: invoices.contractTotal,
         previouslyInvoiced: invoices.previouslyInvoiced,
         previouslyPaid: invoices.previouslyPaid,
@@ -558,6 +559,7 @@ export async function registerRoutes(
         dueDate: invoice.dueDate,
         status: invoice.status,
         stage: invoice.stage,
+        stageNumber: invoice.stageNumber,
         contractTotal: invoice.contractTotal,
         previouslyInvoiced: invoice.previouslyInvoiced,
         previouslyPaid: invoice.previouslyPaid,
@@ -1572,8 +1574,8 @@ export async function registerRoutes(
     }
   }
   const stageColumns = (stage: InvoiceStage, basis: StageBasis | null, snapshot: StageSnapshot | null) => snapshot
-    ? { stage, stageBasis: stage === "final" ? null : basis, contractScope: snapshot.contractScope, contractTotal: snapshot.contractTotal, previouslyInvoiced: snapshot.previouslyInvoiced, previouslyPaid: snapshot.previouslyPaid }
-    : { stage: "standalone" as const, stageBasis: null, contractScope: null, contractTotal: null, previouslyInvoiced: null, previouslyPaid: null };
+    ? { stage, stageBasis: stage === "final" ? null : basis, stageNumber: snapshot.stageNumber, contractScope: snapshot.contractScope, contractTotal: snapshot.contractTotal, previouslyInvoiced: snapshot.previouslyInvoiced, previouslyPaid: snapshot.previouslyPaid }
+    : { stage: "standalone" as const, stageBasis: null, stageNumber: null, contractScope: null, contractTotal: null, previouslyInvoiced: null, previouslyPaid: null };
 
   const createInvoiceInputSchema = insertInvoiceSchema
     .pick({ clientId: true, jobId: true, taxRate: true, dueDate: true, notes: true, termsAndConditions: true, recipientEmails: true })
