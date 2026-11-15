@@ -24,7 +24,7 @@ services:
         fromDatabase:
           name: jobsoxo-db
           property: connectionString
-      - key: APP_URL # Public base URL for emails, OAuth callbacks and payment links
+      - key: APP_URL # Public base URL for emails, OAuth callbacks and payment links: https://jobsoxo.app. Other hosts (onrender.com, www) 301 to it.
         fromService:
           name: jobsoxo
           type: web

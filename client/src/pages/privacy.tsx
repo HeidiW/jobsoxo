@@ -2,7 +2,8 @@ import { Link } from "wouter";
 import { ArrowLeft, Shield } from "lucide-react";
 
 const COMPANY = "JobsOxo";
-const APP_URL = "https://jobsoxo.onrender.com";
+// The address the page is served from, so the text is right on any host.
+const APP_URL = typeof window !== "undefined" ? window.location.origin : "https://jobsoxo.app";
 const CONTACT_EMAIL = "heidi@jobsoxo.com";
 const EFFECTIVE_DATE = "8 November 2026";
 

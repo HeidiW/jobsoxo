@@ -1,4 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
+import { canonicalHostRedirect } from "./canonical-host";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import { pool } from "./db";
@@ -25,6 +26,8 @@ declare module "express-session" {
 
 const app = express();
 app.set("trust proxy", 1);
+// In production every other host (onrender.com, www.) redirects to APP_URL.
+if (process.env.NODE_ENV === "production") app.use(canonicalHostRedirect());
 const httpServer = createServer(app);
 
 declare module "http" {
