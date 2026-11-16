@@ -141,6 +141,13 @@
       "when": 1794805364732,
       "tag": "0019_schedule_entries",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1794852861921,
+      "tag": "0020_stripe_events_and_discrepancies",
+      "breakpoints": true
     }
   ]
 }

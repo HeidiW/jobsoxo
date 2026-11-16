@@ -1001,6 +1001,34 @@ export const gustoWebhookEvents = pgTable("gusto_webhook_events", {
 });
 export type GustoWebhookEvent = typeof gustoWebhookEvents.$inferSelect;
 
+// Stripe events — every webhook delivery is stored before it is acted on,
+// keyed by Stripe's event id. A redelivery of a processed event is a no-op;
+// one whose processing failed (processed_at null) is processed on redelivery.
+export const stripeEvents = pgTable("stripe_events", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull(),
+  payload: jsonb("payload").notNull(),
+  receivedAt: timestamp("received_at").defaultNow().notNull(),
+  processedAt: timestamp("processed_at"),
+  outcome: text("outcome"),
+  error: text("error"),
+});
+export type StripeEvent = typeof stripeEvents.$inferSelect;
+
+// Payment discrepancies — the nightly reconcile compares what Stripe has
+// settled for an invoice with what the app has recorded as paid online. A
+// difference is written here and shown on the dashboard until it clears.
+export const paymentDiscrepancies = pgTable("payment_discrepancies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  invoiceId: varchar("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }).unique(),
+  appPaid: decimal("app_paid", { precision: 10, scale: 2 }).notNull(),
+  stripePaid: decimal("stripe_paid", { precision: 10, scale: 2 }).notNull(),
+  detail: text("detail").notNull(),
+  detectedAt: timestamp("detected_at").defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at"),
+});
+export type PaymentDiscrepancy = typeof paymentDiscrepancies.$inferSelect;
+
 // SMS Attempts — log every inbound SMS for manager review (success + rejections)
 export const smsAttempts = pgTable("sms_attempts", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
