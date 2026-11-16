@@ -18,6 +18,7 @@ import { registerScheduleEntryRoutes, scheduleEntriesByDay } from "./schedule-en
 import { registerSetupRoutes } from "./setup";
 import { jobBilling, stageSnapshot, StageError, type StageSnapshot } from "./invoice-billing";
 import type Stripe from "stripe";
+import { openPaymentDiscrepancies, reconcileWithStripe } from "./stripe-reconcile";
 import { applyStripeEvent, createCheckoutSession, markStripeEvent, parseStripeEvent, processingAmount, recordStripeEvent, stripeEnabled, StripeWebhookError } from "./stripe-payments";
 import { statusForBalance } from "@shared/invoice-status";
 import { paymentInstructionsFor } from "@shared/payment-instructions";
@@ -750,6 +751,17 @@ export async function registerRoutes(
     }
   });
 
+  // On-demand catch-up with Stripe, the same sweep the scheduler runs nightly.
+  app.post("/api/payments/reconcile", requireAdmin, async (_req, res) => {
+    if (!stripeEnabled()) return res.status(503).json({ error: "Online payments aren't set up (STRIPE_SECRET_KEY missing)." });
+    try {
+      res.json(await reconcileWithStripe());
+    } catch (error) {
+      console.error("Stripe reconcile error:", error);
+      res.status(500).json({ error: "Couldn't reconcile with Stripe" });
+    }
+  });
+
   app.post("/api/webhooks/resend", async (req, res) => {
     const secret = process.env.RESEND_WEBHOOK_SECRET;
     if (!secret) return res.status(503).json({ error: "Resend webhook secret is not configured" });
@@ -915,7 +927,7 @@ export async function registerRoutes(
         })
         .map(r => {
           const dueDate = r.dueDate ? new Date(r.dueDate) : null;
-          let reason: "overdue" | "due-today" | "deposit-due" = "due-today";
+          let reason: "overdue" | "due-today" | "deposit-due" | "payment-mismatch" = "due-today";
           let detail = "Due today";
           let daysOverdue = 0;
           if (r.status === "overdue") {
@@ -930,6 +942,16 @@ export async function registerRoutes(
           return { invoiceId: r.id, invoiceNumber: r.invoiceNumber, client: r.clientName || "Unknown", project: r.jobTitle ?? undefined, reason, detail, balance: Number(r.balance), daysOverdue };
         })
         .sort((a, b) => b.daysOverdue - a.daysOverdue);
+
+      // Payment mismatches found by the Stripe reconcile go first: money moved
+      // and the books disagree, which beats any reminder.
+      const byId = new Map(allInvoices.map((r) => [r.id, r]));
+      const mismatches = (await openPaymentDiscrepancies()).flatMap((d) => {
+        const r = byId.get(d.invoiceId);
+        if (!r) return [];
+        return [{ invoiceId: r.id, invoiceNumber: r.invoiceNumber, client: r.clientName || "Unknown", project: r.jobTitle ?? undefined, reason: "payment-mismatch" as const, detail: d.detail, balance: Number(r.balance), daysOverdue: 0 }];
+      });
+      const attention = [...mismatches, ...needsAttention.filter((item) => !mismatches.some((m) => m.invoiceId === item.invoiceId))];
 
       // This week Mon–Fri, as calendar days
       const weekDays = workweekOf(today);
@@ -972,7 +994,7 @@ export async function registerRoutes(
         outstanding,
         collectedThisMonth: { amount: thisAmt, momDeltaPct },
         activeJobs: { count: Number(activeJobsRows[0]?.count) || 0, crews: Number(crewsTodayRows[0]?.count) || 0, hoursToday: Math.round(Number(hoursTodayRows[0]?.total) || 0) },
-        needsAttention,
+        needsAttention: attention,
         week,
         greeting: { firstName },
       });

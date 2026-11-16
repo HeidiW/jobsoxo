@@ -7,7 +7,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { processOverdueReminders } from "./email";
-import { startInboxScheduler, startPlaidScheduler } from "./scheduler";
+import { startInboxScheduler, startPlaidScheduler, startStripeReconcileScheduler } from "./scheduler";
 import { validateEncryptionKey } from "./encryption";
 import { migrateEncryptBankAccounts } from "./migrate-encrypt-bank-accounts";
 export { log } from "./logger";
@@ -168,4 +168,7 @@ app.use((req, res, next) => {
 
   // Daily Plaid transaction auto-sync (default 03:00, configurable via PLAID_SYNC_HOUR)
   startPlaidScheduler();
+
+  // Nightly catch-up with Stripe's ledger (default 04:00, configurable via STRIPE_RECONCILE_HOUR)
+  startStripeReconcileScheduler();
 })();

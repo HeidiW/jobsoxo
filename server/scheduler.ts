@@ -12,10 +12,13 @@
 import { storage } from "./storage";
 import { fetchUserGmailInbox } from "./gmail";
 import { syncPlaidTransactionsForAllUsers } from "./plaid-sync";
+import { reconcileWithStripe } from "./stripe-reconcile";
+import { stripeEnabled } from "./stripe-payments";
 import { log } from "./logger";
 
 let schedulerTimer: ReturnType<typeof setTimeout> | null = null;
 let plaidSchedulerTimer: ReturnType<typeof setTimeout> | null = null;
+let stripeSchedulerTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Read the persisted last-sync timestamp from the database. */
 export async function getLastInboxSyncTime(): Promise<Date | null> {
@@ -197,5 +200,43 @@ export function stopPlaidScheduler(): void {
   if (plaidSchedulerTimer) {
     clearTimeout(plaidSchedulerTimer);
     plaidSchedulerTimer = null;
+  }
+}
+
+// ── Stripe nightly reconcile ─────────────────────────────────────────────────
+
+/**
+ * Catches up with Stripe's ledger at 4 AM (STRIPE_RECONCILE_HOUR): applies
+ * any Checkout session the webhooks missed and records invoices where what
+ * Stripe settled differs from what the app has as paid online.
+ */
+const STRIPE_RECONCILE_HOUR = parseInt(process.env.STRIPE_RECONCILE_HOUR ?? "4", 10) || 4;
+
+export function startStripeReconcileScheduler(): void {
+  if (!stripeEnabled()) {
+    log("Stripe reconcile not scheduled — STRIPE_SECRET_KEY is not set", "scheduler");
+    return;
+  }
+  const scheduleNext = () => {
+    const delay = msUntilNextHour(STRIPE_RECONCILE_HOUR);
+    log(`Stripe reconcile scheduled for ${new Date(Date.now() + delay).toLocaleTimeString()} (in ${Math.round(delay / 60_000)} min)`, "scheduler");
+    stripeSchedulerTimer = setTimeout(async () => {
+      log("Stripe reconcile starting…", "scheduler");
+      try {
+        const result = await reconcileWithStripe();
+        log(`Stripe reconcile: ${result.sessions} sessions, ${result.invoicesChecked} invoices checked, ${result.mismatches} mismatches, ${result.resolved} resolved`, "scheduler");
+      } catch (err) {
+        log(`Stripe reconcile failed: ${err}`, "scheduler");
+      }
+      scheduleNext();
+    }, delay);
+  };
+  scheduleNext();
+}
+
+export function stopStripeReconcileScheduler(): void {
+  if (stripeSchedulerTimer) {
+    clearTimeout(stripeSchedulerTimer);
+    stripeSchedulerTimer = null;
   }
 }
