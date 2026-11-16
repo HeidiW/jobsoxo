@@ -1,5 +1,5 @@
 import { storage } from "./storage";
-import { isStaged, stageDisplayName } from "@shared/invoice-stages";
+import { isStaged, stageDisplayName } from "@jobsoxo/staged-billing";
 import { paymentInstructionsFor } from "@shared/payment-instructions";
 import { postToResend, recordDelivery } from "./email-delivery";
 import { invoiceRecipients } from "@shared/client-emails";

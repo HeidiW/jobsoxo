@@ -4,7 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { emailListSchema } from "./client-emails";
 import { LINE_ITEM_STATUSES } from "./line-item-status";
-import { INVOICE_STAGES, contractScopeLineSchema, stageBasisSchema, type ContractScopeLine, type StageBasis } from "./invoice-stages";
+import { INVOICE_STAGES, contractScopeLineSchema, stageBasisSchema, type ContractScopeLine, type StageBasis } from "@jobsoxo/staged-billing";
 
 // Decimal columns travel as strings, but forms often post a parsed number
 // (e.g. hours worked); accept either and validate the string form.
@@ -256,7 +256,7 @@ export const invoices = pgTable("invoices", {
   // Addresses this invoice, its reminders and change orders are sent to.
   // Null for older invoices, which fall back to the client's primary email.
   recipientEmails: jsonb("recipient_emails").$type<string[]>(),
-  // Staged billing (shared/invoice-stages.ts). A deposit, progress or final
+  // Staged billing (@jobsoxo/staged-billing). A deposit, progress or final
   // invoice bills part of the job's contract; the figures below are snapshots
   // taken when the invoice was created or last saved as a draft, so a later
   // change to the job doesn't rewrite what the client was sent.

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { clientEmailOptions } from "@shared/client-emails";
 import { parseScheduleDate } from "./scheduling-logic";
 import { LINE_ITEM_STATUSES, LINE_ITEM_STATUS_LABELS, type LineItemStatus } from "@shared/line-item-status";
-import { INVOICE_STAGE_LABELS, completedToDate, isInvoiceStage, isStaged, overallPercent, stageDueAmount, stageLineDescription, stageProblem, suggestedPercents, type ContractScopeLine, type InvoiceStage, type StageBasis } from "@shared/invoice-stages";
+import { INVOICE_STAGE_LABELS, completedToDate, isInvoiceStage, isStaged, overallPercent, stageDueAmount, stageLineDescription, stageProblem, suggestedPercents, type ContractScopeLine, type InvoiceStage, type StageBasis } from "@jobsoxo/staged-billing";
 import { BillingBlock, PricingCovers, stageTitle, type StagedBillingFigures } from "@/components/invoices/staged-billing";
 import { paymentInstructionsFor } from "@shared/payment-instructions";
 

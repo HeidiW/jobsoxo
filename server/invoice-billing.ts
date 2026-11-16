@@ -1,12 +1,12 @@
 // Staged billing on the server: what a job's contract is worth, what has
 // already been invoiced and paid against it, and the snapshot a deposit,
-// progress or final invoice carries. See shared/invoice-stages.ts.
+// progress or final invoice carries. See @jobsoxo/staged-billing.
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import { db } from "./db";
 import { changeOrders, invoices, jobs, lineItems } from "@shared/schema";
 import {
   contractFromLineItems, stageDueAmount, stageLineDescription, stageProblem, type ContractScopeLine, type InvoiceStage, type StageBasis,
-} from "@shared/invoice-stages";
+} from "@jobsoxo/staged-billing";
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 

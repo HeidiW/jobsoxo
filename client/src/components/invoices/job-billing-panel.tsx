@@ -1,12 +1,12 @@
 // Billing on the job page: the contract, how much of it has been invoiced and
 // paid, what's left, and each stage invoice so far, with the next stage one
-// click away. Figures come from /api/jobs/:id/billing (shared/invoice-stages.ts).
+// click away. Figures come from /api/jobs/:id/billing (@jobsoxo/staged-billing).
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Landmark, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { InvoiceStatusBadge } from "@/components/status-badge";
-import { stageDisplayName, type ContractScopeLine, type InvoiceStage } from "@shared/invoice-stages";
+import { stageDisplayName, type ContractScopeLine, type InvoiceStage } from "@jobsoxo/staged-billing";
 
 export interface JobBillingData {
   contractTotal: number;

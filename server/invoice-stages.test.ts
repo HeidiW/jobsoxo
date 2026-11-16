@@ -3,7 +3,7 @@ import request from "supertest";
 import type { Express } from "express";
 import { buildTestApp } from "./test-helpers";
 import { storage } from "./storage";
-import { completedToDate, contractFromLineItems, overallPercent, stageDueAmount, stageLineDescription, stageProblem, suggestedPercents } from "@shared/invoice-stages";
+import { completedToDate, contractFromLineItems, overallPercent, stageDueAmount, stageLineDescription, stageProblem, suggestedPercents } from "@jobsoxo/staged-billing";
 import { stagedContextHtml } from "./email";
 
 describe("stage helpers", () => {
