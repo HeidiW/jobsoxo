@@ -134,6 +134,13 @@
       "when": 1794803618383,
       "tag": "0018_retire_notepads",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794805364732,
+      "tag": "0019_schedule_entries",
+      "breakpoints": true
     }
   ]
 }

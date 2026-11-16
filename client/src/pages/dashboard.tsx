@@ -40,7 +40,7 @@ interface DashboardData {
   collectedThisMonth: { amount: number; momDeltaPct: number };
   activeJobs: { count: number; crews: number; hoursToday: number };
   needsAttention: Array<{ invoiceId: string; invoiceNumber: string; client: string; project?: string; reason: "overdue" | "due-today" | "deposit-due"; detail: string; balance: number; daysOverdue: number }>;
-  week: Array<{ date: string; weekday: string; dayNum: number; isToday: boolean; jobs: Array<{ jobId: string; label: string; crewSize: number; color: string }> }>;
+  week: Array<{ date: string; weekday: string; dayNum: number; isToday: boolean; entries?: Array<{ id: string; title: string; startTime: string | null }>; jobs: Array<{ jobId: string; label: string; crewSize: number; color: string }> }>;
   greeting: { firstName: string };
 }
 
@@ -203,7 +203,7 @@ export default function Dashboard() {
               title="This week on site"
               action={<Link href="/scheduling" className="inline-flex items-center gap-1 text-sm font-semibold no-underline" style={{ color: "var(--jx-green-ink)" }}>Scheduling <ArrowRight className="h-4 w-4" /></Link>}
             />
-            {week.every((day) => day.jobs.length === 0) ? (
+            {week.every((day) => day.jobs.length === 0 && (day.entries ?? []).length === 0) ? (
               <div className="flex min-h-[202px] flex-col items-center justify-center rounded-[17px] border border-dashed px-5 text-center" style={{ borderColor: "var(--jx-line)" }}>
                 <CalendarDays className="mb-3 h-8 w-8" style={{ color: "var(--jx-ink-3)" }} aria-hidden="true" />
                 <p className="font-display text-lg font-bold">Nothing scheduled this week</p>
@@ -223,7 +223,12 @@ export default function Dashboard() {
                       <span className="font-display text-xl font-bold">{day.dayNum}</span>
                     </div>
                     <div className="space-y-2">
-                      {day.jobs.length === 0 ? (
+                      {(day.entries ?? []).map((entry) => (
+                        <Link key={entry.id} href="/scheduling" className="block truncate rounded-[10px] border border-dashed px-2.5 py-2 text-[11px] font-semibold leading-snug no-underline hover:opacity-75" style={{ borderColor: "var(--jx-ink-3)", color: "var(--jx-ink)" }} title={entry.title} data-testid={`link-week-entry-${entry.id}`}>
+                          {entry.startTime ? `${entry.startTime} · ` : ""}{entry.title}
+                        </Link>
+                      ))}
+                      {day.jobs.length === 0 && (day.entries ?? []).length === 0 ? (
                         <span className="block px-1 py-2 text-[11px]" style={{ color: "var(--jx-ink-3)" }}>No jobs</span>
                       ) : day.jobs.map((job) => (
                         <Link

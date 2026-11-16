@@ -9,6 +9,33 @@ export interface ScheduleJob extends Job {
   assignedEmployees?: { id: string; name: string }[];
 }
 
+/** A calendar item that isn't a job: site visit, estimate, pickup, day off. */
+export interface ScheduleEntry {
+  id: string;
+  title: string;
+  date: string;
+  endDate: string | null;
+  startTime: string | null;
+  notes: string | null;
+  clientId: string | null;
+  clientName?: string | null;
+  jobId: string | null;
+  jobTitle?: string | null;
+}
+
+/** "09:30" → "9:30 AM" for labels. */
+export function formatEntryTime(value: string | null | undefined): string {
+  if (!value) return "";
+  const [h, m] = value.split(":").map(Number);
+  const hour = ((h + 11) % 12) + 1;
+  return `${hour}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+}
+
+/** Entries use the same bar maths as jobs: date is the start, endDate (or date) the end. */
+export function entryAsRange(entry: ScheduleEntry): Pick<Job, "startDate" | "endDate"> {
+  return { startDate: entry.date as unknown as Date, endDate: (entry.endDate ?? entry.date) as unknown as Date };
+}
+
 /** Job dates are calendar dates, including when the API serializes them as ISO timestamps. */
 export function parseScheduleDate(value: string | Date | null | undefined): Date | null {
   if (!value) return null;

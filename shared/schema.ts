@@ -792,6 +792,36 @@ export const noteItems = pgTable("note_items", {
 }, (table) => [index("note_items_note_position_idx").on(table.noteId, table.position)]);
 export type NoteItem = typeof noteItems.$inferSelect;
 
+// Schedule entries: things on the calendar that aren't jobs (a site visit,
+// an estimate, picking up materials, a day off). Dates are calendar days
+// stored as UTC midnight, like job dates. An entry can be turned into a job
+// later, or linked to one.
+export const scheduleEntries = pgTable("schedule_entries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  date: timestamp("date").notNull(),
+  endDate: timestamp("end_date"),
+  /** "HH:MM" in the business's local time, or null for all day. */
+  startTime: text("start_time"),
+  notes: text("notes"),
+  clientId: varchar("client_id").references(() => clients.id, { onDelete: "set null" }),
+  jobId: varchar("job_id").references(() => jobs.id, { onDelete: "set null" }),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [index("schedule_entries_date_idx").on(table.date)]);
+export type ScheduleEntry = typeof scheduleEntries.$inferSelect;
+
+export const insertScheduleEntrySchema = z.object({
+  title: z.string().trim().min(1, "Give it a name").max(200),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date"),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a time like 09:30").nullable().optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+  clientId: z.string().nullable().optional(),
+  jobId: z.string().nullable().optional(),
+}).refine((value) => !value.endDate || value.endDate >= value.date, { message: "The end date can't be before the start", path: ["endDate"] });
+export type InsertScheduleEntry = z.infer<typeof insertScheduleEntrySchema>;
+
 // Every client email about an invoice (the invoice itself, change orders,
 // reminders) and what Resend reported back, so people can see whether it
 // arrived and, if not, why.

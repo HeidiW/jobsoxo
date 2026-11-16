@@ -3,17 +3,18 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { addMonths, addWeeks, differenceInCalendarDays, format, isToday, startOfWeek, subMonths, subWeeks } from "date-fns";
 import {
-  AlertCircle, ArrowUpRight, CalendarDays, ChevronLeft, ChevronRight, Clock3,
-  RotateCw, Users,
+  AlertCircle, ArrowUpRight, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, Clock3,
+  Pin, RotateCw, Users,
 } from "lucide-react";
 import { ScheduleJobDialog } from "@/components/scheduling/schedule-job-dialog";
+import { ScheduleEntryDialog } from "@/components/scheduling/schedule-entry-dialog";
 import { GetOnItNotepad } from "@/components/notepad/get-on-it-notepad";
 import { NeedClientFirst } from "@/components/clients/need-client-first";
 import { Button } from "@/components/ui/button";
 import {
-  filterScheduleJobs, formatScheduleDate, getBarPosition, getFortnightDays, getMonthDays,
+  entryAsRange, filterScheduleJobs, formatEntryTime, formatScheduleDate, getBarPosition, getFortnightDays, getMonthDays,
   getStableJobColorIndex, getWeekendOnlyJobs, isSameCalendarMonth, parseScheduleDate,
-  type ScheduleJob,
+  type ScheduleEntry, type ScheduleJob,
 } from "./scheduling-logic";
 
 const COLORS = [
@@ -42,6 +43,7 @@ export default function Scheduling() {
   const [view, setView] = useState<"week" | "month">("week");
   const [selectedJob, setSelectedJob] = useState<ScheduleJob | null>(null);
   const [chooserOpen, setChooserOpen] = useState(false);
+  const [entryDialog, setEntryDialog] = useState<{ open: boolean; entry: ScheduleEntry | null; date?: string }>({ open: false, entry: null });
   const { data: jobs, isLoading, isError, isFetching, refetch } = useQuery<ScheduleJob[]>({ queryKey: ["/api/jobs"] });
 
   const safeJobs = jobs ?? [];
@@ -67,6 +69,23 @@ export default function Scheduling() {
     .sort((a, b) => (parseScheduleDate(a.startDate)?.getTime() ?? 0) - (parseScheduleDate(b.startDate)?.getTime() ?? 0)), [scheduledJobs, days]);
   const weekendOnlyJobs = useMemo(() => getWeekendOnlyJobs(sortedActive, days), [sortedActive, days]);
 
+  // Entries that aren't jobs, for whichever window is showing.
+  const windowStart = view === "week" ? days[0] : monthDays[0];
+  const windowEnd = view === "week" ? days[13] : monthDays[monthDays.length - 1];
+  const entriesQuery = useQuery<ScheduleEntry[]>({
+    queryKey: ["/api/schedule-entries", dateISO(windowStart), dateISO(windowEnd)],
+    queryFn: async () => {
+      const res = await fetch(`/api/schedule-entries?from=${dateISO(windowStart)}&to=${dateISO(windowEnd)}`, { credentials: "include" });
+      if (!res.ok) throw new Error("The schedule couldn't be loaded");
+      return res.json();
+    },
+  });
+  const entries = useMemo(() => (Array.isArray(entriesQuery.data) ? entriesQuery.data : []), [entriesQuery.data]);
+  const weekEntries = useMemo(() => entries.filter((entry) => !!getBarPosition(entryAsRange(entry), days[0], 14)), [entries, days]);
+  const weekdayEntries = useMemo(() => weekEntries.filter((entry) => !!barColumns(entryAsRange(entry))), [weekEntries, weekdayDays]);
+  const weekendEntries = useMemo(() => weekEntries.filter((entry) => !barColumns(entryAsRange(entry))), [weekEntries, weekdayDays]);
+  const openEntry = (entry: ScheduleEntry | null, date?: string) => setEntryDialog({ open: true, entry, date });
+
   function goPrevious() {
     setAnchor((date) => view === "week" ? subWeeks(date, 2) : subMonths(date, 1));
   }
@@ -78,7 +97,7 @@ export default function Scheduling() {
     setSelectedJob(job);
     setChooserOpen(false);
   }
-  function barColumns(job: ScheduleJob) {
+  function barColumns(job: Pick<ScheduleJob, "startDate" | "endDate">) {
     const position = getBarPosition(job, days[0], 14);
     if (!position) return null;
     const covered = weekdayDays.map((day, index) => {
@@ -108,6 +127,7 @@ export default function Scheduling() {
             <Button type="button" variant="ghost" onClick={goNext} className="h-9 w-9 rounded-full p-0 text-jx-ink-2 hover:bg-jx-surface" aria-label="Next period" data-testid="button-next-period"><ChevronRight className="h-4 w-4" /></Button>
           </div>
           <div className="flex h-11 items-center rounded-full border border-jx-line bg-jx-surface p-1">
+            <Button type="button" onClick={() => openEntry(null)} className="h-9 rounded-full bg-jx-green px-4 text-xs font-bold text-white hover:bg-jx-green-hover" data-testid="button-add-schedule-entry"><CalendarPlus className="mr-1.5 h-4 w-4" aria-hidden="true" />Add to schedule</Button>
             {(["week", "month"] as const).map((mode) => <Button key={mode} type="button" variant="ghost" onClick={() => setView(mode)}
               className={`h-9 rounded-full px-4 text-xs font-bold capitalize ${view === mode ? "bg-jx-green text-white hover:bg-jx-green-hover hover:text-white" : "text-jx-ink-2"}`}
               aria-pressed={view === mode} data-testid={`button-view-${mode}`}>{mode === "week" ? "2 weeks" : "Month"}</Button>)}
@@ -145,11 +165,30 @@ export default function Scheduling() {
               </div> : isError ? <div role="alert" className="flex flex-wrap items-center justify-between gap-4 px-6 py-12">
                 <div className="flex items-start gap-3"><AlertCircle className="mt-1 h-5 w-5 text-jx-orange-ink" /><div><h3 className="font-display text-xl !font-bold">Schedule unavailable</h3><p className="mt-1 text-sm text-jx-ink-2">Job dates and crews didn’t load. Try again.</p></div></div>
                 <Button type="button" variant="outline" onClick={() => void refetch()} disabled={isFetching} className="min-h-11 rounded-full border-2 border-jx-line px-5" data-testid="button-retry-schedule"><RotateCw className="mr-2 h-4 w-4" />{isFetching ? "Retrying…" : "Retry"}</Button>
-              </div> : sortedActive.length === 0 ? <NeedClientFirst context="schedule"><div className="flex min-h-[250px] flex-col items-center justify-center px-5 text-center" data-testid="scheduling-empty">
+              </div> : sortedActive.length === 0 && weekdayEntries.length === 0 ? <NeedClientFirst context="schedule"><div className="flex min-h-[250px] flex-col items-center justify-center px-5 text-center" data-testid="scheduling-empty">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-jx-green-tint text-jx-green-ink"><CalendarDays className="h-5 w-5" /></div>
                 <h3 className="mt-4 font-display text-xl !font-bold">No active jobs in this window</h3>
-                <p className="mt-1 max-w-sm text-sm text-jx-ink-2">Give a job dates and a scheduled status to place the crew on the calendar.</p>
+                <p className="mt-1 max-w-sm text-sm text-jx-ink-2">Give a job dates and a scheduled status to place the crew on the calendar, or add a site visit, estimate or pickup with “Add to schedule”.</p>
               </div></NeedClientFirst> : <div>
+                {weekdayEntries.map((entry) => {
+                  const column = barColumns(entryAsRange(entry))!;
+                  return <div key={entry.id} className="grid min-h-[64px] border-b border-jx-line last:border-b-0 bg-jx-surface/40" style={{ gridTemplateColumns: "240px repeat(10, minmax(76px, 1fr))" }} data-testid={`schedule-entry-row-${entry.id}`}>
+                    <div className="flex min-w-0 flex-col justify-center px-5 py-2">
+                      <button type="button" onClick={() => openEntry(entry)} className="flex min-w-0 items-center gap-1.5 text-left text-sm font-bold text-jx-ink hover:text-jx-green-ink" data-testid={`button-schedule-entry-${entry.id}`}>
+                        <Pin className="h-3.5 w-3.5 shrink-0 text-jx-ink-3" aria-hidden="true" /><span className="truncate">{entry.title}</span>
+                      </button>
+                      <p className="mt-0.5 truncate text-[11px] text-jx-ink-2">{entry.jobTitle ? `Job: ${entry.jobTitle}` : entry.clientName ?? "Not a job yet"}{entry.startTime ? ` · ${formatEntryTime(entry.startTime)}` : ""}</p>
+                    </div>
+                    <div className="relative col-span-10 grid border-l border-jx-line" style={{ gridTemplateColumns: "repeat(10, minmax(76px, 1fr))" }}>
+                      {weekdayDays.map((day, index) => <div key={dateISO(day)} className={`border-r border-jx-line/70 ${isToday(day) ? "bg-jx-green-tint/45" : ""} ${index === 5 ? "border-l-2 border-l-jx-line" : ""}`} />)}
+                      <button type="button" onClick={() => openEntry(entry)} data-testid={`entry-block-${entry.id}`} className="absolute top-1/2 z-10 flex min-h-[40px] -translate-y-1/2 flex-col justify-center overflow-hidden rounded-xl border-2 border-dashed border-jx-ink-3 bg-card px-3 py-1 text-left text-jx-ink hover:border-jx-green"
+                        style={{ left: `calc(${(column.start - 1) * 10}% + 4px)`, width: `calc(${(column.end - column.start) * 10}% - 8px)` }}>
+                        <span className="truncate text-[11px] font-bold">{entry.startTime ? `${formatEntryTime(entry.startTime)} · ` : ""}{entry.title}</span>
+                        <span className="truncate text-[10px] text-jx-ink-2">{entry.notes || (entry.clientName ?? "Tap to edit")}</span>
+                      </button>
+                    </div>
+                  </div>;
+                })}
                 {sortedActive.filter((job) => !weekendOnlyJobs.some((weekend) => weekend.id === job.id)).map((job) => {
                   const column = barColumns(job);
                   const color = COLORS[stableIndex(job)];
@@ -173,10 +212,12 @@ export default function Scheduling() {
               </div>}
             </div>
           </div>
-          {!isLoading && !isError && weekendOnlyJobs.length > 0 && <div className="border-t border-jx-line bg-jx-surface/70 px-5 py-4 sm:px-6" data-testid="weekend-schedule-note">
+          {!isLoading && !isError && (weekendOnlyJobs.length > 0 || weekendEntries.length > 0) && <div className="border-t border-jx-line bg-jx-surface/70 px-5 py-4 sm:px-6" data-testid="weekend-schedule-note">
             <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.1em] text-jx-ink-2"><Clock3 className="h-4 w-4 text-jx-orange-ink" /> Weekend dates in this window</div>
             <p className="mt-1 text-xs text-jx-ink-2">Weekend-only work stays visible here; use Month view for the full seven-day calendar.</p>
-            <div className="mt-3 flex flex-wrap gap-2">{weekendOnlyJobs.map((job) => {
+            <div className="mt-3 flex flex-wrap gap-2">{weekendEntries.map((entry) => <button key={entry.id} type="button" onClick={() => openEntry(entry)} data-testid={`weekend-entry-${entry.id}`} className="flex max-w-full items-center gap-2 rounded-xl border-2 border-dashed border-jx-ink-3 bg-card px-3 py-2 text-xs font-semibold text-jx-ink">
+              <Pin className="h-3.5 w-3.5 shrink-0 text-jx-ink-3" aria-hidden="true" /><span className="truncate">{entry.title}</span><span className="shrink-0 font-normal">{formatScheduleDate(entry.date)}{entry.endDate ? ` – ${formatScheduleDate(entry.endDate)}` : ""}</span>
+            </button>)}{weekendOnlyJobs.map((job) => {
               const color = COLORS[stableIndex(job)];
               return <JobLink key={job.id} job={job} data-testid={`weekend-job-${job.id}`} className="flex max-w-full items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold" style={{ background: color.bg, color: color.ink, borderColor: color.edge }}>
                 <span className="truncate">{job.title}</span><span className="shrink-0 font-normal">{formatScheduleDate(job.startDate)}{job.endDate ? ` – ${formatScheduleDate(job.endDate)}` : ""}</span>
@@ -228,9 +269,13 @@ export default function Scheduling() {
                   const pos = getBarPosition(job, day, 1);
                   return !!pos;
                 });
+                const dayEntries = entries.filter((entry) => !!getBarPosition(entryAsRange(entry), day, 1));
                 return <div key={dateISO(day)} data-testid={`month-cell-${dateISO(day)}`} className={`min-h-[122px] border-b border-r border-jx-line p-2 ${isToday(day) ? "bg-jx-green-tint/60" : inMonth ? "bg-card" : "bg-jx-surface/50"}`}>
-                  <p className={`mb-2 font-mono text-xs font-semibold tabular-nums ${isToday(day) ? "text-jx-green-ink" : inMonth ? "text-jx-ink" : "text-jx-ink-3"}`}>{format(day, "d")}</p>
-                  <div className="flex flex-col gap-1">{blocks.slice(0, 3).map((job) => {
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className={`font-mono text-xs font-semibold tabular-nums ${isToday(day) ? "text-jx-green-ink" : inMonth ? "text-jx-ink" : "text-jx-ink-3"}`}>{format(day, "d")}</p>
+                    <button type="button" onClick={() => openEntry(null, dateISO(day))} aria-label={`Add to schedule on ${format(day, "MMMM d")}`} className="rounded p-0.5 text-jx-ink-3 opacity-40 hover:opacity-100 hover:text-jx-green-ink" data-testid={`button-add-entry-${dateISO(day)}`}><CalendarPlus className="h-3.5 w-3.5" aria-hidden="true" /></button>
+                  </div>
+                  <div className="flex flex-col gap-1">{dayEntries.map((entry) => <button key={entry.id} type="button" onClick={() => openEntry(entry)} data-testid={`month-entry-${entry.id}`} title={entry.title} className="truncate rounded-md border border-dashed border-jx-ink-3 bg-card px-1.5 py-1 text-left text-[10px] font-semibold text-jx-ink">{entry.startTime ? `${formatEntryTime(entry.startTime)} ` : ""}{entry.title}</button>)}{blocks.slice(0, 3).map((job) => {
                     const color = COLORS[stableIndex(job)];
                     return <JobLink key={job.id} job={job} data-testid={`month-job-${job.id}`} title={job.title} className="truncate rounded-md border-l-[3px] px-1.5 py-1 text-[10px] font-semibold" style={{ background: color.bg, color: color.ink, borderColor: color.ink }}>{job.title}</JobLink>;
                   })}{blocks.length > 3 && <span className="px-1 text-[9px] text-jx-ink-3">+{blocks.length - 3} more</span>}</div>
@@ -242,6 +287,7 @@ export default function Scheduling() {
         <div className="px-4 pb-4"><GetOnItNotepad /></div>
       </section>}
     </div>
+    <ScheduleEntryDialog open={entryDialog.open} entry={entryDialog.entry} defaultDate={entryDialog.date} onOpenChange={(open) => setEntryDialog((current) => ({ ...current, open, entry: open ? current.entry : null }))} />
     <ScheduleJobDialog open={chooserOpen || !!selectedJob} job={selectedJob} jobs={safeJobs} isLoading={isLoading} isError={isError} onSelect={pickJob} onClose={() => { setSelectedJob(null); setChooserOpen(false); }} />
   </main>;
 }

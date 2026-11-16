@@ -14,6 +14,7 @@ import { isReceiptMediaType, receiptScanErrorMessage, scanReceipt } from "./rece
 import { RECEIPT_MAX_BYTES } from "@shared/receipt-scan";
 import { applyResendEvent, latestDeliveries, listDeliveries, refreshDeliveries, verifyResendSignature } from "./email-delivery";
 import { registerNoteRoutes } from "./notes";
+import { registerScheduleEntryRoutes, scheduleEntriesByDay } from "./schedule-entries";
 import { registerSetupRoutes } from "./setup";
 import { jobBilling, stageSnapshot, StageError, type StageSnapshot } from "./invoice-billing";
 import { applyStripeEvent, createCheckoutSession, parseStripeEvent, processingAmount, stripeEnabled, StripeWebhookError } from "./stripe-payments";
@@ -756,6 +757,7 @@ export async function registerRoutes(
   });
 
   registerNoteRoutes(app);
+  registerScheduleEntryRoutes(app);
   registerSetupRoutes(app, requireAdmin);
 
   app.get("/api/address-suggestions", async (req, res) => {
@@ -927,6 +929,7 @@ export async function registerRoutes(
       let ci = 0;
       const getColor = (id: string) => { if (!colorMap.has(id)) colorMap.set(id, JOB_COLORS[ci++ % JOB_COLORS.length]); return colorMap.get(id)!; };
       const WDAYS = ["MON","TUE","WED","THU","FRI"];
+      const entriesByDay = await scheduleEntriesByDay(weekDays);
 
       const week = weekDays.map((date, i) => {
         return {
@@ -934,6 +937,8 @@ export async function registerRoutes(
           weekday: WDAYS[i],
           dayNum: Number(date.slice(8, 10)),
           isToday: date === today,
+          // Site visits, estimates, pickups: on the calendar without being jobs.
+          entries: entriesByDay.get(date) ?? [],
           jobs: weekJobs
             .filter(j => {
               if (!j.startDate) return false;

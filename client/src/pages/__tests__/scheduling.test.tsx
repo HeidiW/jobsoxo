@@ -23,6 +23,11 @@ const initialJobs = [
   { ...base, id: "completed", title: "Completed job", status: "completed", startDate: date(0) },
 ];
 let jobs: typeof initialJobs;
+let entries: Array<Record<string, unknown>>;
+const initialEntries = [
+  { id: "e1", title: "Estimate at 42 Elm St", date: `${date(1)}T00:00:00.000Z`, endDate: null, startTime: "09:30", notes: "Ask for Dana", clientId: null, clientName: null, jobId: null, jobTitle: null },
+  { id: "e2", title: "Saturday pickup", date: `${date(5)}T00:00:00.000Z`, endDate: null, startTime: null, notes: null, clientId: null, clientName: null, jobId: null, jobTitle: null },
+];
 let unavailable: boolean;
 let fetchMock: ReturnType<typeof vi.fn>;
 function mount() { render(<QueryClientProvider client={queryClient}><Scheduling /></QueryClientProvider>); }
@@ -30,8 +35,8 @@ async function ready() { await screen.findByTestId("job-block-scheduled"); }
 
 describe("Scheduling redesign", () => {
   beforeEach(() => {
-    queryClient.clear(); jobs = structuredClone(initialJobs); unavailable = false;
-    fetchMock = vi.fn(async (path: string) => path === "/api/notes/current" ? Response.json({ id: "note-1", createdAt: "2026-11-09T14:00:00.000Z", items: [{ id: "i1", text: "Order primer", done: false, doneAt: null, doneByName: null, position: 0 }] }) : unavailable ? Response.json({ error: "Unavailable" }, { status: 503 }) : Response.json(jobs));
+    queryClient.clear(); jobs = structuredClone(initialJobs); entries = structuredClone(initialEntries); unavailable = false;
+    fetchMock = vi.fn(async (path: string) => path.startsWith("/api/schedule-entries") ? Response.json(entries) : path === "/api/notes/current" ? Response.json({ id: "note-1", createdAt: "2026-11-09T14:00:00.000Z", items: [{ id: "i1", text: "Order primer", done: false, doneAt: null, doneByName: null, position: 0 }] }) : unavailable ? Response.json({ error: "Unavailable" }, { status: 503 }) : Response.json(jobs));
     vi.stubGlobal("fetch", fetchMock);
   });
   afterEach(() => { queryClient.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -48,7 +53,7 @@ describe("Scheduling redesign", () => {
     expect(screen.getByTestId("backlog-job-quoted")).toBeVisible();
     expect(screen.getByTestId("backlog-job-undated")).toBeVisible();
     expect(screen.queryByText("Completed job")).not.toBeInTheDocument();
-    expect(fetchMock.mock.calls.every(([path]) => path === "/api/jobs" || path === "/api/notes/current")).toBe(true);
+    expect(fetchMock.mock.calls.every(([path]) => path === "/api/jobs" || path === "/api/notes/current" || String(path).startsWith("/api/schedule-entries?"))).toBe(true);
     if (today.getDay() !== 0 && today.getDay() !== 6) {
       expect(screen.getByTestId(`scheduling-date-${format(today, "yyyy-MM-dd")}`)).toHaveAttribute("aria-current", "date");
     }
@@ -122,6 +127,7 @@ describe("Scheduling redesign", () => {
   });
 
   it("explains an empty schedule and empty job chooser", async () => {
+    entries = [];
     jobs = []; mount();
     expect(await screen.findByTestId("scheduling-empty")).toHaveTextContent("No active jobs");
     expect(screen.getByTestId("schedule-backlog-empty")).toBeVisible();
@@ -135,5 +141,35 @@ describe("Scheduling redesign", () => {
     mount();
     expect(await screen.findByTestId("text-i1")).toHaveTextContent("Order primer");
     expect(screen.getByTestId("input-new-item")).toBeInTheDocument();
+  });
+
+  it("shows schedule entries beside jobs, in the weekend note, and in month view", async () => {
+    mount(); await ready();
+    const block = await screen.findByTestId("entry-block-e1");
+    expect(block).toHaveTextContent("9:30 AM · Estimate at 42 Elm St");
+    expect(screen.getByTestId("schedule-entry-row-e1")).toHaveTextContent("Not a job yet");
+    expect(screen.getByTestId("weekend-entry-e2")).toHaveTextContent("Saturday pickup");
+    await userEvent.click(screen.getByTestId("button-view-month"));
+    expect(await screen.findByTestId("month-entry-e1")).toHaveTextContent("Estimate at 42 Elm St");
+  });
+
+  it("opens the entry dialog from the header, from a month day, and from an existing entry", async () => {
+    mount(); await ready();
+    await userEvent.click(screen.getByTestId("button-add-schedule-entry"));
+    expect(await screen.findByTestId("schedule-entry-dialog")).toHaveTextContent("Add to the schedule");
+    await userEvent.click(screen.getByTestId("button-cancel-entry"));
+    await userEvent.click(await screen.findByTestId("entry-block-e1"));
+    expect(await screen.findByTestId("input-entry-title")).toHaveValue("Estimate at 42 Elm St");
+    await userEvent.click(screen.getByTestId("button-cancel-entry"));
+    await userEvent.click(screen.getByTestId("button-view-month"));
+    await userEvent.click(await screen.findByTestId(`button-add-entry-${date(2)}`));
+    expect(await screen.findByTestId("input-entry-date")).toHaveValue(date(2));
+  });
+
+  it("keeps the calendar when there are entries but no jobs", async () => {
+    jobs = jobs.filter((job) => job.status === "quoted");
+    mount();
+    expect(await screen.findByTestId("entry-block-e1")).toBeInTheDocument();
+    expect(screen.queryByTestId("scheduling-empty")).toBeNull();
   });
 });
