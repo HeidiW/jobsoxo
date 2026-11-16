@@ -204,7 +204,7 @@ export default function Scheduling() {
                       {column && <JobLink job={job} data-testid={`job-block-${job.id}`} className="absolute top-1/2 z-10 flex min-h-[48px] -translate-y-1/2 flex-col justify-center overflow-hidden rounded-r-xl border border-l-[6px] px-3 py-1.5 transition-transform hover:-translate-y-[54%]"
                         style={{ left: `calc(${(column.start - 1) * 10}% + 4px)`, width: `calc(${(column.end - column.start) * 10}% - 8px)`, background: color.bg, color: color.ink, borderColor: color.edge, borderLeftColor: color.ink }}>
                         <span className="truncate text-[11px] font-bold">{job.title}</span>
-                        <span className="truncate text-[10px] opacity-85">{job.assignedEmployees?.length ? job.assignedEmployees.map((person) => person.name).join(", ") : "Crew not assigned"} · {formatScheduleDate(job.startDate)}{job.endDate ? ` – ${formatScheduleDate(job.endDate)}` : ""}</span>
+                        <span className="truncate text-[10px] opacity-85">{job.assignedEmployees?.length ? job.assignedEmployees.map((person) => person.name).join(", ") : "Crew not assigned"} · {formatScheduleDate(job.startDate)}{job.endDate ? ` – ${formatScheduleDate(job.endDate)}` : " · ongoing, no end date"}</span>
                       </JobLink>}
                     </div>
                   </div>;
@@ -220,7 +220,7 @@ export default function Scheduling() {
             </button>)}{weekendOnlyJobs.map((job) => {
               const color = COLORS[stableIndex(job)];
               return <JobLink key={job.id} job={job} data-testid={`weekend-job-${job.id}`} className="flex max-w-full items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold" style={{ background: color.bg, color: color.ink, borderColor: color.edge }}>
-                <span className="truncate">{job.title}</span><span className="shrink-0 font-normal">{formatScheduleDate(job.startDate)}{job.endDate ? ` – ${formatScheduleDate(job.endDate)}` : ""}</span>
+                <span className="truncate">{job.title}</span><span className="shrink-0 font-normal">{formatScheduleDate(job.startDate)}{job.endDate ? ` – ${formatScheduleDate(job.endDate)}` : " · ongoing, no end date"}</span>
               </JobLink>;
             })}</div>
           </div>}

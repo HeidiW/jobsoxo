@@ -20,9 +20,10 @@ describe("scheduling calendar logic", () => {
     expect(parseScheduleDate(null)).toBeNull();
   });
 
-  it("uses inclusive dates and treats missing ends as single-day jobs", () => {
+  it("uses inclusive dates and treats a missing end as a single day only when the start is still ahead", () => {
     const anchor = new Date(2026, 9, 19);
-    expect(getBarPosition(job("2026-10-19"), anchor)).toMatchObject({ left: 0, span: 1 });
+    const ahead = new Date(2099, 9, 19);
+    expect(getBarPosition(job("2099-10-19"), ahead)).toMatchObject({ left: 0, span: 1 });
     expect(getBarPosition(job("2026-10-19", "2026-10-21"), anchor)).toMatchObject({ left: 0, span: 3 });
     expect(getScheduleRange(job("2026-10-21", "2026-10-19"))?.end.getDate()).toBe(21);
     expect(getBarPosition(job(null), anchor)).toBeNull();
@@ -33,8 +34,10 @@ describe("scheduling calendar logic", () => {
     expect(getBarPosition(job("2026-10-01", "2026-11-12"), anchor)).toMatchObject({ left: 0, span: 14, leftPercent: 0, widthPercent: 100 });
     expect(getBarPosition(job("2026-10-18", "2026-10-20"), anchor)).toMatchObject({ left: 0, span: 2 });
     expect(getBarPosition(job("2026-11-01", "2026-11-04"), anchor)).toMatchObject({ left: 13, span: 1 });
-    expect(getBarPosition(job("2026-10-18"), anchor)).toBeNull();
-    expect(getBarPosition(job("2026-11-02"), anchor)).toBeNull();
+    expect(getBarPosition(job("2026-10-18", "2026-10-18"), anchor)).toBeNull();
+    expect(getBarPosition(job("2026-11-02", "2026-11-02"), anchor)).toBeNull();
+    // Started before the window with no end: still running, so it fills the fortnight.
+    expect(getBarPosition(job("2026-10-18"), anchor)).toMatchObject({ left: 0, span: 14 });
   });
 
   it("builds Monday-based fortnights across month and year boundaries", () => {
@@ -70,5 +73,16 @@ describe("scheduling calendar logic", () => {
     expect(color).toBeGreaterThanOrEqual(0);
     expect(color).toBeLessThan(6);
     expect(["other", "hotel-restoration"].map(getStableJobColorIndex)[1]).toBe(color);
+  });
+
+  it("keeps an open-ended job on the calendar through today, and a future start on its start day", () => {
+    const today = new Date(2026, 10, 16); // Nov 16, 2026
+    const ongoing = getScheduleRange(job("2026-11-09", null), today)!;
+    expect(ongoing.start.getDate()).toBe(9);
+    expect(ongoing.end.getMonth()).toBe(10);
+    expect(ongoing.end.getDate()).toBe(16);
+    const future = getScheduleRange(job("2026-11-20", null), today)!;
+    expect(future.end.getDate()).toBe(20);
+    expect(getScheduleRange(job("2026-11-09", "2026-11-12"), today)!.end.getDate()).toBe(12);
   });
 });

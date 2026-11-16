@@ -18,6 +18,7 @@ const base = { clientId: "client-a", client: { name: "Hotel client" }, assignedE
 const initialJobs = [
   { ...base, id: "scheduled", title: "Scheduled restoration", status: "scheduled", startDate: date(0), endDate: date(4) },
   { ...base, id: "weekend", title: "Weekend finish", status: "in_progress", startDate: date(5), endDate: date(6) },
+  { ...base, id: "ongoing", title: "Gramercy bars", status: "in_progress", startDate: date(-10), endDate: null },
   { ...base, id: "quoted", title: "Quoted plaster", status: "quoted", startDate: null },
   { ...base, id: "undated", title: "Awaiting dates", status: "scheduled", startDate: null },
   { ...base, id: "completed", title: "Completed job", status: "completed", startDate: date(0) },
@@ -171,5 +172,11 @@ describe("Scheduling redesign", () => {
     mount();
     expect(await screen.findByTestId("entry-block-e1")).toBeInTheDocument();
     expect(screen.queryByTestId("scheduling-empty")).toBeNull();
+  });
+
+  it("shows a job in progress with no end date as ongoing instead of hiding it after its first day", async () => {
+    mount(); await ready();
+    expect(screen.getByTestId("job-block-ongoing")).toHaveTextContent("ongoing, no end date");
+    expect(screen.queryByTestId("backlog-job-ongoing")).toBeNull();
   });
 });

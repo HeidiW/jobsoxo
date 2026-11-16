@@ -62,10 +62,17 @@ export function formatScheduleDate(value: string | Date | null | undefined): str
   return date ? format(date, "MMM d, yyyy") : "Date not set";
 }
 
-export function getScheduleRange(job: Pick<Job, "startDate" | "endDate">) {
+/**
+ * A job with a start date and no end date is open-ended: it runs from its
+ * start through today, so work in progress stays on the calendar instead of
+ * vanishing after its first day. A future start with no end is a single day.
+ */
+export function getScheduleRange(job: Pick<Job, "startDate" | "endDate">, today: Date = new Date()) {
   const start = parseScheduleDate(job.startDate);
   if (!start) return null;
-  const end = parseScheduleDate(job.endDate) ?? start;
+  const explicitEnd = parseScheduleDate(job.endDate);
+  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const end = explicitEnd ?? (todayDay > start ? todayDay : start);
   return { start, end: end < start ? start : end };
 }
 

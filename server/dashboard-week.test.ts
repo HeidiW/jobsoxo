@@ -27,6 +27,15 @@ describe("dashboard week uses the viewer's calendar day", () => {
     expect(daysWithJob).toEqual(["2026-11-10", "2026-11-11"]);
   });
 
+  it("keeps a job with no end date on every day from its start through today", async () => {
+    const ongoing = await jobOn("2026-11-09", null);
+    const ahead = await jobOn("2026-11-13", null);
+    const { body } = await request(app).get("/api/dashboard?today=2026-11-11").expect(200);
+    const on = (id: string) => body.week.filter((day: any) => day.jobs.some((j: any) => j.jobId === id)).map((day: any) => day.date);
+    expect(on(ongoing.id)).toEqual(["2026-11-09", "2026-11-10", "2026-11-11"]);
+    expect(on(ahead.id)).toEqual(["2026-11-13"]);
+  });
+
   it("stays on Monday at 9 pm New York even though it's already Tuesday in UTC", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-11-10T02:00:00Z")); // Mon Nov 9, 9 pm EST

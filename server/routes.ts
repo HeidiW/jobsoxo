@@ -943,7 +943,8 @@ export async function registerRoutes(
             .filter(j => {
               if (!j.startDate) return false;
               const start = calendarDay(j.startDate);
-              const end = calendarDay(j.endDate ?? j.startDate);
+              // No end date means the job is still running: it shows through today.
+              const end = j.endDate ? calendarDay(j.endDate) : (start > today ? start : today);
               return start <= date && end >= date;
             })
             .map(j => ({ jobId: j.id, label: j.title, crewSize: 0, color: getColor(j.id) })),
