@@ -1,230 +1,145 @@
 # JobsOxo
 
-**Invoicing and job management for construction painting & decorating.**
+**The back office for painting and decorating contractors.**
 
-Manage clients, jobs, invoices, payroll, and scheduling in one place. Connects to Gmail to surface client emails as actionable tasks, and sends invoices and payment reminders by email and SMS.
+Clients, jobs, materials, staged invoicing, online payments, scheduling, time tracking and payroll in one place. Production runs at [jobsoxo.app](https://jobsoxo.app) on Render. Accounts are invite-only.
 
 ---
 
-## Tech Stack
+## What it does
+
+| Area | What a user gets |
+|---|---|
+| **Clients and jobs** | Client records, jobs with status (quoted / scheduled / in progress / completed), crew assignments, address autocomplete, documents (PDFs, photos, specs) and a per-job Billing panel. |
+| **Invoices** | Draft, send, remind. Bill a job in stages: deposit, numbered progress payments, final. Approved change orders raise the contract total. Claude can draft an invoice from a PDF, image or Google Doc, and proofread it before sending. Invoice numbers are sequential per year. |
+| **Online payments** | Each invoice carries a pay link. Clients pay by bank transfer (ACH, preferred) or card through Stripe Checkout; Stripe's webhook records the payment and marks the invoice processing, then paid. |
+| **Materials** | Material purchases per job. Photograph a receipt and Claude reads it into line items for review and bulk save. |
+| **Scheduling** | Two-week and month calendars of jobs and crews. Schedule entries (site visits, estimates, pickups, days off) go on the calendar without a job and can be turned into one later. "Get on it" to-do list with an archive. |
+| **Time and payroll** | Hours per employee per job, local pay estimates, payroll worksheets, deductions, employee onboarding and direct-deposit setup (Plaid). Payroll itself runs through **Gusto Embedded**: employees are invited to Gusto, hours flow into a pay run, the run is calculated and submitted from the app. |
+| **Inbox** | Per-user Gmail sync surfaces client emails as tasks (done / snooze / dismiss). Clients can reply to invoice emails. |
+| **Reminders** | Overdue-invoice reminders by email (Resend) and SMS (Twilio), with delivery logs. |
+| **Setup guidance** | A first-run checklist steers new accounts to add a client before jobs, invoices or scheduling. |
+
+---
+
+## Tech stack
 
 ### Frontend
 | Library | Version | Role |
 |---|---|---|
-| React | 18.3 | UI framework |
-| Vite | 7.3 | Dev server & bundler |
+| React | 18.3 | UI |
+| Vite | 7.3 | Dev server and bundler |
 | TypeScript | 5.6 | Language |
-| Wouter | 3.3 | Client-side routing |
-| TanStack Query | 5.60 | Server state, caching, mutations |
+| Wouter | 3.3 | Routing |
+| TanStack Query | 5.60 | Server state (query keys are the API path) |
 | shadcn/ui + Radix UI | — | Component primitives |
-| Tailwind CSS | 3.4 | Utility-first styling |
-| Framer Motion | 11 | Animations |
+| Tailwind CSS | 3.4 | Styling |
+| Framer Motion | 11 | Animation |
 | Recharts | 2.15 | Dashboard charts |
-| React Hook Form | 7.55 | Form state management |
-| Zod | 3.24 | Schema validation (shared with backend) |
-| date-fns | 3.6 | Date formatting & math |
-| jsPDF + html2canvas | 4.2 / 1.4 | Client-side PDF generation |
+| React Hook Form + Zod | 7.55 / 3.24 | Forms and validation (schemas shared with the server) |
+| date-fns | 3.6 | Dates |
+| jsPDF + html2canvas | 4.2 / 1.4 | Client-side invoice PDFs |
 | lucide-react | 0.453 | Icons |
 
 ### Backend
 | Library | Version | Role |
 |---|---|---|
 | Express | 4.21 | HTTP server |
-| Drizzle ORM | 0.39 | Type-safe SQL query builder |
-| drizzle-zod | 0.7 | Auto-generates Zod schemas from Drizzle tables |
-| PostgreSQL (pg) | 8.16 | Database driver |
-| Passport.js | 0.7 | Authentication middleware |
-| express-session | 1.18 | Session management |
-| connect-pg-simple | 10 | PostgreSQL-backed session store |
-| multer | 2.2 | File upload handling (documents) |
-| pdf-parse | 2.4 | Server-side PDF text extraction |
+| Drizzle ORM + drizzle-zod | 0.45 / 0.7 | Typed SQL and generated Zod schemas |
+| PostgreSQL (pg) | 8.16 | Database driver; Postgres 16 |
+| Passport.js, express-session, connect-pg-simple | 0.7 / 1.18 / 10 | Auth and Postgres-backed sessions |
+| Stripe | 22 | Checkout sessions and webhook verification |
+| @anthropic-ai/sdk | 1.6 | Receipt scanning, invoice drafting and proofreading |
+| multer, pdf-parse | 2.2 / 2.4 | Uploads and PDF text |
 | bcryptjs | 3.0 | Password hashing |
-| tsx | 4.20 | TypeScript execution in dev |
+| tsx | 4.20 | TypeScript execution |
 
 ### Testing
 | Library | Version | Role |
 |---|---|---|
-| Vitest | 4.1 | Test runner |
-| Supertest | 7.2 | HTTP integration testing |
+| Vitest | 4.1 | Runner (server tests roll back DB fixtures; client tests use jsdom per file) |
+| Supertest | 7.2 | HTTP integration tests |
 
 ---
 
-## External APIs
+## External services
 
-| Service | Purpose | Keys required |
+| Service | Purpose | Variables |
 |---|---|---|
-| **Resend** | Send invoices and payment reminders by email | `RESEND_API_KEY` |
-| **Twilio** | Send payment reminders by SMS | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` |
-| **Google OAuth** | User sign-in via Google account | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
-| **Gmail API** | Per-user inbox sync — surfaces client emails as tasks | same Google credentials above |
-| **Yahoo OAuth** | User sign-in via Yahoo account | `YAHOO_CLIENT_ID`, `YAHOO_CLIENT_SECRET` |
-| **Microsoft OAuth** | User sign-in via Microsoft account *(not configured)* | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` |
-| **Apple OAuth** | User sign-in via Apple ID *(not configured)* | `APPLE_CLIENT_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` |
+| **Stripe** | Online invoice payments (ACH + card) and the payment webhook | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
+| **Gusto Embedded** | Payroll: company, employees, pay runs, webhooks. Live payroll and live company creation sit behind explicit switches | `GUSTO_*` (see `.env.example`) |
+| **Plaid** | Employee bank accounts for direct deposit; bank transaction matching | `PLAID_ENV`, `PLAID_CLIENT_ID`, `PLAID_SECRET` |
+| **Anthropic (Claude)** | Receipt scanning, invoice drafting, proofreading. Production uses OIDC federation from Render; locally an API key works | `ANTHROPIC_API_KEY` or `ANTHROPIC_FEDERATION_RULE_ID` + `ANTHROPIC_ORGANIZATION_ID` (+ the token file Render injects) |
+| **Resend** | Outbound email and delivery webhook | `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `EMAIL_FROM` |
+| **Twilio** | SMS reminders and inbound SMS | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` |
+| **Google** | Sign-in, Gmail inbox sync, Google Docs import, address autocomplete | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_MAPS_API_KEY` |
+| **Yahoo / Microsoft / Apple OAuth** | Optional sign-in providers | `YAHOO_*`, `MICROSOFT_*`, `APPLE_*` |
+
+Each status endpoint (`/api/invoices/assistant/status`, `/api/materials/scan-receipt/status`, `/api/gusto/status`, `/api/plaid/status`) says whether its service is configured and, for Claude, which variable is missing.
 
 ---
 
-## Database Schema
+## Database
 
-All tables live in a single PostgreSQL database. Schema is defined in `shared/schema.ts` using Drizzle ORM, and changes ship as versioned migrations in `migrations/` (see [docs/database-migrations.md](docs/database-migrations.md)).
+One PostgreSQL database. Tables are defined in `shared/schema.ts`; changes ship as numbered migrations in `migrations/` (20 so far) and are applied with `npm run db:migrate`, which Render runs before every deploy. See [docs/database-migrations.md](docs/database-migrations.md).
 
-| Table | Description |
+| Group | Tables |
 |---|---|
-| `users` | App user accounts (username/password or OAuth) |
-| `invites` | Invite codes for new user registration |
-| `oauth_accounts` | Linked OAuth provider accounts per user |
-| `clients` | Client contact records |
-| `jobs` | Jobs linked to clients (quoted / scheduled / in_progress / completed) |
-| `line_items` | Pricing line items attached to jobs or invoices |
-| `invoices` | Invoices (draft / sent / paid / overdue / partial) |
-| `payments` | Payment records against invoices |
-| `change_orders` | Change orders attached to invoices (pending / approved / rejected) |
-| `employees` | Employee records with hourly rates and positions |
-| `employee_assignments` | Many-to-many: employees assigned to jobs |
-| `time_entries` | Time logged by employees against jobs |
-| `payroll_records` | Payroll run records per employee per period |
-| `google_tokens` | Per-user Gmail OAuth tokens (access + refresh) |
-| `inbox_tasks` | Cached Gmail messages surfaced as client tasks |
-| `settings` | Per-user app settings (company info, reminder config, etc.) |
-| `job_documents` | Files uploaded against a job (PDFs, photos, specs) |
+| Accounts | `users`, `invites`, `oauth_accounts`, `session`, `settings`, `onboarding_items` |
+| Work | `clients`, `jobs`, `job_documents`, `job_materials`, `employee_assignments`, `schedule_entries`, `notes`, `note_items` |
+| Billing | `invoices`, `invoice_counters`, `line_items`, `change_orders`, `payments`, `email_deliveries`, `reminder_logs`, `sms_attempts` |
+| People and pay | `employees`, `employee_deductions`, `time_entries`, `payroll_settings`, `payroll_worksheets`, `payroll_records`, `bank_accounts`, `plaid_transactions` |
+| Gusto | `gusto_integrations`, `gusto_employee_mappings`, `gusto_payroll_runs`, `gusto_payroll_items`, `gusto_webhook_events` |
+| Google | `google_tokens`, `google_docs_tokens`, `inbox_tasks` |
+
+Dates that mean a calendar day (job start/end, schedule entries, invoice dates) are stored as UTC midnight. Bank and provider tokens are encrypted with `ENCRYPTION_KEY`.
 
 ---
 
-## API Routes
+## API
 
-### Authentication — `/api/auth`
-```
-GET  /api/auth/setup-status       First-run check (no users yet?)
-POST /api/auth/register            Initial admin account creation
-POST /api/auth/signup              Invite-gated signup
-POST /api/auth/login               Username/password login
-POST /api/auth/logout              Destroy session
-GET  /api/auth/me                  Current user
-POST /api/auth/forgot-password     Send reset link (Resend)
-GET  /api/auth/verify-reset-token  Validate reset token
-POST /api/auth/reset-password      Apply new password
-GET  /api/auth/providers           Which OAuth providers are configured
-GET  /api/auth/callback-urls       OAuth callback URLs (for provider setup)
-GET  /api/auth/google              → Google OAuth
-GET  /api/auth/google/callback
-GET  /api/auth/microsoft           → Microsoft OAuth
-GET  /api/auth/microsoft/callback
-GET  /api/auth/apple               → Apple OAuth
-POST /api/auth/apple/callback
-GET  /api/auth/yahoo               → Yahoo OAuth
-GET  /api/auth/yahoo/callback
-```
+Every route lives under `/api` and, apart from auth, the public pay page, OAuth callbacks and provider webhooks, requires a signed-in session.
 
-### Clients — `/api/clients`
 ```
-GET    /api/clients
-GET    /api/clients/:id
-POST   /api/clients
-PATCH  /api/clients/:id
-DELETE /api/clients/:id
-```
-
-### Jobs — `/api/jobs`
-```
-GET    /api/jobs
-GET    /api/jobs/:id
-POST   /api/jobs
-PATCH  /api/jobs/:id
-DELETE /api/jobs/:id
-GET    /api/jobs/:id/documents
-POST   /api/jobs/:id/documents        (multipart/form-data)
-GET    /api/job-documents/:docId/download
-DELETE /api/job-documents/:docId
-GET    /api/jobs/:id/line-items
-GET    /api/jobs/:id/assignments
-PUT    /api/jobs/:id/assignments
+Auth           /api/auth/{setup-status,register,signup,login,logout,me,profile,
+                         forgot-password,verify-reset-token,reset-password,providers,
+                         callback-urls,google,microsoft,apple,yahoo}
+Users/invites  /api/users, /api/users/:id, /api/users/:id/admin, /api/invites
+Setup          /api/setup/status, /api/setup/dismiss, /api/admin/seed
+Clients        /api/clients[/:id]
+Jobs           /api/jobs[/:id], /:id/{documents,line-items,assignments,billing},
+               /api/job-documents/:docId[/download]
+Materials      /api/materials[/:id], /api/materials/bulk,
+               /api/materials/scan-receipt[/status]
+Line items     /api/line-items[/:id], /api/invoices/:id/line-items
+Invoices       /api/invoices[/:id], /:id/{draft,send,remind,mark-paid,payments,
+               change-orders,send-change-order,collections,deliveries,reminder-logs},
+               /api/invoices/{parse-document,parse-google-doc,assistant,proofread},
+               /api/collections
+Change orders  /api/change-orders[/:id]
+Payments       /api/pay/:token (public), /api/pay/:token/checkout,
+               /api/webhooks/stripe
+Schedule       /api/schedule-entries[/:id], /:id/convert-to-job
+Notes          /api/notes/current, /current/items, /current/archive,
+               /api/notes/items/:id, /api/notes/archive, /api/notes/:id
+Employees      /api/employees[/:id], /:id/{deductions,onboarding,send-deposit-link,
+               gusto-invite,gusto-onboarding/take-over,gusto-link,everywhere},
+               /api/employee-deductions/:id, /api/employee-bank-setup/:token
+Time/payroll   /api/time-entries[/:id], /api/payroll-settings,
+               /api/payroll-worksheets[/:id], /:id/{confirm,export},
+               /api/payroll-records[/:id], /run, /mark-all-paid
+Gusto          /api/gusto/{status,connect,sync,flows,webhook,bank-summary,
+               funding-account,demo-company,employees/*,payroll-runs[/:id],
+               payrolls/upcoming,production/*}
+Plaid          /api/plaid/{status,link-token,exchange-token,bank-account,
+               bank-accounts/:id,balance,transactions,sync-transactions,...}
+Inbox/Gmail    /api/gmail/*, /api/inbox/*, /api/google-docs/*
+Dashboard      /api/dashboard, /api/reminders/process, /api/settings,
+               /api/sms/{config,attempts,inbound}, /api/webhooks/resend,
+               /api/address-suggestions, /api/address-details
 ```
 
-### Line Items — `/api/line-items`
-```
-POST   /api/line-items
-PATCH  /api/line-items/:id
-DELETE /api/line-items/:id
-POST   /api/invoices/:id/line-items
-```
-
-### Invoices — `/api/invoices`
-```
-GET    /api/invoices
-GET    /api/invoices/:id
-POST   /api/invoices
-PATCH  /api/invoices/:id
-DELETE /api/invoices/:id
-POST   /api/invoices/parse-document    (upload PDF/image → extract line items)
-POST   /api/invoices/:id/send          (email invoice via Resend)
-POST   /api/invoices/:id/mark-paid
-POST   /api/invoices/:id/payments      (record a payment)
-GET    /api/invoices/:id/change-orders
-POST   /api/invoices/:id/change-orders
-POST   /api/invoices/:id/send-change-order
-```
-
-### Change Orders — `/api/change-orders`
-```
-GET    /api/change-orders
-POST   /api/change-orders
-PATCH  /api/change-orders/:id
-DELETE /api/change-orders/:id
-```
-
-### Employees, Time & Payroll
-```
-GET    /api/employees
-GET    /api/employees/:id
-POST   /api/employees
-PATCH  /api/employees/:id
-DELETE /api/employees/:id
-GET    /api/time-entries
-POST   /api/time-entries
-DELETE /api/time-entries/:id
-GET    /api/payroll-records
-POST   /api/payroll-records/run
-PATCH  /api/payroll-records/:id
-DELETE /api/payroll-records/:id
-```
-
-### Gmail Inbox — `/api/gmail` & `/api/inbox`
-```
-GET    /api/gmail/auth              Begin per-user Gmail OAuth flow
-GET    /api/gmail/callback          OAuth callback → store token
-GET    /api/gmail/status            Is current user's Gmail connected?
-GET    /api/gmail/labels            Fetch Gmail labels for filtering
-GET    /api/gmail/sync-labels       Get saved label filter config
-PATCH  /api/gmail/sync-labels       Update label filter config
-DELETE /api/gmail/disconnect        Revoke Gmail access
-
-GET    /api/inbox/status            Inbox connection status
-GET    /api/inbox/last-sync         Timestamp of last sync
-GET    /api/inbox/messages          Fetch live Gmail messages (triggers sync)
-GET    /api/inbox/tasks             Cached inbox tasks
-POST   /api/inbox/sync              Manual sync for current user
-POST   /api/inbox/sync/all          Admin: sync all connected users
-PATCH  /api/inbox/tasks/:emailId/done
-PATCH  /api/inbox/tasks/:emailId/dismiss
-PATCH  /api/inbox/tasks/:emailId/snooze
-PATCH  /api/inbox/tasks/:emailId/restore
-GET    /api/inbox/tasks/hidden
-DELETE /api/inbox/tasks/:emailId
-DELETE /api/inbox/tasks/dismissed
-DELETE /api/inbox/tasks/bulk
-```
-
-### Dashboard, Reminders & Settings
-```
-GET    /api/dashboard
-POST   /api/reminders/process       Trigger overdue invoice reminder run
-GET    /api/invites
-POST   /api/invites
-DELETE /api/invites/:id
-GET    /api/settings
-PATCH  /api/settings
-GET    /api/sms/config
-POST   /api/sms/inbound             Twilio inbound SMS webhook
-```
+Run `grep -rhoE 'app\.(get|post|put|patch|delete)\("/api/[^"]+"' server/*.ts | sort -u` for the exact list.
 
 ---
 
@@ -232,152 +147,122 @@ POST   /api/sms/inbound             Twilio inbound SMS webhook
 
 | Route | Page |
 |---|---|
-| `/` | Dashboard — revenue chart, KPI cards, recent invoices |
-| `/clients` | Client list |
-| `/clients/:id` | Client detail (jobs, invoices, contact info) |
-| `/jobs` | Job list with status filters |
-| `/jobs/:id` | Job detail |
-| `/jobs/:id/line-items` | Job pricing breakdown |
-| `/invoices` | Invoice list |
-| `/invoices/new` | Create invoice |
-| `/invoices/:id` | Invoice detail |
-| `/invoices/:id/payment` | Record payment |
-| `/change-orders` | Change order list |
-| `/scheduling` | Team scheduling calendar |
-| `/payroll` | Payroll runs and time tracking |
-| `/gmail-todos` | Gmail-sourced client task list (Smart Inbox) |
-| `/inbox-tasks` | Business-action inbox (dismiss / snooze / done) |
-| `/settings` | Company info, reminders, integrations |
-| `/login` | Sign-in (username/password or OAuth) |
-| `/reset-password` | Password reset |
-| `/privacy` | Privacy policy |
-| `/terms` | Terms of service |
+| `/` | Dashboard: outstanding, collected this month, needs attention, this week on site |
+| `/clients` | Clients |
+| `/jobs`, `/jobs/:id`, `/jobs/:id/line-items` | Jobs, job detail (documents, crew, materials, Billing panel), pricing |
+| `/materials` | Material purchases and receipt scanning |
+| `/invoices`, `/invoices/new`, `/invoices/:id`, `/invoices/:id/payment` | Invoices, builder with stage picker, detail, record payment |
+| `/change-orders` | Change orders |
+| `/scheduling` | Two-week and month calendars, schedule entries, "Get on it" list, jobs needing dates |
+| `/payroll`, `/payroll/worksheet` | Employees, hours, Gusto payroll workspace, worksheets |
+| `/inbox`, `/inbox-tasks`, `/gmail-todos` | Gmail-sourced tasks |
+| `/settings` | Company, people (admins can set a member's email), reminders, payment instructions, integrations |
+| `/pay/:token` | Public invoice pay page (no sign-in) |
+| `/login`, `/reset-password`, `/privacy`, `/terms` | Public |
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
-/
-├── client/                  # Vite + React frontend
-│   └── src/
-│       ├── components/      # Shared UI components (sidebar, forms, etc.)
-│       ├── pages/           # One file per route
-│       ├── hooks/           # Custom React hooks
-│       ├── lib/             # queryClient, utils
-│       └── index.css        # Design tokens + Tailwind base
-├── server/                  # Express backend
-│   ├── index.ts             # App entry point, startup hooks
-│   ├── routes.ts            # All API route handlers (~2 000 lines)
-│   ├── storage.ts           # Data access layer (IStorage interface)
-│   ├── db.ts                # Drizzle + pg pool
-│   ├── email.ts             # Resend email helpers
-│   ├── sms.ts               # Twilio SMS helpers
-│   ├── gmail.ts             # Gmail API + OAuth token management
-│   ├── oauth.ts             # Passport strategy setup
-│   ├── scheduler.ts         # Daily inbox auto-sync (cron-style)
-│   ├── seed.ts              # Demo data seeder (runs on empty DB)
-│   ├── document-parser.ts   # PDF/image → line-item extraction
-│   └── static.ts            # Production static file serving
-├── shared/
-│   └── schema.ts            # Drizzle table definitions + Zod schemas (shared)
-├── design/                  # Design reference files (.dc.html, .md)
-└── drizzle.config.ts        # Drizzle Kit configuration
+client/src/
+  pages/            One file per route (+ *-logic.ts for pure helpers)
+  components/       clients, invoices, jobs, materials, scheduling, payroll,
+                    notepad, setup, inbox, settings, ui (shadcn)
+  hooks/, lib/      queryClient, utils
+server/
+  index.ts          Entry; canonical-host redirect, sessions, scheduler
+  routes.ts         Most API handlers
+  storage.ts        Data access layer (IStorage)
+  invoice-billing.ts, stripe-payments.ts, email.ts, email-delivery.ts
+  receipt-scan.ts, invoice-assistant.ts, invoice-proofread.ts   (Claude)
+  schedule-entries.ts, notes.ts, setup.ts, dashboard-reminders.ts
+  gusto-*.ts        Gusto client, company, employees, payroll, production, demo
+  plaid.ts, plaid-sync.ts, payroll-bank-view.ts
+  gmail.ts, google-docs.ts, oauth.ts, sms.ts, scheduler.ts
+  business-time.ts  Calendar-day helpers (America/New_York)
+  encryption.ts, rotate-encryption-key.ts, migrate-encrypt-bank-accounts.ts
+shared/
+  schema.ts         Drizzle tables + Zod schemas used by both sides
+  invoice-stages.ts, invoice-status.ts, payment-instructions.ts,
+  pay-rates.ts, receipt-scan.ts
+migrations/         Numbered SQL migrations (drizzle-kit)
+docs/               database-migrations, gusto-payroll, test-database-isolation,
+                    analytics-events
+render.yaml         Render blueprint (build, pre-deploy migrate, env vars)
 ```
 
 ---
 
 ## Development
 
-Requires Node 20+ and PostgreSQL 16. There's no dotenv; load `.env` into the shell first.
+Node 20+ and PostgreSQL 16. There is no dotenv; load `.env` into the shell.
 
 ```bash
-# Install dependencies
 npm install
-
-# Configure: copy and fill in (DATABASE_URL, SESSION_SECRET, ENCRYPTION_KEY at minimum)
-cp .env.example .env
+cp .env.example .env            # fill in DATABASE_URL, SESSION_SECRET, ENCRYPTION_KEY at minimum
 set -a; source .env; set +a
 
-# Create the database schema
 createdb jobsoxo_dev
 npm run db:migrate
 
-# Start dev server (Express + Vite on $PORT; use 5050 on macOS, where AirPlay holds 5000)
-npm run dev
+npm run dev                     # Express + Vite on $PORT (use 5050 on macOS; AirPlay holds 5000)
 
-# After changing shared/schema.ts, generate a migration and apply it
+# After changing shared/schema.ts
 npm run db:generate -- --name <what_changed>
 npm run db:migrate
 
-# Type-check
-npm run check
+npm run check                   # type-check
+npm run build                   # production bundle
 
-# Run tests (against a separate database built with db:migrate; tests run in America/New_York)
+# Tests use a separate database and run in America/New_York
+createdb jobsoxo_test && DATABASE_URL=postgresql://localhost/jobsoxo_test npm run db:migrate
 DATABASE_URL=postgresql://localhost/jobsoxo_test npm test
 ```
 
 ### Environment variables
 
-The main variables are below; `.env.example` lists every one the server reads (including Gusto, Plaid, Stripe, Apple and Google Maps).
+`.env.example` lists every variable the server reads, with comments. The ones that gate startup or a whole feature:
 
 | Variable | Required | Description |
 |---|---|---|
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `SESSION_SECRET` | Yes | Secret for express-session cookie signing (server won't start in production without it) |
-| `SETUP_CODE` | Production | Code required to create the first admin on an empty database; setup is refused in production without it |
-| `ENCRYPTION_KEY` | Yes | 64 hex chars; encrypts stored bank and provider tokens. Production key must be copied exactly when moving hosts |
-| `RESEND_API_KEY` | Yes | Resend API key for sending emails |
-| `EMAIL_FROM` | Yes | Sender address on a domain verified in Resend (e.g. `noreply@jobsoxo.com`); the company name is used as the display name |
-| `TWILIO_ACCOUNT_SID` | Yes | Twilio account SID for SMS |
-| `TWILIO_AUTH_TOKEN` | Yes | Twilio auth token |
-| `TWILIO_PHONE_NUMBER` | Yes | Twilio outbound phone number |
-| `GOOGLE_CLIENT_ID` | Yes | Google OAuth client ID (sign-in + Gmail) |
-| `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth client secret |
-| `APP_URL` | Yes | Public base URL (e.g. `https://jobsoxo.onrender.com`) |
-| `YAHOO_CLIENT_ID` | Optional | Yahoo OAuth client ID |
-| `YAHOO_CLIENT_SECRET` | Optional | Yahoo OAuth client secret |
-| `MICROSOFT_CLIENT_ID` | Optional | Microsoft OAuth client ID |
-| `MICROSOFT_CLIENT_SECRET` | Optional | Microsoft OAuth client secret |
-| `INBOX_SYNC_HOUR` | Optional | Hour (0–23) for daily Gmail auto-sync (default: `8`) |
+| `DATABASE_URL` | Yes | Postgres connection string |
+| `SESSION_SECRET` | Yes | Cookie signing; production refuses to start without it |
+| `ENCRYPTION_KEY` | Yes | 64 hex chars; encrypts stored bank and provider tokens. Copy exactly when moving hosts; `ENCRYPTION_KEY_PREVIOUS` supports rotation |
+| `SETUP_CODE` | Production | Required to create the first admin on an empty database |
+| `APP_URL` | Yes | Public base URL (`https://jobsoxo.app`). In production every other host 301s here, except webhook paths |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Yes | Outbound email; `EMAIL_FROM` must be on a domain verified in Resend |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | For online payments | Restricted key (Checkout Sessions + PaymentIntents write) and the signing secret of the webhook destination for `/api/webhooks/stripe` |
+| `GUSTO_LIVE_PAYROLL_ENABLED`, `GUSTO_LIVE_COMPANY_CREATION_ENABLED` | Default `false` | Explicit switches for live payroll. Leave off until the Gusto production checklist is complete |
+| `ANTHROPIC_*` | For Claude features | Locally `ANTHROPIC_API_KEY`; on Render, OIDC federation variables (the identity token file is injected by Render's managed OIDC) |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | For Google sign-in, Gmail, Docs | Register `<APP_URL>/api/auth/google/callback`, `<APP_URL>/api/gmail/callback` and `<APP_URL>/api/google-docs/callback` as redirect URIs for each environment |
+| `TWILIO_*`, `PLAID_*`, `GOOGLE_MAPS_API_KEY`, other OAuth providers | Optional | Each feature stays off, with a clear status, until configured |
 
 ---
 
-### Google Docs OAuth configuration
+## Deployment
 
-Google Docs uses the same Google OAuth client as Gmail. The application
-constructs one canonical redirect URI from `APP_URL`:
+Render deploys `main` on every push using `render.yaml`: build, then `npm run db:migrate` as the pre-deploy command, then start. Webhook URLs to register with providers, all on `https://jobsoxo.app`:
 
-```text
-<APP_URL>/api/google-docs/callback
-```
+| Provider | Path |
+|---|---|
+| Stripe | `/api/webhooks/stripe` (`checkout.session.completed`, `.async_payment_succeeded`, `.async_payment_failed`) |
+| Resend | `/api/webhooks/resend` |
+| Twilio inbound SMS | `/api/sms/inbound` |
+| Gusto | `/api/gusto/webhook` |
 
-Before connecting a document, complete this checklist for every environment:
-
-1. Set `APP_URL` to that environment's public application URL, including the
-   `https://` scheme. Do not use a localhost URL for a published deployment.
-2. In Google Cloud Console, open **APIs & Services → Credentials**, select the
-   OAuth 2.0 Client ID used by `GOOGLE_CLIENT_ID`, and add the exact URI
-   `<APP_URL>/api/google-docs/callback` under **Authorized redirect URIs**.
-3. Register the development and published values separately when they have
-   different public hosts. For example:
-   `http://localhost:5050/api/google-docs/callback` and
-   `https://jobsoxo.onrender.com/api/google-docs/callback`.
-4. Keep `APP_URL` and the registered host in sync after changing domains.
-   Trailing slashes on `APP_URL` are normalized by the application, but the
-   callback path and host must still match exactly.
-
-If `APP_URL` is missing, malformed, or includes a query string/hash, Google
-Docs connection stops with a configuration message instead of sending an
-invalid OAuth request.
+DNS for `jobsoxo.app` is at Vercel and points at Render; `jobsoxo.onrender.com` and `www` redirect to the apex.
 
 ---
 
-## Key Design Decisions
+## Design decisions
 
-- **Shared schema** — `shared/schema.ts` is imported by both the frontend (for TypeScript types) and the backend (for Drizzle queries). A single source of truth for all data shapes.
-- **Thin routes, typed storage** — all DB access goes through `IStorage` in `storage.ts`. Routes stay thin; business logic stays in the storage layer.
-- **Per-user Gmail OAuth** — each user connects their own Gmail account. Tokens are stored in `google_tokens` and refreshed automatically.
-- **Demo data** — `seed.ts` inserts demo clients, jobs, invoices, and employees, but only when an admin calls `POST /api/admin/seed`, which **wipes existing data first**. Nothing is seeded on startup.
-- **PDF generation** — invoices are rendered to PDF client-side using jsPDF + html2canvas, keeping the server stateless.
-- **Session storage** — sessions use `connect-pg-simple` to persist in PostgreSQL, so restarts don't log users out.
+- **Shared schema.** `shared/schema.ts` is imported by the client for types and by the server for queries. Zod schemas from `drizzle-zod` validate request bodies.
+- **Thin routes, typed storage.** Database access goes through `IStorage` in `storage.ts`; feature modules (`invoice-billing.ts`, `stripe-payments.ts`, `gusto-*.ts`) hold the business rules and are tested directly.
+- **Staged billing is computed, not stored twice.** A job's contract total, invoiced-to-date and remaining are derived in `invoice-billing.ts` from the job, its invoices and approved change orders; each invoice stores only its stage and basis.
+- **Payments arrive through webhooks.** The app never marks a Stripe payment itself. Stripe's signed event creates the payment record (processing for ACH, then paid) so the invoice balance always matches Stripe.
+- **Payroll runs in Gusto.** The app holds hours and employee mappings; Gusto owns pay data, taxes and filings. Demo and production companies are separate, live actions sit behind environment switches, and payroll history is never deleted (foreign keys restrict it).
+- **Calendar days, not timestamps.** Job and schedule dates are calendar days stored as UTC midnight, and the dashboard week is built from the viewer's business day in America/New_York.
+- **Claude features degrade cleanly.** Receipt scanning, invoice drafting and proofreading check their status endpoint first and tell the user which credential is missing instead of failing mid-task.
+- **Demo data is opt-in.** `POST /api/admin/seed` wipes and reseeds; nothing is seeded at startup.
+- **Sessions in Postgres.** `connect-pg-simple` keeps users signed in across deploys.
