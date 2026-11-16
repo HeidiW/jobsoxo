@@ -81,13 +81,13 @@ Each status endpoint (`/api/invoices/assistant/status`, `/api/materials/scan-rec
 
 ## Database
 
-One PostgreSQL database. Tables are defined in `shared/schema.ts`; changes ship as numbered migrations in `migrations/` (20 so far) and are applied with `npm run db:migrate`, which Render runs before every deploy. See [docs/database-migrations.md](docs/database-migrations.md).
+One PostgreSQL database. Tables are defined in `shared/schema.ts`; changes ship as numbered migrations in `migrations/` (21 so far) and are applied with `npm run db:migrate`, which Render runs before every deploy. See [docs/database-migrations.md](docs/database-migrations.md).
 
 | Group | Tables |
 |---|---|
 | Accounts | `users`, `invites`, `oauth_accounts`, `session`, `settings`, `onboarding_items` |
 | Work | `clients`, `jobs`, `job_documents`, `job_materials`, `employee_assignments`, `schedule_entries`, `notes`, `note_items` |
-| Billing | `invoices`, `invoice_counters`, `line_items`, `change_orders`, `payments`, `email_deliveries`, `reminder_logs`, `sms_attempts` |
+| Billing | `invoices`, `invoice_counters`, `line_items`, `change_orders`, `payments`, `stripe_events`, `payment_discrepancies`, `email_deliveries`, `reminder_logs`, `sms_attempts` |
 | People and pay | `employees`, `employee_deductions`, `time_entries`, `payroll_settings`, `payroll_worksheets`, `payroll_records`, `bank_accounts`, `plaid_transactions` |
 | Gusto | `gusto_integrations`, `gusto_employee_mappings`, `gusto_payroll_runs`, `gusto_payroll_items`, `gusto_webhook_events` |
 | Google | `google_tokens`, `google_docs_tokens`, `inbox_tasks` |
@@ -117,8 +117,8 @@ Invoices       /api/invoices[/:id], /:id/{draft,send,remind,mark-paid,payments,
                /api/invoices/{parse-document,parse-google-doc,assistant,proofread},
                /api/collections
 Change orders  /api/change-orders[/:id]
-Payments       /api/pay/:token (public), /api/pay/:token/checkout,
-               /api/webhooks/stripe
+Payments       /api/pay/:token (public), /api/pay/:token/{checkout,verify},
+               /api/webhooks/stripe, /api/payments/reconcile (admin)
 Schedule       /api/schedule-entries[/:id], /:id/convert-to-job
 Notes          /api/notes/current, /current/items, /current/archive,
                /api/notes/items/:id, /api/notes/archive, /api/notes/:id
@@ -260,7 +260,7 @@ DNS for `jobsoxo.app` is at Vercel and points at Render; `jobsoxo.onrender.com` 
 - **Shared schema.** `shared/schema.ts` is imported by the client for types and by the server for queries. Zod schemas from `drizzle-zod` validate request bodies.
 - **Thin routes, typed storage.** Database access goes through `IStorage` in `storage.ts`; feature modules (`invoice-billing.ts`, `stripe-payments.ts`, `gusto-*.ts`) hold the business rules and are tested directly.
 - **Staged billing is computed, not stored twice.** A job's contract total, invoiced-to-date and remaining are derived in `invoice-billing.ts` from the job, its invoices and approved change orders; each invoice stores only its stage and basis.
-- **Payments arrive through webhooks.** The app never marks a Stripe payment itself. Stripe's signed event creates the payment record (processing for ACH, then paid) so the invoice balance always matches Stripe.
+- **Stripe is the ledger.** The app never marks an online payment itself. Three paths feed one idempotent handler: the signed webhook (every delivery stored by event id first, so duplicates are no-ops and failures retry), a check when the client returns from Checkout, and a nightly reconcile that lists every session from Stripe and flags any invoice where Stripe's settled total differs from the app's. Webhooks make it fast; the reconcile makes it correct.
 - **Payroll runs in Gusto.** The app holds hours and employee mappings; Gusto owns pay data, taxes and filings. Demo and production companies are separate, live actions sit behind environment switches, and payroll history is never deleted (foreign keys restrict it).
 - **Calendar days, not timestamps.** Job and schedule dates are calendar days stored as UTC midnight, and the dashboard week is built from the viewer's business day in America/New_York.
 - **Claude features degrade cleanly.** Receipt scanning, invoice drafting and proofreading check their status endpoint first and tell the user which credential is missing instead of failing mid-task.
