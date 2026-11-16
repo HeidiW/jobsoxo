@@ -66,4 +66,16 @@ describe("TeamMembers", () => {
       description: "There must be at least one admin. Make someone else an admin first.",
     })));
   });
+
+  it("warns when a person has no email on file and lets an admin add one", async () => {
+    (apiRequest as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ json: async () => ({ id: "co-admin", email: "ops@example.test" }) });
+    renderMembers();
+    expect(screen.getByTestId("warning-no-email-co-admin")).toHaveTextContent("password reset and Google sign-in won’t work");
+    expect(screen.queryByTestId("warning-no-email-member")).toBeNull();
+    fireEvent.click(screen.getByTestId("button-add-member-email-co-admin"));
+    fireEvent.change(screen.getByTestId("input-member-email-co-admin"), { target: { value: "ops@example.test" } });
+    fireEvent.click(screen.getByTestId("button-save-member-email-co-admin"));
+    await waitFor(() => expect(apiRequest).toHaveBeenCalledWith("PATCH", "/api/users/co-admin", { email: "ops@example.test" }));
+    await waitFor(() => expect(toast).toHaveBeenCalledWith(expect.objectContaining({ title: "Email saved" })));
+  });
 });

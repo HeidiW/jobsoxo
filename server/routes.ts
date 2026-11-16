@@ -2978,6 +2978,21 @@ export async function registerRoutes(
     }
   });
 
+  // Admins set the email a team member's password reset and Google sign-in use.
+  app.patch("/api/users/:id", requireAdmin, async (req, res) => {
+    const parsed = z.object({ email: z.string().trim().email("Enter a valid email address").max(254).nullable() }).safeParse(req.body);
+    if (!parsed.success) return badRequest(res, parsed.error);
+    try {
+      const result = await storage.updateTeamMemberEmail(req.params.id, parsed.data.email);
+      if (result === "not_found") return res.status(404).json({ error: "User not found" });
+      if (result === "taken") return res.status(409).json({ error: "Another person already signs in with that email." });
+      res.json({ id: req.params.id, email: parsed.data.email });
+    } catch (error) {
+      console.error("Update team member email error:", error);
+      res.status(500).json({ error: "Failed to update email" });
+    }
+  });
+
   // ── Inbox (Gmail) ─────────────────────────────────────────────────────────
   //
   // Each user connects their own Gmail (per-user OAuth). Actions that touch

@@ -514,6 +514,19 @@ export function TeamMembers() {
     },
   });
 
+  const [editingEmail, setEditingEmail] = useState<{ id: string; value: string } | null>(null);
+  const emailMutation = useMutation({
+    mutationFn: async ({ id, email }: { id: string; email: string | null }) => (await apiRequest("PATCH", `/api/users/${id}`, { email })).json(),
+    onSuccess: (_data, { email }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      setEditingEmail(null);
+      toast({ title: email ? "Email saved" : "Email removed", description: email ? "Password resets and Google sign-in now use it." : undefined });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Couldn't save the email", description: err.message.replace(/^\d+:\s*/, ""), variant: "destructive" });
+    },
+  });
+
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading people...</p>;
 
   return (
@@ -527,6 +540,23 @@ export function TeamMembers() {
               <span className="text-sm font-medium truncate">{member.displayName || member.username}</span>
               {member.displayName && <span className="ml-2 text-xs text-muted-foreground">{member.username}</span>}
               {isSelf && <span className="ml-2 text-xs text-muted-foreground">(you)</span>}
+              {editingEmail?.id === member.id ? (
+                <form className="mt-1 flex flex-wrap items-center gap-2" onSubmit={(event) => { event.preventDefault(); emailMutation.mutate({ id: member.id, email: editingEmail.value.trim() || null }); }}>
+                  <Input type="email" value={editingEmail.value} onChange={(event) => setEditingEmail({ id: member.id, value: event.target.value })} placeholder="name@example.com" className="h-9 w-64" autoFocus aria-label={`Email for ${member.displayName || member.username}`} data-testid={`input-member-email-${member.id}`} />
+                  <Button type="submit" size="sm" disabled={emailMutation.isPending} data-testid={`button-save-member-email-${member.id}`}>Save</Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setEditingEmail(null)}>Cancel</Button>
+                </form>
+              ) : member.email ? (
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {member.email}
+                  <button type="button" className="ml-2 underline" onClick={() => setEditingEmail({ id: member.id, value: member.email ?? "" })} data-testid={`button-edit-member-email-${member.id}`}>Change</button>
+                </p>
+              ) : (
+                <p className="mt-0.5 text-xs text-jx-orange-ink" data-testid={`warning-no-email-${member.id}`}>
+                  No email on file: password reset and Google sign-in won’t work for this person.
+                  <button type="button" className="ml-2 font-semibold underline" onClick={() => setEditingEmail({ id: member.id, value: "" })} data-testid={`button-add-member-email-${member.id}`}>Add email</button>
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {member.isAdmin && (

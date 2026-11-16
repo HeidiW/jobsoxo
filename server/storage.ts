@@ -98,6 +98,7 @@ export interface IStorage {
   updateUserDisplayName(userId: string, displayName: string): Promise<User>;
   listTeamMembers(): Promise<TeamMember[]>;
   setUserAdmin(userId: string, isAdmin: boolean): Promise<SetUserAdminResult>;
+  updateTeamMemberEmail(userId: string, email: string | null): Promise<"ok" | "not_found" | "taken">;
 
   // Clients
   getClients(): Promise<Client[]>;
@@ -347,6 +348,22 @@ export class DatabaseStorage implements IStorage {
       .select({ id: users.id, username: users.username, displayName: users.displayName, email: users.email, isAdmin: users.isAdmin })
       .from(users)
       .orderBy(desc(users.isAdmin), users.username);
+  }
+
+  /** Sets the address password resets and Google sign-in match on. One address per person. */
+  async updateTeamMemberEmail(userId: string, email: string | null): Promise<"ok" | "not_found" | "taken"> {
+    return db.transaction(async (tx) => {
+      const [user] = await tx.select({ id: users.id }).from(users).where(eq(users.id, userId));
+      if (!user) return "not_found";
+      if (email) {
+        const normalized = email.trim().toLowerCase();
+        const [other] = await tx.select({ id: users.id }).from(users)
+          .where(and(ne(users.id, userId), or(eq(sql`lower(${users.email})`, normalized), eq(sql`lower(${users.username})`, normalized))));
+        if (other) return "taken";
+      }
+      await tx.update(users).set({ email: email ? email.trim() : null }).where(eq(users.id, userId));
+      return "ok";
+    });
   }
 
   async setUserAdmin(userId: string, isAdmin: boolean): Promise<SetUserAdminResult> {

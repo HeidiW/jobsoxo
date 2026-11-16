@@ -72,4 +72,23 @@ describe("team members and admin access", () => {
     await as(owner.id).setAdmin(member.id, "yes").expect(400);
     await as(owner.id).setAdmin("no-such-user", true).expect(404);
   });
+
+  it("lets an admin set or clear the email a member resets their password with", async () => {
+    const owner = await storage.createUser({ username: "owner4@example.com", password: "x", isAdmin: true });
+    const member = await storage.createUser({ username: "cfp", password: "x" });
+    const other = await storage.createUser({ username: "other4@example.com", password: "x" });
+    const setEmail = (id: string, email: unknown) => request(app).patch(`/api/users/${id}`).set("x-test-user", owner.id).send({ email });
+
+    await setEmail(member.id, "not-an-email").expect(400);
+    await setEmail(member.id, "  Conor@Example.test ").expect(200);
+    expect((await storage.getUser(member.id))?.email).toBe("Conor@Example.test");
+    // The same address can't belong to two people, in any capitalisation.
+    const taken = await setEmail(other.id, "conor@example.test").expect(409);
+    expect(taken.body.error).toContain("already signs in with that email");
+    await setEmail(member.id, null).expect(200);
+    expect((await storage.getUser(member.id))?.email).toBeNull();
+    await setEmail("missing", "x@example.test").expect(404);
+    // Members can't change anyone's email.
+    await request(app).patch(`/api/users/${member.id}`).set("x-test-user", other.id).send({ email: "x@example.test" }).expect(403);
+  });
 });
