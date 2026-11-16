@@ -17,7 +17,8 @@ import { registerNoteRoutes } from "./notes";
 import { registerScheduleEntryRoutes, scheduleEntriesByDay } from "./schedule-entries";
 import { registerSetupRoutes } from "./setup";
 import { jobBilling, stageSnapshot, StageError, type StageSnapshot } from "./invoice-billing";
-import { applyStripeEvent, createCheckoutSession, parseStripeEvent, processingAmount, stripeEnabled, StripeWebhookError } from "./stripe-payments";
+import type Stripe from "stripe";
+import { applyStripeEvent, createCheckoutSession, markStripeEvent, parseStripeEvent, processingAmount, recordStripeEvent, stripeEnabled, StripeWebhookError } from "./stripe-payments";
 import { statusForBalance } from "@shared/invoice-status";
 import { paymentInstructionsFor } from "@shared/payment-instructions";
 import { ensurePayToken, getAppBaseUrl } from "./email";
@@ -720,15 +721,31 @@ export async function registerRoutes(
   // Signed with RESEND_WEBHOOK_SECRET; no JobsOxo session.
   // Stripe tells us when an online payment completes or, for ACH, settles or
   // fails days later. Signed with STRIPE_WEBHOOK_SECRET over the raw body.
+  // Store first, then act. Stripe redelivers anything not acknowledged, and
+  // may deliver the same event twice; a processed event id is a no-op, and a
+  // stored event whose processing failed is processed again on redelivery.
   app.post("/api/webhooks/stripe", async (req, res) => {
+    let event: Stripe.Event;
     try {
-      const event = await parseStripeEvent(req.rawBody as Buffer | undefined, req.get("stripe-signature"));
-      const result = await applyStripeEvent(event);
-      if (result.outcome) console.log(`[Stripe] ${event.type}: ${result.outcome}${result.invoiceId ? ` (invoice ${result.invoiceId})` : ""}`);
-      res.json({ received: true });
+      event = await parseStripeEvent(req.rawBody as Buffer | undefined, req.get("stripe-signature"));
     } catch (error) {
       if (error instanceof StripeWebhookError) return res.status(400).json({ error: error.message });
       console.error("Stripe webhook error:", error);
+      return res.status(500).json({ error: "Webhook failed" });
+    }
+    try {
+      const seen = await recordStripeEvent(event);
+      if (seen === "duplicate") {
+        console.log(`[Stripe] ${event.type} ${event.id}: duplicate delivery, already processed`);
+        return res.json({ received: true, duplicate: true });
+      }
+      const result = await applyStripeEvent(event);
+      await markStripeEvent(event.id, { outcome: result.outcome ?? (result.handled ? "handled" : "unhandled") });
+      if (result.outcome) console.log(`[Stripe] ${event.type}: ${result.outcome}${result.invoiceId ? ` (invoice ${result.invoiceId})` : ""}`);
+      res.json({ received: true });
+    } catch (error) {
+      console.error("Stripe webhook error:", error);
+      await markStripeEvent(event.id, { error: error instanceof Error ? error.message : String(error) }).catch(() => undefined);
       res.status(500).json({ error: "Webhook failed" });
     }
   });

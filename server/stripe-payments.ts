@@ -8,13 +8,15 @@ import type Stripe from "stripe";
 import { and, eq } from "drizzle-orm";
 import { db } from "./db";
 import { storage } from "./storage";
-import { invoices, payments } from "@shared/schema";
+import { invoices, payments, stripeEvents } from "@shared/schema";
 import { statusForBalance } from "@shared/invoice-status";
 
 export const STRIPE_API_VERSION = "2025-04-30.basil";
 
 let client: Stripe | null = null;
-async function getStripe(): Promise<Stripe> {
+/** Tests inject a fake client; production builds one from STRIPE_SECRET_KEY. */
+export function setStripeClientForTests(fake: Stripe | null) { client = fake; }
+export async function getStripe(): Promise<Stripe> {
   if (client) return client;
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error("STRIPE_SECRET_KEY is not configured");
@@ -48,7 +50,9 @@ export async function createCheckoutSession(invoice: CheckoutInvoice, payToken: 
     }],
     metadata: { invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber, payToken },
     payment_intent_data: { metadata: { invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber } },
-    success_url: `${baseUrl}/pay/${payToken}?payment=success`,
+    // The session id lets the pay page confirm the outcome with Stripe on
+    // return, so the client sees the right status even if the webhook is late.
+    success_url: `${baseUrl}/pay/${payToken}?payment=success&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${baseUrl}/pay/${payToken}`,
   });
   return session.url;
@@ -71,15 +75,47 @@ export async function parseStripeEvent(rawBody: Buffer | string | undefined, sig
 
 const methodLabel = (types: string[] | null | undefined) => (types?.includes("us_bank_account") ? "bank_transfer" : "credit_card");
 
-/**
- * Applies a Checkout event to the invoice. Idempotent on the payment intent:
- * a replayed event changes nothing. Returns what was done, for logs and tests.
- */
-export async function applyStripeEvent(event: Stripe.Event): Promise<{ handled: boolean; outcome?: string; invoiceId?: string }> {
-  if (!["checkout.session.completed", "checkout.session.async_payment_succeeded", "checkout.session.async_payment_failed"].includes(event.type)) {
-    return { handled: false };
-  }
+export type CheckoutOutcome = "processing" | "paid" | "failed";
+
+/** What a Checkout webhook event says happened. */
+export function outcomeForEvent(event: Stripe.Event): CheckoutOutcome | null {
   const session = event.data.object as Stripe.Checkout.Session;
+  switch (event.type) {
+    case "checkout.session.completed": return session.payment_status === "paid" ? "paid" : "processing";
+    case "checkout.session.async_payment_succeeded": return "paid";
+    case "checkout.session.async_payment_failed": return "failed";
+    default: return null;
+  }
+}
+
+/**
+ * What a Checkout session says happened, read straight from Stripe (the
+ * reconcile and the pay page's return check use this). Needs the payment
+ * intent expanded so a returned bank debit can be told from one still clearing.
+ */
+export function outcomeForSession(session: Stripe.Checkout.Session): CheckoutOutcome | null {
+  if (session.status !== "complete") return null;
+  if (session.payment_status === "paid") return "paid";
+  const intent = typeof session.payment_intent === "object" ? session.payment_intent : null;
+  if (intent && (intent.status === "canceled" || intent.status === "requires_payment_method")) return "failed";
+  return "processing";
+}
+
+/** Applies a webhook event to the invoice. Idempotent on the payment intent. */
+export async function applyStripeEvent(event: Stripe.Event): Promise<{ handled: boolean; outcome?: string; invoiceId?: string }> {
+  const outcome = outcomeForEvent(event);
+  if (!outcome) return { handled: false };
+  return applyCheckoutOutcome(event.data.object as Stripe.Checkout.Session, outcome);
+}
+
+/**
+ * Records what Stripe says about a Checkout session. One payment row per
+ * payment intent: "processing" while a bank debit clears, then "succeeded"
+ * (which is when the invoice balance moves) or "failed". Replaying the same
+ * outcome changes nothing, so webhooks, the return check and the nightly
+ * reconcile can all call this without coordinating.
+ */
+export async function applyCheckoutOutcome(session: Stripe.Checkout.Session, outcome: CheckoutOutcome): Promise<{ handled: boolean; outcome?: string; invoiceId?: string }> {
   const invoiceId = session.metadata?.invoiceId;
   const intentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id;
   if (!invoiceId || !intentId) return { handled: true, outcome: "ignored: no invoice or payment intent" };
@@ -89,17 +125,16 @@ export async function applyStripeEvent(event: Stripe.Event): Promise<{ handled: 
   const amount = ((session.amount_total ?? 0) / 100).toFixed(2);
   const method = methodLabel(session.payment_method_types);
 
-  if (event.type === "checkout.session.async_payment_failed") {
+  if (outcome === "failed") {
     await db.update(payments).set({ status: "failed", notes: "Bank payment failed or was returned." })
       .where(and(eq(payments.providerRef, intentId), eq(payments.status, "processing")));
     return { handled: true, outcome: "failed", invoiceId };
   }
 
-  const settled = event.type === "checkout.session.async_payment_succeeded" || session.payment_status === "paid";
   return db.transaction(async (tx) => {
     const [existing] = await tx.select().from(payments).where(eq(payments.providerRef, intentId));
     if (existing?.status === "succeeded") return { handled: true, outcome: "already recorded", invoiceId };
-    if (!settled) {
+    if (outcome === "processing") {
       if (!existing) {
         await tx.insert(payments).values({ invoiceId, amount, paymentMethod: method, referenceNumber: intentId, providerRef: intentId, status: "processing", notes: "Bank transfer started online; clears in a few business days." });
       }
@@ -120,6 +155,32 @@ export async function applyStripeEvent(event: Stripe.Event): Promise<{ handled: 
     }).where(eq(invoices.id, invoiceId));
     return { handled: true, outcome: "recorded", invoiceId };
   });
+}
+
+/**
+ * Stores a webhook delivery before anything acts on it. Returns "new" for a
+ * first delivery, "retry" for a redelivery whose earlier processing failed,
+ * and "duplicate" for one already processed (nothing more to do).
+ */
+export async function recordStripeEvent(event: Stripe.Event): Promise<"new" | "retry" | "duplicate"> {
+  const inserted = await db.insert(stripeEvents)
+    .values({ id: event.id, type: event.type, payload: event as unknown as Record<string, unknown> })
+    .onConflictDoNothing().returning({ id: stripeEvents.id });
+  if (inserted.length) return "new";
+  const [row] = await db.select({ processedAt: stripeEvents.processedAt }).from(stripeEvents).where(eq(stripeEvents.id, event.id));
+  return row?.processedAt ? "duplicate" : "retry";
+}
+
+export async function markStripeEvent(id: string, result: { outcome?: string; error?: string }) {
+  await db.update(stripeEvents).set(result.error
+    ? { error: result.error }
+    : { processedAt: new Date(), outcome: result.outcome ?? null, error: null }).where(eq(stripeEvents.id, id));
+}
+
+/** A Checkout session straight from Stripe, with its payment intent, for the return check and the reconcile. */
+export async function retrieveCheckoutSession(id: string): Promise<Stripe.Checkout.Session> {
+  const stripe = await getStripe();
+  return stripe.checkout.sessions.retrieve(id, { expand: ["payment_intent"] });
 }
 
 /** Online payments still clearing for an invoice; shown as "processing" rather than counted as paid. */

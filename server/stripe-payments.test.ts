@@ -6,8 +6,8 @@ import { eq } from "drizzle-orm";
 import { buildTestApp } from "./test-helpers";
 import { storage } from "./storage";
 import { db } from "./db";
-import { payments } from "@shared/schema";
-import { applyStripeEvent, parseStripeEvent, StripeWebhookError } from "./stripe-payments";
+import { payments, stripeEvents } from "@shared/schema";
+import { applyStripeEvent, markStripeEvent, parseStripeEvent, recordStripeEvent, StripeWebhookError } from "./stripe-payments";
 import { defaultPaymentInstructions, paymentInstructionsFor } from "@shared/payment-instructions";
 import { howToPayHtml } from "./email";
 
@@ -100,6 +100,31 @@ describe("Stripe webhook", () => {
     const [row] = await db.select().from(payments).where(eq(payments.providerRef, "pi_ach_2"));
     expect(row.status).toBe("failed");
     expect((await storage.getInvoice(invoiceId))!).toMatchObject({ status: "sent", balance: "5500.00" });
+  });
+
+  it("stores every delivery by event id and treats a redelivery of a processed event as a no-op", async () => {
+    const event = sessionEvent("checkout.session.completed", { payment_status: "paid", payment_intent: "pi_dup_1", payment_method_types: ["card"], metadata: { invoiceId } });
+    const payload = JSON.stringify(event);
+    const post = () => request(app).post("/api/webhooks/stripe").set("Content-Type", "application/json").set("stripe-signature", sign(payload)).send(payload);
+    expect((await post().expect(200)).body).toEqual({ received: true });
+    expect((await post().expect(200)).body).toEqual({ received: true, duplicate: true });
+    const [stored] = await db.select().from(stripeEvents).where(eq(stripeEvents.id, event.id));
+    expect(stored).toMatchObject({ type: "checkout.session.completed", outcome: "recorded" });
+    expect(stored.processedAt).not.toBeNull();
+    expect((stored.payload as { id: string }).id).toBe(event.id);
+    expect(await db.select().from(payments).where(eq(payments.invoiceId, invoiceId))).toHaveLength(1);
+    expect((await storage.getInvoice(invoiceId))!).toMatchObject({ status: "paid", amountPaid: "5500.00" });
+  });
+
+  it("lets a redelivery retry an event whose processing failed", async () => {
+    const event = sessionEvent("checkout.session.completed", { payment_status: "paid", payment_intent: "pi_retry_1", metadata: { invoiceId } });
+    expect(await recordStripeEvent(event)).toBe("new");
+    await markStripeEvent(event.id, { error: "database went away" });
+    expect(await recordStripeEvent(event)).toBe("retry");
+    await markStripeEvent(event.id, { outcome: "recorded" });
+    expect(await recordStripeEvent(event)).toBe("duplicate");
+    const [stored] = await db.select().from(stripeEvents).where(eq(stripeEvents.id, event.id));
+    expect(stored).toMatchObject({ outcome: "recorded", error: null });
   });
 
   it("ignores events it doesn't handle or can't tie to an invoice", async () => {
