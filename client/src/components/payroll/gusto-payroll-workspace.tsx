@@ -30,15 +30,15 @@ type GustoReadiness = { employees?: ReadinessEmployee[] };
 
 /** Gusto's state for an employee in plain words, plus which action fixes it. */
 function describeEmployee(e: ReadinessEmployee): { text: string; action: "invite" | "waiting" | "not_found" | "finish_onboarding" | "direct_deposit" | "contractor" | "ready" } {
-  if (e.ready) return { text: "Ready for payroll", action: "ready" };
-  if ((e.blockers ?? []).some(b => /contractor/i.test(b))) return { text: "Contractor — not W-2 payroll", action: "contractor" };
-  if (!e.gustoEmployeeId) return { text: "Not in Gusto yet", action: "invite" };
+  if (e.ready) return { text: "Step 3 · Ready for payroll", action: "ready" };
+  if ((e.blockers ?? []).some(b => /contractor/i.test(b))) return { text: "Contractor — paid outside W-2 payroll", action: "contractor" };
+  if (!e.gustoEmployeeId) return { text: "Step 1 · Not in Gusto yet — send the invite", action: "invite" };
   const status = e.onboardingStatus ?? "";
   if (status === "unknown") return { text: "Not found in Gusto — the link may be stale", action: "not_found" };
-  if (status.startsWith("self_onboarding_invited")) return { text: "Invitation sent — waiting for the employee to finish", action: "waiting" };
-  if (status === "self_onboarding_completed_by_employee" || status === "self_onboarding_awaiting_admin_review") return { text: "Employee finished — review in Gusto", action: "finish_onboarding" };
-  if (status !== "complete") return { text: "Gusto onboarding incomplete", action: "finish_onboarding" };
-  if (e.paymentMethodStatus !== "complete") return { text: "Direct deposit not set up", action: "direct_deposit" };
+  if (status.startsWith("self_onboarding_invited")) return { text: "Step 2 · Invite sent — waiting for them to enter tax and bank details", action: "waiting" };
+  if (status === "self_onboarding_completed_by_employee" || status === "self_onboarding_awaiting_admin_review") return { text: "Step 2 · They've finished — review and approve in Gusto", action: "finish_onboarding" };
+  if (status !== "complete") return { text: "Step 2 · Gusto onboarding not finished", action: "finish_onboarding" };
+  if (e.paymentMethodStatus !== "complete") return { text: "Step 2 · Direct deposit still missing", action: "direct_deposit" };
   return { text: e.blockers?.join(", ") || "Gusto setup needed", action: "finish_onboarding" };
 }
 type GustoRun = {
@@ -95,7 +95,7 @@ const buttonStyle: React.CSSProperties = {
   color: "var(--fg)", fontSize: "12px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit",
 };
 
-export default function GustoPayrollWorkspace({ records, period }: { records: PayrollRecordRow[]; period: { start: string; end: string } | null }) {
+export default function GustoPayrollWorkspace({ records, period, onAddEmployee }: { records: PayrollRecordRow[]; period: { start: string; end: string } | null; onAddEmployee?: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [runId, setRunId] = useState("");
@@ -478,7 +478,22 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
           <div style={panel}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: 700 }}><Users aria-hidden="true" style={{ width: "15px", height: "15px" }} />Gusto employee setup</div>
-              <div style={{ display: "flex", gap: "7px", flexWrap: "wrap" }}>
+              {onAddEmployee && <button type="button" style={{ ...buttonStyle, background: "var(--jox-primary)", color: "#fff", border: 0 }} disabled={busy || !status.companyId} onClick={onAddEmployee} data-testid="button-gusto-add-employee">Add employee</button>}
+            </div>
+            {/* The one path that works for a new hire. Everything else below is for exceptions. */}
+            <ol style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "8px", margin: "10px 0 0", padding: 0, listStyle: "none", fontSize: "12px" }} aria-label="How a new employee gets ready for payroll" data-testid="gusto-employee-steps">
+              {[
+                ["1", "Add them in JobsOxo", "Use Add employee with \"Invite to Gusto\" ticked. JobsOxo creates them in Gusto and Gusto emails them."],
+                ["2", "They finish in Gusto", "From the email they enter their own W-4, state withholding and bank details. Nothing passes through JobsOxo."],
+                ["3", "Ready for payroll", "Sync readiness shows them as ready, and they appear in pay runs."],
+              ].map(([n, title, body]) => <li key={n} style={{ display: "flex", gap: "8px", padding: "8px 10px", background: "var(--track)", borderRadius: "8px" }}>
+                <span aria-hidden="true" style={{ flexShrink: 0, width: "20px", height: "20px", borderRadius: "50%", background: "var(--jox-primary)", color: "#fff", fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "11px" }}>{n}</span>
+                <span><strong>{title}</strong><br /><span style={{ color: "var(--muted)" }}>{body}</span></span>
+              </li>)}
+            </ol>
+            <details style={{ marginTop: "10px", fontSize: "12px" }} data-testid="gusto-employee-exceptions">
+              <summary style={{ cursor: "pointer", color: "var(--muted)" }}>Already set up in Gusto, or need Gusto's own screens?</summary>
+              <div style={{ display: "flex", gap: "7px", flexWrap: "wrap", marginTop: "8px" }}>
                 {status.companyId && <button
                   type="button" style={buttonStyle} disabled={busy}
                   onClick={async () => {
@@ -488,9 +503,9 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                     await queryClient.invalidateQueries({ queryKey: ["/api/employees"] });
                   }}
                   data-testid="button-gusto-import-employees"
-                  title="Creates a JobsOxo employee for each current Gusto employee not already here"
+                  title="For a crew that already exists in Gusto: creates a JobsOxo employee for each one not already here"
                 >Import employees from Gusto</button>}
-                <button type="button" style={buttonStyle} disabled={busy || !status.configured} onClick={() => void openFlow("add_employees", "Add employees in Gusto")}>Add employees</button>
+                <button type="button" style={buttonStyle} disabled={busy || !status.configured} title="Adds people on Gusto's side; they're imported into JobsOxo when you close it" onClick={() => void openFlow("add_employees", "Add employees in Gusto")}>Open Gusto’s employee screen</button>
                 <button type="button" style={buttonStyle} disabled={busy} onClick={async () => {
                   const result = await perform("POST", "/api/gusto/employees/sync");
                   if (result !== null) {
@@ -500,12 +515,17 @@ export default function GustoPayrollWorkspace({ records, period }: { records: Pa
                   }
                 }}>Sync Gusto payment methods</button>
               </div>
+              <p style={{ color: "var(--muted)", margin: "6px 0 0" }}>Import is for a crew that was in Gusto before JobsOxo. Gusto’s screen adds people on Gusto’s side only; whoever you add there is imported into JobsOxo when the screen closes.</p>
+            </details>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", flexWrap: "wrap", marginTop: "10px" }}>
+              <div style={{ fontSize: "12px", fontWeight: 700 }}>Where each person is</div>
+              <div />
             </div>
             {importSteps && <SampleResults title="Import results" steps={importSteps} testId="gusto-import-results" />}
             {employeeSampleSteps && <SampleResults title="Sample employee results" steps={employeeSampleSteps} testId="gusto-sample-employee-results" />}
             {readinessQuery.isLoading ? <p style={{ color: "var(--muted)", fontSize: "12px" }}>Checking Gusto employee setup…</p>
               : readinessQuery.isError ? <p role="alert" style={{ color: "var(--jx-orange-ink)", fontSize: "12px" }}>Gusto employee readiness could not load. Retry after syncing the company.</p>
-                : readyEmployees.length === 0 ? <p style={{ color: "var(--muted)", fontSize: "12px", marginBottom: 0 }}>No Gusto employees are linked yet.</p>
+                : readyEmployees.length === 0 ? <p style={{ color: "var(--muted)", fontSize: "12px", marginBottom: 0 }}>No active employees yet. Start with Add employee above.</p>
                   : readyEmployees.map(employee => {
                     const state = describeEmployee(employee);
                     const name = employee.name ?? "Employee";

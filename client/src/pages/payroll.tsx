@@ -678,6 +678,7 @@ function EmployeeForm({ employee, onClose }: { employee?: EmployeeWithStats; onC
               <span style={{ fontSize: "12px", color: "#14532d" }}>
                 <strong>Invite to Gusto payroll</strong><br />
                 Adds them in Gusto and emails{watchInvite && watchEmail ? ` ${watchEmail}` : " them"} to enter their own tax and bank details. Requires an email address.
+                {field.value !== true && <><br /><span style={{ color: "#b45309" }} data-testid="warning-invite-unticked">Unticked: they won’t exist in Gusto, so they can’t be paid through payroll until you invite them from the Payroll page.</span></>}
               </span>
             </label>
           )} />
@@ -1919,7 +1920,7 @@ export default function Payroll() {
           {/* ── RUN PAYROLL (Gusto) ── */}
           {activeSection === "payroll" && (
             <div id="gusto-workspace">
-              <GustoOnlyWorkspace records={currentRecords} period={currentPeriod} />
+              <GustoOnlyWorkspace records={currentRecords} period={currentPeriod} onAddEmployee={() => { setEditingEmployee(null); setIsEmployeeDialogOpen(true); }} />
             </div>
           )}
 

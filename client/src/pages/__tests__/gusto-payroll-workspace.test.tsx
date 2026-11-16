@@ -301,7 +301,7 @@ describe("Gusto payroll workspace", () => {
     expect(state("add_employees")).toHaveAttribute("data-state", "done");
     expect(state("employee_management")).toHaveAttribute("data-state", "todo");
     // Red rows say who and why.
-    expect(screen.getByTestId("checklist-employee_management-detail")).toHaveTextContent("1 of 2 ready · Maria Lopez: Gusto onboarding incomplete");
+    expect(screen.getByTestId("checklist-employee_management-detail")).toHaveTextContent("1 of 2 ready · Maria Lopez: Step 2 · Gusto onboarding not finished");
     expect(screen.getByTestId("checklist-verify_bank_info-detail")).toHaveTextContent("awaiting deposits");
     expect(screen.queryByTestId("checklist-company_onboarding-detail")).toBeNull();
     // Tools that aren't tasks stay as plain buttons.
@@ -362,7 +362,7 @@ describe("Gusto payroll workspace", () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: "Add employees" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open Gusto’s employee screen" }));
     await screen.findByTitle("Add employees in Gusto");
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
@@ -411,12 +411,12 @@ describe("Gusto payroll workspace", () => {
 
   it("says what each employee is waiting on in plain words", async () => {
     renderRoster();
-    expect(await screen.findByTestId("readiness-e-wait")).toHaveTextContent("Invitation sent — waiting for the employee to finish");
+    expect(await screen.findByTestId("readiness-e-wait")).toHaveTextContent("Step 2 · Invite sent — waiting for them to enter tax and bank details");
     expect(screen.getByTestId("readiness-e-stale")).toHaveTextContent("Not found in Gusto — the link may be stale");
-    expect(screen.getByTestId("readiness-e-dd")).toHaveTextContent("Direct deposit not set up");
+    expect(screen.getByTestId("readiness-e-dd")).toHaveTextContent("Step 2 · Direct deposit still missing");
     expect(screen.getByTestId("readiness-e-ok")).toHaveTextContent("Ready for payroll");
     // The checklist row names them with the same wording.
-    expect(screen.getByTestId("checklist-employee_management-detail")).toHaveTextContent("1 of 4 ready · Heidi Williams: Invitation sent");
+    expect(screen.getByTestId("checklist-employee_management-detail")).toHaveTextContent("1 of 4 ready · Heidi Williams: Step 2 · Invite sent");
   });
 
   it("can resend an invitation or take over the onboarding of an invited employee", async () => {
