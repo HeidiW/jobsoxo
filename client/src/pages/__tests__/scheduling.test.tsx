@@ -31,7 +31,7 @@ async function ready() { await screen.findByTestId("job-block-scheduled"); }
 describe("Scheduling redesign", () => {
   beforeEach(() => {
     queryClient.clear(); jobs = structuredClone(initialJobs); unavailable = false;
-    fetchMock = vi.fn(async (path: string) => path === "/api/notepads/get-on-it" ? Response.json({ content: "Order primer", updatedAt: null, updatedByName: null }) : unavailable ? Response.json({ error: "Unavailable" }, { status: 503 }) : Response.json(jobs));
+    fetchMock = vi.fn(async (path: string) => path === "/api/notes/current" ? Response.json({ id: "note-1", createdAt: "2026-11-09T14:00:00.000Z", items: [{ id: "i1", text: "Order primer", done: false, doneAt: null, doneByName: null, position: 0 }] }) : unavailable ? Response.json({ error: "Unavailable" }, { status: 503 }) : Response.json(jobs));
     vi.stubGlobal("fetch", fetchMock);
   });
   afterEach(() => { queryClient.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
@@ -48,7 +48,7 @@ describe("Scheduling redesign", () => {
     expect(screen.getByTestId("backlog-job-quoted")).toBeVisible();
     expect(screen.getByTestId("backlog-job-undated")).toBeVisible();
     expect(screen.queryByText("Completed job")).not.toBeInTheDocument();
-    expect(fetchMock.mock.calls.every(([path]) => path === "/api/jobs" || path === "/api/notepads/get-on-it")).toBe(true);
+    expect(fetchMock.mock.calls.every(([path]) => path === "/api/jobs" || path === "/api/notes/current")).toBe(true);
     if (today.getDay() !== 0 && today.getDay() !== 6) {
       expect(screen.getByTestId(`scheduling-date-${format(today, "yyyy-MM-dd")}`)).toHaveAttribute("aria-current", "date");
     }
@@ -133,7 +133,7 @@ describe("Scheduling redesign", () => {
 
   it("shows the team's Get on it notepad under the calendar", async () => {
     mount();
-    const pad = await screen.findByTestId("input-notepad");
-    await waitFor(() => expect(pad).toHaveValue("Order primer"));
+    expect(await screen.findByTestId("text-i1")).toHaveTextContent("Order primer");
+    expect(screen.getByTestId("input-new-item")).toBeInTheDocument();
   });
 });

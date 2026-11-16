@@ -765,27 +765,32 @@ export const reminderLogs = pgTable("reminder_logs", {
   errorMessage: text("error_message"),
 });
 
-// "Get on it": the team's shared notepad, shown on the dashboard and in
-// Scheduling. One row per notepad; "get-on-it" is the only one today.
-export const notepads = pgTable("notepads", {
-  id: varchar("id").primaryKey(),
-  content: text("content").notNull().default(""),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  updatedBy: varchar("updated_by").references(() => users.id, { onDelete: "set null" }),
-});
-export type Notepad = typeof notepads.$inferSelect;
-
-// Earlier versions of a notepad, so notes overwritten by mistake can be
-// brought back. Saves by the same person a few minutes apart collapse into
-// one version, and versions older than the retention window are pruned.
-export const notepadVersions = pgTable("notepad_versions", {
+// "Get on it": the team's shared to-do list, shown on the dashboard and in
+// Scheduling. Exactly one note is current (archived_at null); "New note"
+// archives it and starts another. Nothing is deleted: every past note stays
+// in the archive with its items as they were ticked.
+export const notes = pgTable("notes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  notepadId: varchar("notepad_id").notNull().references(() => notepads.id, { onDelete: "cascade" }),
-  content: text("content").notNull(),
-  savedAt: timestamp("saved_at").defaultNow().notNull(),
-  savedBy: varchar("saved_by").references(() => users.id, { onDelete: "set null" }),
-}, (table) => [index("notepad_versions_notepad_saved_idx").on(table.notepadId, table.savedAt)]);
-export type NotepadVersion = typeof notepadVersions.$inferSelect;
+  title: text("title"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  archivedAt: timestamp("archived_at"),
+  archivedBy: varchar("archived_by").references(() => users.id, { onDelete: "set null" }),
+}, (table) => [index("notes_archived_idx").on(table.archivedAt)]);
+export type Note = typeof notes.$inferSelect;
+
+export const noteItems = pgTable("note_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  noteId: varchar("note_id").notNull().references(() => notes.id, { onDelete: "cascade" }),
+  text: text("text").notNull(),
+  done: boolean("done").default(false).notNull(),
+  doneAt: timestamp("done_at"),
+  doneBy: varchar("done_by").references(() => users.id, { onDelete: "set null" }),
+  position: integer("position").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+}, (table) => [index("note_items_note_position_idx").on(table.noteId, table.position)]);
+export type NoteItem = typeof noteItems.$inferSelect;
 
 // Every client email about an invoice (the invoice itself, change orders,
 // reminders) and what Resend reported back, so people can see whether it

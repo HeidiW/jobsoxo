@@ -13,7 +13,7 @@ import { proofreadErrorMessage, proofreadFields } from "./invoice-proofread";
 import { isReceiptMediaType, receiptScanErrorMessage, scanReceipt } from "./receipt-scan";
 import { RECEIPT_MAX_BYTES } from "@shared/receipt-scan";
 import { applyResendEvent, latestDeliveries, listDeliveries, refreshDeliveries, verifyResendSignature } from "./email-delivery";
-import { registerNotepadRoutes } from "./notepads";
+import { registerNoteRoutes } from "./notes";
 import { registerSetupRoutes } from "./setup";
 import { jobBilling, stageSnapshot, StageError, type StageSnapshot } from "./invoice-billing";
 import { applyStripeEvent, createCheckoutSession, parseStripeEvent, processingAmount, stripeEnabled, StripeWebhookError } from "./stripe-payments";
@@ -755,7 +755,7 @@ export async function registerRoutes(
     return requireAuth(req, res, next);
   });
 
-  registerNotepadRoutes(app);
+  registerNoteRoutes(app);
   registerSetupRoutes(app, requireAdmin);
 
   app.get("/api/address-suggestions", async (req, res) => {
