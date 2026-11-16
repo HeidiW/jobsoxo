@@ -19,6 +19,7 @@ import { registerSetupRoutes } from "./setup";
 import { jobBilling, stageSnapshot, StageError, type StageSnapshot } from "./invoice-billing";
 import type Stripe from "stripe";
 import { openPaymentDiscrepancies, reconcileWithStripe } from "./stripe-reconcile";
+import { describeUnmatched, unmatchedManualPayments } from "./bank-match";
 import { applyCheckoutOutcome, applyStripeEvent, createCheckoutSession, markStripeEvent, outcomeForSession, parseStripeEvent, processingAmount, recordStripeEvent, retrieveCheckoutSession, stripeEnabled, StripeWebhookError } from "./stripe-payments";
 import { statusForBalance } from "@shared/invoice-status";
 import { paymentInstructionsFor } from "@shared/payment-instructions";
@@ -949,7 +950,7 @@ export async function registerRoutes(
         })
         .map(r => {
           const dueDate = r.dueDate ? new Date(r.dueDate) : null;
-          let reason: "overdue" | "due-today" | "deposit-due" | "payment-mismatch" = "due-today";
+          let reason: "overdue" | "due-today" | "deposit-due" | "payment-mismatch" | "unmatched-deposit" = "due-today";
           let detail = "Due today";
           let daysOverdue = 0;
           if (r.status === "overdue") {
@@ -973,7 +974,14 @@ export async function registerRoutes(
         if (!r) return [];
         return [{ invoiceId: r.id, invoiceNumber: r.invoiceNumber, client: r.clientName || "Unknown", project: r.jobTitle ?? undefined, reason: "payment-mismatch" as const, detail: d.detail, balance: Number(r.balance), daysOverdue: 0 }];
       });
-      const attention = [...mismatches, ...needsAttention.filter((item) => !mismatches.some((m) => m.invoiceId === item.invoiceId))];
+      // Hand-recorded payments the bank feed hasn't confirmed, once a bank is connected.
+      const unmatched = (await unmatchedManualPayments(new Date(`${today}T23:59:59Z`))).flatMap((u) => {
+        const r = byId.get(u.invoiceId);
+        if (!r) return [];
+        return [{ invoiceId: r.id, invoiceNumber: r.invoiceNumber, client: r.clientName || "Unknown", project: r.jobTitle ?? undefined, reason: "unmatched-deposit" as const, detail: describeUnmatched(u), balance: Number(r.balance), daysOverdue: 0 }];
+      });
+      const flagged = [...mismatches, ...unmatched.filter((u) => !mismatches.some((m) => m.invoiceId === u.invoiceId))];
+      const attention = [...flagged, ...needsAttention.filter((item) => !flagged.some((f) => f.invoiceId === item.invoiceId))];
 
       // This week Mon–Fri, as calendar days
       const weekDays = workweekOf(today);

@@ -39,7 +39,7 @@ interface DashboardData {
   outstanding: { total: number; invoiceCount: number; clientCount: number; overdue: number; dueSoon: number; draft: number };
   collectedThisMonth: { amount: number; momDeltaPct: number };
   activeJobs: { count: number; crews: number; hoursToday: number };
-  needsAttention: Array<{ invoiceId: string; invoiceNumber: string; client: string; project?: string; reason: "overdue" | "due-today" | "deposit-due" | "payment-mismatch"; detail: string; balance: number; daysOverdue: number }>;
+  needsAttention: Array<{ invoiceId: string; invoiceNumber: string; client: string; project?: string; reason: "overdue" | "due-today" | "deposit-due" | "payment-mismatch" | "unmatched-deposit"; detail: string; balance: number; daysOverdue: number }>;
   week: Array<{ date: string; weekday: string; dayNum: number; isToday: boolean; entries?: Array<{ id: string; title: string; startTime: string | null }>; jobs: Array<{ jobId: string; label: string; crewSize: number; color: string }> }>;
   greeting: { firstName: string };
 }
@@ -276,13 +276,14 @@ export default function Dashboard() {
                           <span className="mt-0.5 block truncate text-[11px]" style={{ color: "var(--jx-ink-2)" }}>
                             {item.project ? `${item.project} · ` : ""}<span className="font-mono">{item.invoiceNumber}</span>
                           </span>
-                          <span className="mt-2 block text-[11px] font-semibold" style={{ color: item.reason === "overdue" || item.reason === "payment-mismatch" ? "var(--jx-orange-ink)" : "var(--jx-gold-ink)" }} data-testid={item.reason === "payment-mismatch" ? `attention-mismatch-${item.invoiceId}` : undefined}>
+                          <span className="mt-2 block text-[11px] font-semibold" style={{ color: item.reason === "overdue" || item.reason === "payment-mismatch" ? "var(--jx-orange-ink)" : "var(--jx-gold-ink)" }} data-testid={item.reason === "payment-mismatch" ? `attention-mismatch-${item.invoiceId}` : item.reason === "unmatched-deposit" ? `attention-unmatched-${item.invoiceId}` : undefined}>
                             {item.detail}
                           </span>
                         </Link>
                         <div className="shrink-0 text-right">
                           <div className="font-mono text-[15px] font-semibold">{fmt(item.balance)}</div>
-                          {item.reason !== "payment-mismatch" && <button
+                          {item.reason === "unmatched-deposit" && <Link href="/settings" className="mt-2 inline-flex min-h-8 items-center justify-center rounded-full border px-3 text-[11px] font-bold no-underline" style={{ color: "var(--jx-green-ink)", borderColor: "var(--jx-green)" }} data-testid={`link-match-${item.invoiceId}`}>Match deposit</Link>}
+                          {item.reason !== "payment-mismatch" && item.reason !== "unmatched-deposit" && <button
                             type="button"
                             onClick={() => remindOneMutation.mutate(item.invoiceId)}
                             disabled={remindOneMutation.isPending || sent}
