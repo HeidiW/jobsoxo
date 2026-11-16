@@ -19,7 +19,7 @@ import { registerSetupRoutes } from "./setup";
 import { jobBilling, stageSnapshot, StageError, type StageSnapshot } from "./invoice-billing";
 import type Stripe from "stripe";
 import { openPaymentDiscrepancies, reconcileWithStripe } from "./stripe-reconcile";
-import { applyStripeEvent, createCheckoutSession, markStripeEvent, parseStripeEvent, processingAmount, recordStripeEvent, stripeEnabled, StripeWebhookError } from "./stripe-payments";
+import { applyCheckoutOutcome, applyStripeEvent, createCheckoutSession, markStripeEvent, outcomeForSession, parseStripeEvent, processingAmount, recordStripeEvent, retrieveCheckoutSession, stripeEnabled, StripeWebhookError } from "./stripe-payments";
 import { statusForBalance } from "@shared/invoice-status";
 import { paymentInstructionsFor } from "@shared/payment-instructions";
 import { ensurePayToken, getAppBaseUrl } from "./email";
@@ -620,6 +620,28 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Stripe checkout error:", error);
       res.status(500).json({ error: "Failed to create checkout session" });
+    }
+  });
+
+  // The pay page calls this on return from Checkout, so the client sees the
+  // outcome at once instead of waiting for the webhook. Stripe is asked
+  // directly; the session must belong to this link's invoice.
+  app.post("/api/pay/:token/verify", async (req, res) => {
+    const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
+    if (!/^cs_[A-Za-z0-9_]+$/.test(sessionId)) return res.status(400).json({ error: "Missing checkout session" });
+    if (!stripeEnabled()) return res.status(503).json({ error: "Online payment is not configured for this account." });
+    try {
+      const invoice = await resolvePayToken(req.params.token);
+      if (!invoice) return res.status(404).json({ error: "Payment link not found or expired" });
+      const session = await retrieveCheckoutSession(sessionId);
+      if (session.metadata?.invoiceId !== invoice.id) return res.status(404).json({ error: "That payment isn't for this invoice." });
+      const outcome = outcomeForSession(session);
+      if (!outcome) return res.json({ outcome: "pending" });
+      const result = await applyCheckoutOutcome(session, outcome);
+      res.json({ outcome, applied: result.outcome ?? null });
+    } catch (error) {
+      console.error("Stripe verify error:", error);
+      res.status(500).json({ error: "Couldn't confirm the payment with Stripe yet" });
     }
   });
 

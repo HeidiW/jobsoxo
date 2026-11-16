@@ -8,6 +8,7 @@ import { queryClient } from "@/lib/queryClient";
 
 let data: Record<string, unknown>;
 let checkouts: number;
+let verifies: Array<{ sessionId: string }>;
 
 function mount(search = "") {
   window.history.pushState({}, "", `/pay/tok-123${search}`);
@@ -18,6 +19,7 @@ describe("InvoicePay", () => {
   beforeEach(() => {
     queryClient.clear();
     checkouts = 0;
+    verifies = [];
     data = {
       invoiceNumber: "CFP-2026-0007", balance: "5500.00", total: "5500.00", amountPaid: "0.00", dueDate: "2026-11-16T00:00:00.000Z", status: "sent",
       stage: "deposit", contractTotal: "11200.00", previouslyPaid: null, clientName: "Ramp Contractors", companyName: "Conor Foy Painting",
@@ -26,6 +28,12 @@ describe("InvoicePay", () => {
     };
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).endsWith("/checkout") && init?.method === "POST") { checkouts += 1; return Response.json({ url: "https://checkout.stripe.test/s" }); }
+      if (String(url).endsWith("/verify") && init?.method === "POST") {
+        verifies.push(JSON.parse(String(init.body)));
+        // Stripe confirms the card payment; the next load of the invoice shows it paid.
+        data = { ...data, status: "paid", balance: "0.00", amountPaid: "5500.00" };
+        return Response.json({ outcome: "paid", applied: "recorded" });
+      }
       return Response.json(data);
     }));
   });
@@ -62,5 +70,21 @@ describe("InvoicePay", () => {
     data = { ...data, status: "paid", balance: "0.00", amountPaid: "5500.00" };
     mount();
     expect(await screen.findByTestId("status-paid")).toHaveTextContent("All paid");
+  });
+
+  it("confirms the outcome with Stripe before showing the invoice when the client returns from Checkout", async () => {
+    mount("?payment=success&session_id=cs_test_123");
+    expect(await screen.findByTestId("status-paid")).toBeInTheDocument();
+    expect(verifies).toEqual([{ sessionId: "cs_test_123" }]);
+    expect(screen.getByTestId("status-invoice")).toHaveTextContent("Paid");
+  });
+
+  it("still shows processing on return when the verify call can't be made", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/verify") && init?.method === "POST") throw new Error("offline");
+      return Response.json(data);
+    }));
+    mount("?payment=success&session_id=cs_test_456");
+    expect(await screen.findByTestId("status-processing")).toHaveTextContent("Your payment has been submitted.");
   });
 });

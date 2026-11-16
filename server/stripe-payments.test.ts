@@ -7,7 +7,7 @@ import { buildTestApp } from "./test-helpers";
 import { storage } from "./storage";
 import { db } from "./db";
 import { payments, stripeEvents } from "@shared/schema";
-import { applyStripeEvent, markStripeEvent, parseStripeEvent, recordStripeEvent, StripeWebhookError } from "./stripe-payments";
+import { applyStripeEvent, markStripeEvent, parseStripeEvent, recordStripeEvent, setStripeClientForTests, StripeWebhookError } from "./stripe-payments";
 import { defaultPaymentInstructions, paymentInstructionsFor } from "@shared/payment-instructions";
 import { howToPayHtml } from "./email";
 
@@ -125,6 +125,30 @@ describe("Stripe webhook", () => {
     expect(await recordStripeEvent(event)).toBe("duplicate");
     const [stored] = await db.select().from(stripeEvents).where(eq(stripeEvents.id, event.id));
     expect(stored).toMatchObject({ outcome: "recorded", error: null });
+  });
+
+  it("confirms a payment with Stripe when the client returns from Checkout, only for that invoice", async () => {
+    const invoice = (await storage.getInvoice(invoiceId))!;
+    await storage.updateInvoice(invoiceId, { payToken: `tok_${invoiceId.slice(0, 8)}`, payTokenExpiresAt: new Date(Date.now() + 86_400_000) } as never);
+    const sessions: Record<string, unknown> = {
+      cs_mine: { id: "cs_mine", object: "checkout.session", status: "complete", payment_status: "paid", amount_total: 550000, payment_method_types: ["card"], metadata: { invoiceId }, payment_intent: { id: "pi_verify_1", object: "payment_intent", status: "succeeded" } },
+      cs_theirs: { id: "cs_theirs", object: "checkout.session", status: "complete", payment_status: "paid", amount_total: 100, payment_method_types: ["card"], metadata: { invoiceId: "someone-else" }, payment_intent: "pi_other" },
+      cs_clearing: { id: "cs_clearing", object: "checkout.session", status: "complete", payment_status: "unpaid", amount_total: 550000, payment_method_types: ["us_bank_account"], metadata: { invoiceId }, payment_intent: { id: "pi_verify_2", object: "payment_intent", status: "processing" } },
+    };
+    setStripeClientForTests({ checkout: { sessions: { retrieve: async (id: string) => sessions[id] } } } as never);
+    try {
+      const token = `tok_${invoiceId.slice(0, 8)}`;
+      await request(app).post(`/api/pay/${token}/verify`).send({}).expect(400);
+      await request(app).post(`/api/pay/${token}/verify`).send({ sessionId: "cs_theirs" }).expect(404);
+      await request(app).post(`/api/pay/nope/verify`).send({ sessionId: "cs_mine" }).expect(404);
+      expect((await request(app).post(`/api/pay/${token}/verify`).send({ sessionId: "cs_clearing" }).expect(200)).body).toEqual({ outcome: "processing", applied: "processing" });
+      expect((await request(app).post(`/api/pay/${token}/verify`).send({ sessionId: "cs_mine" }).expect(200)).body).toEqual({ outcome: "paid", applied: "recorded" });
+      expect((await storage.getInvoice(invoiceId))!).toMatchObject({ status: "paid", amountPaid: "5500.00" });
+      expect((await request(app).get(`/api/pay/${token}`).expect(200)).body).toMatchObject({ status: "paid", processingAmount: "5500.00" });
+      expect(invoice.status).toBe("sent");
+    } finally {
+      setStripeClientForTests(null);
+    }
   });
 
   it("ignores events it doesn't handle or can't tie to an invoice", async () => {

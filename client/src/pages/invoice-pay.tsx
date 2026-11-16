@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { stageDisplayName } from "@jobsoxo/staged-billing";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, CheckCircle, AlertCircle, CreditCard, Building2, Phone, Mail, ExternalLink, Clock, Landmark } from "lucide-react";
@@ -36,6 +36,17 @@ export default function InvoicePay() {
   const token = window.location.pathname.split("/pay/")[1] ?? "";
   const params = new URLSearchParams(window.location.search);
   const paymentSuccess = params.get("payment") === "success";
+  const checkoutSessionId = params.get("session_id");
+  // Back from Checkout: ask the server to confirm the outcome with Stripe
+  // before trusting what we have, so the status is right even if the webhook
+  // hasn't arrived. Then load (or reload) the invoice.
+  const [verified, setVerified] = useState(!checkoutSessionId);
+  useEffect(() => {
+    if (!checkoutSessionId || !token) return;
+    fetch(`/api/pay/${token}/verify`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessionId: checkoutSessionId }) })
+      .catch(() => undefined)
+      .finally(() => setVerified(true));
+  }, [checkoutSessionId, token]);
 
   const [checkoutPending, setCheckoutPending] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
@@ -51,7 +62,7 @@ export default function InvoicePay() {
       return res.json();
     },
     retry: false,
-    enabled: !!token,
+    enabled: !!token && verified,
   });
 
   async function startCheckout() {
