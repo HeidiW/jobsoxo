@@ -38,9 +38,21 @@ export function gustoApplicationConfigured() {
   return !!(process.env.GUSTO_CLIENT_ID && process.env.GUSTO_CLIENT_SECRET);
 }
 
-export async function gustoDemoSystemToken(): Promise<string> {
-  if (gustoEnvironment() !== "demo") throw new GustoConfigurationError("Demo company creation is disabled in production.");
+/** Creating a real (production) company is off unless this switch is set. */
+export const liveCompanyCreationEnabled = () => process.env.GUSTO_LIVE_COMPANY_CREATION_ENABLED === "true";
+/** Submitting a real payroll is off unless this switch is set. */
+export const livePayrollEnabled = () => process.env.GUSTO_LIVE_PAYROLL_ENABLED === "true";
+
+function assertCompanyCreationAllowed() {
+  if (gustoEnvironment() === "production" && !liveCompanyCreationEnabled()) {
+    throw new GustoConfigurationError("Creating a real company is switched off. Set GUSTO_LIVE_COMPANY_CREATION_ENABLED=true to allow it.");
+  }
   if (!gustoApplicationConfigured()) throw new GustoConfigurationError("Gusto developer client ID and secret are not configured.");
+}
+
+/** System token for the configured environment: demo freely, production only behind the creation switch. */
+export async function gustoSystemToken(): Promise<string> {
+  assertCompanyCreationAllowed();
   const result = await send<any>("/oauth/token", undefined, {
     method: "POST",
     body: { client_id: process.env.GUSTO_CLIENT_ID, client_secret: process.env.GUSTO_CLIENT_SECRET, grant_type: "system_access" },
@@ -51,10 +63,10 @@ export async function gustoDemoSystemToken(): Promise<string> {
   return result.access_token;
 }
 
-export async function provisionGustoDemoCompany(systemToken: string, input: {
+export async function provisionGustoCompany(systemToken: string, input: {
   companyName: string; firstName: string; lastName: string; email: string;
 }) {
-  if (gustoEnvironment() !== "demo") throw new GustoConfigurationError("Demo company creation is disabled in production.");
+  assertCompanyCreationAllowed();
   const result = await send<any>("/v1/partner_managed_companies", systemToken, {
     method: "POST",
     body: {
@@ -196,4 +208,14 @@ export function verifyGustoSignature(raw: string | Buffer, signature: string | u
   const expected = Buffer.from(createHmac("sha256", secret).update(raw).digest("hex"));
   const actual = Buffer.from(signature.replace(/^sha256=/, ""));
   return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
+export async function gustoDemoSystemToken(): Promise<string> {
+  if (gustoEnvironment() !== "demo") throw new GustoConfigurationError("Demo company creation is disabled in production.");
+  return gustoSystemToken();
+}
+
+export async function provisionGustoDemoCompany(systemToken: string, input: { companyName: string; firstName: string; lastName: string; email: string }) {
+  if (gustoEnvironment() !== "demo") throw new GustoConfigurationError("Demo company creation is disabled in production.");
+  return provisionGustoCompany(systemToken, input);
 }

@@ -1,5 +1,5 @@
 import type { Express, RequestHandler } from "express";
-import { gustoActor } from "./gusto-company";
+import { COMPANY_CREATION_PENDING_STATES, gustoActor } from "./gusto-company";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
@@ -17,7 +17,7 @@ export const demoCompanyInput = z.object({
   confirmDemo: z.literal(true),
 }).strict();
 
-const pendingStates = new Set(["demo_creating", "demo_creation_unknown"]);
+const pendingStates = COMPANY_CREATION_PENDING_STATES;
 const uncertainMessage = "Demo company creation may already have reached Gusto. Check the Gusto developer portal before recovery; another company will not be created automatically.";
 class DemoConflict extends Error {}
 

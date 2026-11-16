@@ -1,5 +1,5 @@
 import type { Express, RequestHandler } from "express";
-import { gustoActor } from "./gusto-company";
+import { COMPANY_CREATION_PENDING_STATES, gustoActor } from "./gusto-company";
 import { and, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
@@ -26,7 +26,7 @@ export async function removeDemoCompany(userId: string, body: unknown) {
       .where(eq(gustoIntegrations.userId, userId)).for("update");
     if (!integration || integration.userId !== userId) throw new RemovalError("No Gusto company is connected to your account.", 404);
     if (integration.companyId !== companyId) throw new RemovalError("The connected company changed. Refresh before removing it.", 409);
-    if (integration.environment !== "demo" || ["demo_creating", "demo_creation_unknown"].includes(integration.state)) {
+    if (integration.environment !== "demo" || COMPANY_CREATION_PENDING_STATES.has(integration.state)) {
       throw new RemovalError("This connection cannot be removed while setup is unresolved or outside demo mode.", 409);
     }
     const [history] = await tx.select({ id: gustoPayrollRuns.id }).from(gustoPayrollRuns)

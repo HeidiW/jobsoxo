@@ -9,13 +9,16 @@ import { bootstrapGustoCredentials, gustoConfigured, gustoEnvironment, GustoConf
  * connection for the current environment (or a pending demo creation); an
  * admin with no connection yet acts as themselves, e.g. to connect one.
  */
+/** Integration rows mid-creation (demo or real); nothing else may attach a company while one exists. */
+export const COMPANY_CREATION_PENDING_STATES: ReadonlySet<string> = new Set(["demo_creating", "demo_creation_unknown", "company_creating", "company_creation_unknown"]);
+
 export async function gustoActor(userId: string): Promise<string> {
   const rows = await db.select({ userId: gustoIntegrations.userId, companyId: gustoIntegrations.companyId, environment: gustoIntegrations.environment, state: gustoIntegrations.state }).from(gustoIntegrations);
   const environment = gustoEnvironment();
   const connected = rows.filter(row => row.companyId && row.environment === environment);
   if (connected.length === 1) return connected[0].userId;
   if (connected.some(row => row.userId === userId)) return userId;
-  const pending = rows.find(row => ["demo_creating", "demo_creation_unknown"].includes(row.state));
+  const pending = rows.find(row => COMPANY_CREATION_PENDING_STATES.has(row.state));
   return pending?.userId ?? userId;
 }
 
@@ -48,7 +51,7 @@ export async function connectCompany(userId: string) {
       throw new GustoConfigurationError("This Gusto company is already connected to another administrator.");
     }
     const previous = all.find(row => row.userId === userId);
-    if (all.some(row => ["demo_creating", "demo_creation_unknown"].includes(row.state))) {
+    if (all.some(row => COMPANY_CREATION_PENDING_STATES.has(row.state))) {
       throw new GustoConfigurationError("Resolve the pending demo company creation before connecting company credentials.");
     }
     if (previous?.companyId && (previous.companyId !== companyId || previous.environment !== gustoEnvironment())) {

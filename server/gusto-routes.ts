@@ -1,9 +1,10 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { registerGustoProductionRoutes } from "./gusto-production";
 import { and, desc, eq, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db } from "./db";
 import { employees, gustoIntegrations, gustoPayrollItems, gustoPayrollRuns, gustoWebhookEvents } from "@shared/schema";
-import { GustoConfigurationError, GustoProviderError, gustoConfigured, gustoEnvironment, verifyGustoSignature } from "./gusto-client";
+import { GustoConfigurationError, GustoProviderError, gustoConfigured, gustoEnvironment, verifyGustoSignature, livePayrollEnabled } from "./gusto-client";
 import { approveDemoCompany, companyIntegration, connectCompany, createFlow, employeeReadiness, gustoActor, syncCompany, syncEmployees, upcomingPayrolls, verifyDemoFunding } from "./gusto-company";
 import { fillDemoCompany, setUpSampleEmployees } from "./gusto-demo-sample";
 import { importGustoEmployees, syncCompanyAndImport } from "./gusto-employee-import";
@@ -59,18 +60,19 @@ export function registerGustoRoutes(app: Express, requireAdmin: (req: Request, r
   registerPayrollBankView(app, requireAdmin);
   registerGustoDemoRoutes(app, requireAdmin);
   registerGustoRemovalRoutes(app, requireAdmin);
+  registerGustoProductionRoutes(app, requireAdmin);
   app.get("/api/gusto/status", requireAdmin, async (req, res) => {
     try {
       const setup = await demoCompanySetup(await gustoActor(req.session.userId!));
       const integration = await db.query.gustoIntegrations.findFirst({ where: eq(gustoIntegrations.userId, await gustoActor(req.session.userId!)) });
       if (!integration?.encryptedAccessToken) return res.json({
         setup,
-        configured: gustoConfigured(), available: false, state: "not_connected", environment: gustoEnvironment(),
+        configured: gustoConfigured(), available: false, state: "not_connected", environment: gustoEnvironment(), livePayrollEnabled: livePayrollEnabled(),
         error: setup.error || (gustoConfigured() ? "Connect the configured Gusto Embedded company to enable payroll."
           : setup.clientConfigured ? "Gusto application credentials are saved. Set up a demo company to continue."
           : "Gusto Embedded company credentials are not configured."),
       });
-      res.json({ ...await syncCompany(await gustoActor(req.session.userId!)), setup });
+      res.json({ ...await syncCompany(await gustoActor(req.session.userId!)), setup, livePayrollEnabled: livePayrollEnabled() });
     } catch (error) { fail(res, error); }
   });
   app.post("/api/gusto/connect", requireAdmin, async (req, res) => {

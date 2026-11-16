@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Building2, FlaskConical, RefreshCw, Users } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import GustoDemoCompanySetup, { type GustoDemoSetupStatus } from "./gusto-demo-company-setup";
+import GustoProductionPanel from "./gusto-production-panel";
 import { useToast } from "@/hooks/use-toast";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
@@ -23,6 +24,7 @@ type GustoStatus = GustoDemoSetupStatus & {
   configured: boolean; available: boolean; state?: string; companyId?: string; companyName?: string;
   fundingAccount?: { id: string; status: string; accountMask?: string; name?: string } | null;
   onboardingComplete?: boolean; blockers?: string[]; error?: string; environment?: string; companyStatus?: string | null;
+  livePayrollEnabled?: boolean;
 };
 type UpcomingPayroll = { payrollId: string; periodStart: string; periodEnd: string; payDate: string; deadline?: string | null };
 type ReadinessEmployee = { id: string; name?: string; ready: boolean; blockers?: string[]; gustoEmployeeId?: string | null; onboardingStatus?: string | null; paymentMethodStatus?: string | null };
@@ -341,6 +343,8 @@ export default function GustoPayrollWorkspace({ records, period, onAddEmployee }
     void readinessQuery.refetch();
   }
 
+  const livePayrollOn = status?.livePayrollEnabled === true;
+
   const panel: React.CSSProperties = {
     border: "1px solid var(--panel-bd)", borderRadius: "10px", padding: "14px", background: "var(--panel)",
   };
@@ -382,7 +386,7 @@ export default function GustoPayrollWorkspace({ records, period, onAddEmployee }
               <div style={{ display: "flex", flexWrap: "wrap", gap: "7px" }}>
                 {!status.companyId && status.configured && <button type="button" style={buttonStyle} disabled={busy} onClick={() => void perform("POST", "/api/gusto/connect")}>Connect Gusto company</button>}
                 {!status.companyId && !status.configured && status.environment === "demo" && status.setup?.canCreateDemoCompany
-                  && !["demo_creating", "demo_creation_unknown"].includes(status.setup.creationState ?? "")
+                  && !["demo_creating", "demo_creation_unknown", "company_creating", "company_creation_unknown"].includes(status.setup.creationState ?? "")
                   && <button type="button" style={buttonStyle} onClick={() => {
                     const setup = demoSetupRef.current;
                     setup?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -418,6 +422,12 @@ export default function GustoPayrollWorkspace({ records, period, onAddEmployee }
               : "Gusto application credentials are not configured."} Payroll submission is unavailable; no manual payment route is offered.</p>}
           </div>
 
+          {status.environment === "production" && <GustoProductionPanel panel={panel} buttonStyle={buttonStyle} busy={busy} />}
+          {status.environment === "production" && status.companyId && !livePayrollOn && (
+            <p role="status" style={{ ...panel, color: "var(--jx-gold-ink)", background: "var(--jx-gold-tint)", fontSize: "12px" }} data-testid="gusto-live-payroll-off">
+              Live payroll is off. Pay runs can be prepared and calculated, but nothing is submitted to Gusto until GUSTO_LIVE_PAYROLL_ENABLED is set for the first real run.
+            </p>
+          )}
           {status.environment === "demo" && status.companyId && (
             <section aria-labelledby="gusto-demo-tools-title" style={{ ...panel, borderStyle: "dashed", background: "var(--jx-gold-tint)" }} data-testid="gusto-demo-tools">
               <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", fontWeight: 700 }}>

@@ -41,6 +41,8 @@ services:
         value: demo
       - key: GUSTO_LIVE_PAYROLL_ENABLED
         value: "false"
+      - key: GUSTO_LIVE_COMPANY_CREATION_ENABLED # "true" only while creating the real company in production, then back to "false"
+        value: "false"
       - key: GUSTO_CLIENT_ID
         sync: false
       - key: GUSTO_CLIENT_SECRET

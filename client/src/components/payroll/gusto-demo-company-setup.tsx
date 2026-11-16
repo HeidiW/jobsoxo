@@ -24,7 +24,7 @@ const rejectedMessages = [
   "Gusto rejected the developer credentials or application permissions. Verify these are Embedded Payroll demo credentials.",
   "Gusto did not create the demo company. Check the application credentials and entered company details before retrying.",
 ];
-const pendingCreationStates = new Set(["demo_creating", "demo_creation_unknown"]);
+const pendingCreationStates = new Set(["demo_creating", "demo_creation_unknown", "company_creating", "company_creation_unknown"]);
 
 function definiteRejection(error: unknown): string | null {
   if (!(error instanceof ApiError)) return null;
