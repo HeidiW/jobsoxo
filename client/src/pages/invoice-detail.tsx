@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { isStaged } from "@shared/invoice-stages";
+import { isStaged } from "@jobsoxo/staged-billing";
 import { paymentInstructionsFor } from "@shared/payment-instructions";
 import { BillingBlock, PricingCovers, stageTitle } from "@/components/invoices/staged-billing";
 import { useQuery, useMutation } from "@tanstack/react-query";

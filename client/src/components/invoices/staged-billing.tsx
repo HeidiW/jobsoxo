@@ -2,7 +2,7 @@
 // ("Pricing covers") and the billing summary that ends in what is due now.
 // Shared by the builder's live preview and the invoice document.
 import type { CSSProperties } from "react";
-import { stageDisplayName, type ContractScopeLine, type InvoiceStage, type StageBasis } from "@shared/invoice-stages";
+import { stageDisplayName, type ContractScopeLine, type InvoiceStage, type StageBasis } from "@jobsoxo/staged-billing";
 
 const money = (value: number | string | null | undefined) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value) || 0);

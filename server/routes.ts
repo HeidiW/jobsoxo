@@ -21,7 +21,7 @@ import { applyStripeEvent, createCheckoutSession, parseStripeEvent, processingAm
 import { statusForBalance } from "@shared/invoice-status";
 import { paymentInstructionsFor } from "@shared/payment-instructions";
 import { ensurePayToken, getAppBaseUrl } from "./email";
-import { INVOICE_STAGES, isStaged, stageBasisSchema, type InvoiceStage, type StageBasis } from "@shared/invoice-stages";
+import { INVOICE_STAGES, isStaged, stageBasisSchema, type InvoiceStage, type StageBasis } from "@jobsoxo/staged-billing";
 import { checkSetupCode, setupCodeRequired } from "./setup-code";
 import { inviteEmployeeToGusto, removeEmployeeEverywhere, resendGustoInvitation, takeOverGustoOnboarding, unlinkGustoEmployee } from "./gusto-employee-invite";
 import { GustoConfigurationError, GustoProviderError } from "./gusto-client";

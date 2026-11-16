@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { stageDisplayName } from "@shared/invoice-stages";
+import { stageDisplayName } from "@jobsoxo/staged-billing";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, CheckCircle, AlertCircle, CreditCard, Building2, Phone, Mail, ExternalLink, Clock, Landmark } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
